@@ -1,0 +1,29 @@
+# Aisha - Python Dependencies
+# Install: pip install -r requirements.txt
+
+# Core AI
+google-generativeai>=0.7.0     # Gemini AI — primary brain
+groq>=0.9.0                     # Groq + Llama — backup brain
+openai>=1.0.0                   # OpenAI (ChatGPT)
+schedule>=1.2.0                 # Autonomous Cron Engine
+
+# Telegram Bot
+pyTelegramBotAPI>=4.20.0        # Telegram bot framework
+
+# Database
+supabase>=2.0.0                 # Supabase client for memory
+
+# Utilities
+python-dotenv>=1.0.0            # Environment variable management
+httpx>=0.27.0                   # HTTP client (used internally)
+pydantic>=2.0.0                 # Data validation
+fastapi>=0.111.0                # Web API Backend for Lovable App
+uvicorn>=0.30.0                 # Web Server for API
+
+# Voice (Optional - for server-side TTS)
+# elevenlabs>=1.0.0             # ElevenLabs TTS (uncomment if using)
+# openai-whisper>=20231117      # Whisper transcription (heavier option)
+
+# Development
+pytest>=7.0.0                   # Testing
+python-json-logger>=2.0.0       # Structured logging

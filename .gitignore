@@ -1,0 +1,33 @@
+# IDEs
+.vscode/                     
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/                                             
+npm-debug.log                
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+env/
+.venv/
+
+# Secrets
+.env
+.env.local
+
+# Temp files
+temp_voice/
+temp/
+tmp/
+*.tmp
+*.log
+Aisha_Antigravity_log.txt
