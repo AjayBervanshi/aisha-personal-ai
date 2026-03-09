@@ -396,11 +396,10 @@
 </div>
 
 <script>
-// ── Configuration ────────────────────────────────────────────
+// ── Configuration (Lovable Cloud) ─────────────────────────────
 const CONFIG = {
-  GEMINI_API_KEY: "YOUR_GEMINI_API_KEY",   // ← Replace this!
-  SUPABASE_URL:   "YOUR_SUPABASE_URL",     // ← Replace this!
-  SUPABASE_KEY:   "YOUR_SUPABASE_ANON_KEY",// ← Replace this!
+  SUPABASE_URL:   "https://fwfzqphqbeicgfaziuox.supabase.co",
+  SUPABASE_KEY:   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3ZnpxcGhxYmVpY2dmYXppdW94Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4OTMwMDYsImV4cCI6MjA4ODQ2OTAwNn0.cvCb774-6tpjRWCHklNcgAvuUevy8em15sqXLazBuj0",
   USER_NAME:      "Ajay",
 };
 
@@ -509,42 +508,29 @@ function hideTyping() {
   document.getElementById("typing-indicator")?.remove();
 }
 
-// ── AI Call ──────────────────────────────────────────────────
+// ── AI Call (via Lovable Cloud edge function) ────────────────
 async function callGemini(userMessage) {
-  const systemPrompt = buildSystemPrompt();
-  
-  // Build message history for context
-  const contents = [];
-  for (const msg of state.conversationHistory.slice(-10)) {
-    contents.push({
-      role: msg.role === "ai" ? "model" : "user",
-      parts: [{ text: msg.text }]
-    });
-  }
-  // Add current message with system prompt on first turn
-  const currentText = contents.length === 0 
-    ? `${systemPrompt}\n\n---\n\nAjay says: ${userMessage}`
-    : userMessage;
-  contents.push({ role: "user", parts: [{ text: currentText }] });
-
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${CONFIG.GEMINI_API_KEY}`,
+    `${CONFIG.SUPABASE_URL}/functions/v1/chat`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${CONFIG.SUPABASE_KEY}`,
+        "apikey": CONFIG.SUPABASE_KEY,
+      },
       body: JSON.stringify({
-        system_instruction: { parts: [{ text: systemPrompt }] },
-        contents,
-        generationConfig: {
-          temperature: 0.9, maxOutputTokens: 1024, topP: 0.95,
-        }
+        message: userMessage,
+        mode: state.currentMode,
+        language: state.currentLang,
+        history: state.conversationHistory.slice(-6),
       })
     }
   );
   
-  if (!res.ok) throw new Error(`Gemini API error: ${res.status}`);
+  if (!res.ok) throw new Error(`Chat API error: ${res.status}`);
   const data = await res.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || "Arre Ajay, kuch gadbad ho gayi 😅 Try again?";
+  return data.reply || "Arre Ajay, kuch gadbad ho gayi 😅 Try again?";
 }
 
 // ── Send Message ─────────────────────────────────────────────
