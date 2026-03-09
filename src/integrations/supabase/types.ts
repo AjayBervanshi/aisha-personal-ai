@@ -14,13 +14,359 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      aisha_conversations: {
+        Row: {
+          created_at: string | null
+          id: string
+          language: string | null
+          message: string
+          mood_detected: string | null
+          platform: string | null
+          role: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          language?: string | null
+          message: string
+          mood_detected?: string | null
+          platform?: string | null
+          role: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          language?: string | null
+          message?: string
+          mood_detected?: string | null
+          platform?: string | null
+          role?: string
+        }
+        Relationships: []
+      }
+      aisha_finance: {
+        Row: {
+          amount: number
+          category: string | null
+          created_at: string | null
+          currency: string | null
+          date: string | null
+          description: string
+          goal_by: string | null
+          goal_target: number | null
+          id: string
+          is_recurring: boolean | null
+          recur_freq: string | null
+          type: string
+        }
+        Insert: {
+          amount: number
+          category?: string | null
+          created_at?: string | null
+          currency?: string | null
+          date?: string | null
+          description: string
+          goal_by?: string | null
+          goal_target?: number | null
+          id?: string
+          is_recurring?: boolean | null
+          recur_freq?: string | null
+          type: string
+        }
+        Update: {
+          amount?: number
+          category?: string | null
+          created_at?: string | null
+          currency?: string | null
+          date?: string | null
+          description?: string
+          goal_by?: string | null
+          goal_target?: number | null
+          id?: string
+          is_recurring?: boolean | null
+          recur_freq?: string | null
+          type?: string
+        }
+        Relationships: []
+      }
+      aisha_goals: {
+        Row: {
+          achieved_at: string | null
+          category: string | null
+          created_at: string | null
+          description: string | null
+          id: string
+          progress: number | null
+          status: string | null
+          target_date: string | null
+          timeframe: string | null
+          title: string
+          updated_at: string | null
+        }
+        Insert: {
+          achieved_at?: string | null
+          category?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          progress?: number | null
+          status?: string | null
+          target_date?: string | null
+          timeframe?: string | null
+          title: string
+          updated_at?: string | null
+        }
+        Update: {
+          achieved_at?: string | null
+          category?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          progress?: number | null
+          status?: string | null
+          target_date?: string | null
+          timeframe?: string | null
+          title?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      aisha_journal: {
+        Row: {
+          aisha_note: string | null
+          created_at: string | null
+          date: string | null
+          entry: string
+          id: string
+          mood: string | null
+          mood_score: number | null
+          tags: string[] | null
+        }
+        Insert: {
+          aisha_note?: string | null
+          created_at?: string | null
+          date?: string | null
+          entry: string
+          id?: string
+          mood?: string | null
+          mood_score?: number | null
+          tags?: string[] | null
+        }
+        Update: {
+          aisha_note?: string | null
+          created_at?: string | null
+          date?: string | null
+          entry?: string
+          id?: string
+          mood?: string | null
+          mood_score?: number | null
+          tags?: string[] | null
+        }
+        Relationships: []
+      }
+      aisha_memory: {
+        Row: {
+          category: string
+          content: string
+          created_at: string | null
+          embedding: string | null
+          id: string
+          importance: number | null
+          is_active: boolean | null
+          source: string | null
+          tags: string[] | null
+          title: string
+          updated_at: string | null
+        }
+        Insert: {
+          category: string
+          content: string
+          created_at?: string | null
+          embedding?: string | null
+          id?: string
+          importance?: number | null
+          is_active?: boolean | null
+          source?: string | null
+          tags?: string[] | null
+          title: string
+          updated_at?: string | null
+        }
+        Update: {
+          category?: string
+          content?: string
+          created_at?: string | null
+          embedding?: string | null
+          id?: string
+          importance?: number | null
+          is_active?: boolean | null
+          source?: string | null
+          tags?: string[] | null
+          title?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      aisha_mood_tracker: {
+        Row: {
+          created_at: string | null
+          date: string | null
+          id: string
+          mood: string
+          mood_score: number | null
+          notes: string | null
+          time_of_day: string | null
+          triggers: string[] | null
+        }
+        Insert: {
+          created_at?: string | null
+          date?: string | null
+          id?: string
+          mood: string
+          mood_score?: number | null
+          notes?: string | null
+          time_of_day?: string | null
+          triggers?: string[] | null
+        }
+        Update: {
+          created_at?: string | null
+          date?: string | null
+          id?: string
+          mood?: string
+          mood_score?: number | null
+          notes?: string | null
+          time_of_day?: string | null
+          triggers?: string[] | null
+        }
+        Relationships: []
+      }
+      aisha_schedule: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          due_date: string | null
+          due_time: string | null
+          id: string
+          is_recurring: boolean | null
+          priority: string | null
+          recur_days: string[] | null
+          reminder_sent: boolean | null
+          status: string | null
+          title: string
+          type: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          due_date?: string | null
+          due_time?: string | null
+          id?: string
+          is_recurring?: boolean | null
+          priority?: string | null
+          recur_days?: string[] | null
+          reminder_sent?: boolean | null
+          status?: string | null
+          title: string
+          type?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          due_date?: string | null
+          due_time?: string | null
+          id?: string
+          is_recurring?: boolean | null
+          priority?: string | null
+          recur_days?: string[] | null
+          reminder_sent?: boolean | null
+          status?: string | null
+          title?: string
+          type?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      ajay_profile: {
+        Row: {
+          created_at: string | null
+          current_mood: string | null
+          id: string
+          languages: string[] | null
+          name: string
+          nickname: string | null
+          personality_notes: string | null
+          preferred_lang: string | null
+          timezone: string | null
+          updated_at: string | null
+          voice_preference: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          current_mood?: string | null
+          id?: string
+          languages?: string[] | null
+          name?: string
+          nickname?: string | null
+          personality_notes?: string | null
+          preferred_lang?: string | null
+          timezone?: string | null
+          updated_at?: string | null
+          voice_preference?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          current_mood?: string | null
+          id?: string
+          languages?: string[] | null
+          name?: string
+          nickname?: string | null
+          personality_notes?: string | null
+          preferred_lang?: string | null
+          timezone?: string | null
+          updated_at?: string | null
+          voice_preference?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
-      [_ in never]: never
+      monthly_finance: {
+        Row: {
+          expense_count: number | null
+          month: string | null
+          total_expense: number | null
+          total_income: number | null
+          total_saved: number | null
+        }
+        Relationships: []
+      }
+      today_summary: {
+        Row: {
+          active_goals: number | null
+          completed_tasks: number | null
+          last_mood: string | null
+          pending_tasks: number | null
+          todays_spending: number | null
+        }
+        Relationships: []
+      }
+      top_memories: {
+        Row: {
+          category: string | null
+          content: string | null
+          created_at: string | null
+          id: string | null
+          importance: number | null
+          tags: string[] | null
+          title: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
-      [_ in never]: never
+      cleanup_old_conversations: { Args: never; Returns: undefined }
+      get_aisha_context: { Args: never; Returns: string }
     }
     Enums: {
       [_ in never]: never
