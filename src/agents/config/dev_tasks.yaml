@@ -1,0 +1,23 @@
+write_code_task:
+  description: >
+    Write Python code to solve the following task: {task_description}. The code must be production-ready,
+    follow PEP-8, and be designed as an Aisha 'skill' using the @aisha_skill decorator if applicable.
+  expected_output: >
+    A well-documented Python module containing the required functionality.
+  agent: dev
+
+test_code_task:
+  description: >
+    Take the code written by the Dev agent and write a comprehensive unittest test suite for it. Ensure
+    the tests cover both the happy path and potential edge cases.
+  expected_output: >
+    A complete Python unittest script.
+  agent: tester
+
+review_code_task:
+  description: >
+    Review the code from Dev and the tests from Tester. Check for any security issues (like hardcoded keys),
+    logic flaws, and overall code quality. If everything is perfect, provide a final approval summarizing the code.
+  expected_output: >
+    A detailed review report ending with either 'APPROVED' or a list of required fixes.
+  agent: reviewer

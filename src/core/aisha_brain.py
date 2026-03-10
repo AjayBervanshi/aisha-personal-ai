@@ -229,7 +229,7 @@ Time: {current_time} IST | Mood: {mood} | Language: {language}
 # ─── Memory Manager ────────────────────────────────────────────────────────────
 
 class MemoryManager:
-    def __init__(self, supabase: Client):
+    def __init__(self, supabase):
         self.db = supabase
 
     def load_context(self) -> dict:
@@ -359,7 +359,7 @@ class AishaBrain:
         mood     = detect_mood(user_message)
 
         # 2. Load Ajay's context from Supabase
-        context = self.memory.load_context()
+        context = self.memory.load_context(user_message)
         context["language"] = language
         context["mood"]     = mood
 

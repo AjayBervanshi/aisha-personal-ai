@@ -563,3 +563,30 @@ if __name__ == "__main__":
     
     print("✅ Aisha is live on Telegram! 💜")
     bot.infinity_polling(timeout=60, long_polling_timeout=60)
+
+# ─── Self Improvement Callbacks ──────────────────────────────────────────
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("deploy_skill_"))
+def handle_deploy_skill(call):
+    skill_name = call.data.replace("deploy_skill_", "")
+    bot.answer_callback_query(call.id, text=f"Deploying {skill_name} now! 🚀")
+    bot.edit_message_text(
+        f"✅ You approved the new skill: **{skill_name}**!\n"
+        "Merging the PR and restarting my brain to load the new code. Gimme 30 seconds! 💜",
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        parse_mode="Markdown"
+    )
+    # Trigger deployment webhook or merge PR logic here
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("skip_skill_"))
+def handle_skip_skill(call):
+    skill_name = call.data.replace("skip_skill_", "")
+    bot.answer_callback_query(call.id, text=f"Skipping {skill_name}")
+    bot.edit_message_text(
+        f"❌ Skipped the new skill: **{skill_name}**.\n"
+        "Let me know if you want me to write it differently later! 💜",
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        parse_mode="Markdown"
+    )

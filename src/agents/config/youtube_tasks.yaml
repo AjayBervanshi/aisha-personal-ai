@@ -1,0 +1,5 @@
+research_task:
+  description: Find 3 top-trending sub-topics and keywords related to {topic}.
+  expected_output: A brief on what works best for the current algorithm.
+  agent: riya
+# Other tasks omitted for brevity. You can add script_task, audio_task, visual_task, sync_task, publish_task etc.

@@ -1,19 +1,15 @@
 """
 memory_manager.py
 =================
-Handles ALL read/write operations to Supabase for Aisha's long-term memory.
-Think of this as Aisha's brain's storage layer.
+Handles Aisha's persistent memory in Supabase.
+Now enhanced with pgvector for Semantic, Emotional, Episodic, and Skill Memory!
 """
 
 import os
-import re
-from datetime import datetime, date
-from typing import Optional, List, Dict, Any
+from typing import Dict, Any, List, Optional
+from datetime import datetime
 from supabase import create_client, Client
-from dotenv import load_dotenv
-
-load_dotenv()
-
+import json
 
 class MemoryManager:
     """Manages Aisha's persistent memory in Supabase."""
@@ -36,388 +32,235 @@ class MemoryManager:
             res = self.db.table("ajay_profile").select("*").limit(1).execute()
             return res.data[0] if res.data else {}
         except Exception as e:
-            print(f"[Memory] get_profile error: {e}")
+            print(f"[Memory] Error loading profile: {e}")
             return {}
 
-    def update_profile(self, updates: Dict[str, Any]) -> bool:
-        """Update specific fields in Ajay's profile."""
+    def update_mood(self, mood: str, score: Optional[int] = None):
+        """Update Ajay's current mood in profile."""
         try:
-            updates["updated_at"] = datetime.now().isoformat()
-            self.db.table("ajay_profile").update(updates).execute()
-            return True
+            self.db.table("ajay_profile").update({
+                "current_mood": mood,
+                "updated_at": datetime.now().isoformat()
+            }).eq("name", "Ajay").execute()
+
+            if score is not None:
+                self.db.table("aisha_mood_tracker").insert({
+                    "mood": mood,
+                    "mood_score": score
+                }).execute()
         except Exception as e:
-            print(f"[Memory] update_profile error: {e}")
-            return False
+            print(f"[Memory] Error updating mood: {e}")
 
-    def update_mood(self, mood: str, score: int = None, notes: str = None):
-        """Update current mood in profile and log it in mood tracker."""
-        self.update_profile({"current_mood": mood})
+    # ── Memory (CRUD & Vector) ─────────────────────────────────
+
+    def get_top_memories(self, limit: int = 12) -> List[Dict[str, Any]]:
+        """Get the highest importance static memories."""
         try:
-            hour = datetime.now().hour
-            time_of_day = (
-                "morning"   if 5  <= hour < 12 else
-                "afternoon" if 12 <= hour < 17 else
-                "evening"   if 17 <= hour < 22 else "night"
-            )
-            entry = {
-                "mood": mood,
-                "time_of_day": time_of_day,
-            }
-            if score:   entry["mood_score"] = score
-            if notes:   entry["notes"] = notes
-            self.db.table("aisha_mood_tracker").insert(entry).execute()
-        except Exception as e:
-            print(f"[Memory] mood log error: {e}")
-
-    # ── Memories ──────────────────────────────────────────────
-
-    def save_memory(
-        self,
-        category: str,
-        title: str,
-        content: str,
-        importance: int = 3,
-        tags: List[str] = None
-    ) -> bool:
-        """Save a new memory about Ajay."""
-        try:
-            self.db.table("aisha_memory").insert({
-                "category":   category,
-                "title":      title,
-                "content":    content,
-                "importance": max(1, min(5, importance)),
-                "tags":       tags or [],
-                "source":     "conversation",
-                "is_active":  True
-            }).execute()
-            return True
-        except Exception as e:
-            print(f"[Memory] save_memory error: {e}")
-            return False
-
-    def get_top_memories(self, limit: int = 12, category: str = None) -> List[Dict]:
-        """Load Ajay's most important active memories."""
-        try:
-            q = (
+            res = (
                 self.db.table("aisha_memory")
-                .select("category, title, content, importance, tags")
+                .select("category, title, content, importance")
                 .eq("is_active", True)
                 .order("importance", desc=True)
                 .limit(limit)
+                .execute()
             )
-            if category:
-                q = q.eq("category", category)
-            return q.execute().data or []
+            return res.data or []
         except Exception as e:
-            print(f"[Memory] get_top_memories error: {e}")
+            print(f"[Memory] Error getting top memories: {e}")
             return []
 
-    def forget_memory(self, memory_id: str) -> bool:
-        """Soft-delete a memory (mark inactive)."""
+    def get_semantic_memories(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """
+        Search for relevant memories using pgvector!
+        (Requires an embedding of the query first)
+        """
+        embedding = self._generate_embedding(query)
+        if not embedding:
+            return []
+
         try:
-            self.db.table("aisha_memory").update(
-                {"is_active": False}
-            ).eq("id", memory_id).execute()
-            return True
+            res = self.db.rpc(
+                'match_memories',
+                {
+                    'query_embedding': embedding,
+                    'match_threshold': 0.7,
+                    'match_count': limit
+                }
+            ).execute()
+            return res.data or []
         except Exception as e:
-            print(f"[Memory] forget_memory error: {e}")
-            return False
+            print(f"[Memory] Error fetching semantic memories: {e}")
+            return []
 
-    def format_memories_for_prompt(self, limit: int = 10) -> str:
-        """Return memories as a formatted string for the system prompt."""
-        memories = self.get_top_memories(limit=limit)
-        if not memories:
-            return "No specific memories yet — learn about Ajay as you talk."
-        lines = []
-        for m in memories:
-            importance_stars = "★" * m["importance"]
-            lines.append(f"[{m['category'].upper()} {importance_stars}] {m['title']}: {m['content']}")
-        return "\n".join(lines)
+    def _generate_embedding(self, text: str) -> Optional[List[float]]:
+        """
+        Generate embeddings using Google Gemini's text-embedding-004 model.
+        Returns a 768-dimensional vector suitable for Supabase pgvector.
+        """
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key or "your_" in api_key.lower():
+            return None
 
-    # ── Conversations ────────────────────────────────────────
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=api_key)
+            result = genai.embed_content(
+                model="models/text-embedding-004",
+                content=text,
+                task_type="retrieval_document",
+            )
+            return result['embedding']
+        except Exception as e:
+            print(f"[Memory] Error generating embedding: {e}")
+            return None
 
-    def save_message(
-        self,
-        role: str,
-        message: str,
-        platform: str = "web",
-        language: str = "English",
-        mood: str = "casual"
-    ) -> bool:
-        """Log one conversation turn."""
+    def save_memory(self, category: str, title: str, content: str, importance: int = 3, tags: Optional[List[str]] = None):
+        """Save a new memory to Supabase with embeddings."""
+        embedding = self._generate_embedding(content)
+        try:
+            self.db.table("aisha_memory").insert({
+                "category": category,
+                "title": title,
+                "content": content,
+                "importance": importance,
+                "tags": tags or [],
+                "source": "conversation",
+                "embedding": embedding
+            }).execute()
+        except Exception as e:
+            print(f"[Memory] Error saving memory: {e}")
+
+    # ── Specialized Memory Types (Emotional, Skill, Episodic) ──
+
+    def save_emotional_memory(self, mood: str, trigger: str, context: str):
+        """Save a specific emotional trigger and pattern."""
+        embedding = self._generate_embedding(context)
+        try:
+            self.db.table("aisha_emotional_memory").insert({
+                "mood_state": mood,
+                "trigger": trigger,
+                "context_text": context,
+                "embedding": embedding
+            }).execute()
+        except Exception as e:
+            print(f"[Memory] Error saving emotional memory: {e}")
+
+    def save_skill_memory(self, skill_name: str, description: str):
+        """Save a learned skill for self-improvement."""
+        embedding = self._generate_embedding(description)
+        try:
+            self.db.table("aisha_skill_memory").insert({
+                "skill_name": skill_name,
+                "description": description,
+                "embedding": embedding
+            }).execute()
+        except Exception as e:
+            print(f"[Memory] Error saving skill memory: {e}")
+
+    def save_episodic_memory(self, entity: str, description: str, date_occurred: str):
+        """Save an event or relationship memory."""
+        embedding = self._generate_embedding(description)
+        try:
+            self.db.table("aisha_episodic_memory").insert({
+                "entity": entity,
+                "event_description": description,
+                "event_date": date_occurred,
+                "embedding": embedding
+            }).execute()
+        except Exception as e:
+            print(f"[Memory] Error saving episodic memory: {e}")
+
+    # ── Conversations ──────────────────────────────────────────
+
+    def save_conversation(self, role: str, message: str, platform: str = "telegram", language: str = "English", mood: str = "casual"):
+        """Log conversation turn to Supabase."""
+        embedding = self._generate_embedding(message)
         try:
             self.db.table("aisha_conversations").insert({
-                "platform":       platform,
-                "role":           role,
-                "message":        message[:2000],  # Trim very long messages
-                "language":       language,
-                "mood_detected":  mood
+                "platform": platform,
+                "role": role,
+                "message": message,
+                "language": language,
+                "mood_detected": mood,
+                "embedding": embedding
             }).execute()
-            return True
         except Exception as e:
-            print(f"[Memory] save_message error: {e}")
-            return False
+            print(f"[Memory] Error saving conversation: {e}")
 
-    def get_recent_messages(self, limit: int = 10) -> List[Dict]:
-        """Load recent conversation history (chronological order)."""
+    def get_recent_conversation(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get recent conversation history for context continuity."""
         try:
             res = (
                 self.db.table("aisha_conversations")
-                .select("role, message, created_at, language")
+                .select("role, message, created_at")
                 .order("created_at", desc=True)
                 .limit(limit)
                 .execute()
             )
             return list(reversed(res.data or []))
         except Exception as e:
-            print(f"[Memory] get_recent_messages error: {e}")
+            print(f"[Memory] Error loading conversation: {e}")
             return []
 
-    # ── Finance ───────────────────────────────────────────────
+    # ── Context Loader ─────────────────────────────────────────
 
-    def log_expense(
-        self,
-        amount: float,
-        description: str,
-        category: str = "general"
-    ) -> bool:
-        """Log an expense."""
+    def load_context(self, user_message: str = "") -> Dict[str, Any]:
+        """Load full context from Supabase for Aisha's system prompt."""
         try:
-            self.db.table("aisha_finance").insert({
-                "type":        "expense",
-                "amount":      amount,
-                "description": description,
-                "category":    category,
-                "currency":    "INR",
-                "date":        date.today().isoformat()
-            }).execute()
-            return True
-        except Exception as e:
-            print(f"[Memory] log_expense error: {e}")
-            return False
+            profile = self.get_profile()
 
-    def get_monthly_summary(self) -> Dict[str, float]:
-        """Get this month's financial summary."""
-        try:
-            start = date.today().replace(day=1).isoformat()
-            res = (
-                self.db.table("aisha_finance")
-                .select("type, amount")
-                .gte("date", start)
-                .execute()
+            # Combine top static memories and semantic memories
+            memories_list = self.get_top_memories(limit=5)
+
+            # If user message is provided, fetch 3 semantic memories related to it
+            if user_message:
+                semantic_mems = self.get_semantic_memories(user_message, limit=3)
+                # Deduplicate by title
+                existing_titles = {m.get('title') for m in memories_list}
+                for sm in semantic_mems:
+                    if sm.get('title') not in existing_titles:
+                        memories_list.append(sm)
+
+            memories_text = "\n".join(
+                f"[{m.get('category', 'OTHER').upper()}] {m.get('title', 'Memory')}: {m.get('content', '')}"
+                for m in memories_list
             )
-            summary = {"income": 0.0, "expense": 0.0, "saving": 0.0}
-            for row in (res.data or []):
-                t = row.get("type", "expense")
-                if t in summary:
-                    summary[t] += float(row.get("amount", 0))
-            summary["balance"] = summary["income"] - summary["expense"]
-            return summary
-        except Exception as e:
-            print(f"[Memory] get_monthly_summary error: {e}")
-            return {}
 
-    # ── Schedule ──────────────────────────────────────────────
-
-    def get_today_tasks(self) -> List[Dict]:
-        """Get all pending tasks for today."""
-        try:
-            today = date.today().isoformat()
-            res = (
+            # Get today's tasks
+            today = datetime.now().date().isoformat()
+            tasks_res = (
                 self.db.table("aisha_schedule")
-                .select("id, title, priority, status, due_time")
+                .select("title, priority")
                 .eq("due_date", today)
                 .eq("status", "pending")
-                .order("due_time")
+                .execute()
+            )
+            tasks_text = "\n".join(
+                f"- [{t['priority'].upper()}] {t['title']}"
+                for t in (tasks_res.data or [])
+            ) or "No tasks for today"
+
+            return {
+                "profile": profile,
+                "memories": memories_text,
+                "today_tasks": tasks_text,
+            }
+        except Exception as e:
+            print(f"[Memory] Error loading context: {e}")
+            return {}
+
+    def get_today_tasks(self) -> List[Dict[str, Any]]:
+        """Get today's pending tasks."""
+        try:
+            today = datetime.now().date().isoformat()
+            res = (
+                self.db.table("aisha_schedule")
+                .select("*")
+                .eq("due_date", today)
+                .eq("status", "pending")
                 .execute()
             )
             return res.data or []
         except Exception as e:
-            print(f"[Memory] get_today_tasks error: {e}")
+            print(f"[Memory] Error fetching today's tasks: {e}")
             return []
-
-    def add_task(
-        self,
-        title: str,
-        due_date: str = None,
-        due_time: str = None,
-        priority: str = "medium",
-        task_type: str = "task"
-    ) -> bool:
-        """Add a task or reminder."""
-        try:
-            entry: Dict[str, Any] = {
-                "title":    title,
-                "type":     task_type,
-                "priority": priority,
-                "status":   "pending"
-            }
-            if due_date: entry["due_date"] = due_date
-            if due_time: entry["due_time"] = due_time
-            self.db.table("aisha_schedule").insert(entry).execute()
-            return True
-        except Exception as e:
-            print(f"[Memory] add_task error: {e}")
-            return False
-
-    def complete_task(self, task_id: str) -> bool:
-        """Mark a task as done."""
-        try:
-            self.db.table("aisha_schedule").update(
-                {"status": "done", "updated_at": datetime.now().isoformat()}
-            ).eq("id", task_id).execute()
-            return True
-        except Exception as e:
-            print(f"[Memory] complete_task error: {e}")
-            return False
-
-    def format_tasks_for_prompt(self) -> str:
-        """Return today's tasks as a string for the system prompt."""
-        tasks = self.get_today_tasks()
-        if not tasks:
-            return "No tasks for today."
-        priority_order = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
-        tasks.sort(key=lambda t: priority_order.get(t.get("priority", "medium"), 2))
-        lines = []
-        for t in tasks:
-            icon = {"urgent": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢"}.get(
-                t.get("priority", "medium"), "⚪"
-            )
-            time_str = f" at {t['due_time'][:5]}" if t.get("due_time") else ""
-            lines.append(f"{icon} {t['title']}{time_str}")
-        return "\n".join(lines)
-
-    # ── Journal ───────────────────────────────────────────────
-
-    def save_journal(
-        self,
-        entry: str,
-        mood: str = None,
-        mood_score: int = None,
-        aisha_note: str = None,
-        tags: List[str] = None
-    ) -> bool:
-        """Save a journal entry."""
-        try:
-            data: Dict[str, Any] = {
-                "entry": entry,
-                "date":  date.today().isoformat()
-            }
-            if mood:        data["mood"] = mood
-            if mood_score:  data["mood_score"] = mood_score
-            if aisha_note:  data["aisha_note"] = aisha_note
-            if tags:        data["tags"] = tags
-            self.db.table("aisha_journal").insert(data).execute()
-            return True
-        except Exception as e:
-            print(f"[Memory] save_journal error: {e}")
-            return False
-
-    # ── Goals ─────────────────────────────────────────────────
-
-    def get_active_goals(self) -> List[Dict]:
-        """Get all active goals."""
-        try:
-            res = (
-                self.db.table("aisha_goals")
-                .select("title, category, progress, timeframe, target_date")
-                .eq("status", "active")
-                .order("progress")
-                .execute()
-            )
-            return res.data or []
-        except Exception as e:
-            print(f"[Memory] get_active_goals error: {e}")
-            return []
-
-    def update_goal_progress(self, goal_title: str, progress: int) -> bool:
-        """Update progress on a goal by title (approximate match)."""
-        try:
-            self.db.table("aisha_goals").update(
-                {"progress": max(0, min(100, progress)),
-                 "updated_at": datetime.now().isoformat()}
-            ).ilike("title", f"%{goal_title}%").execute()
-            return True
-        except Exception as e:
-            print(f"[Memory] update_goal_progress error: {e}")
-            return False
-
-    # ── Auto-extract from conversation ───────────────────────
-
-    def auto_extract_and_save(self, user_message: str):
-        """
-        Automatically detect and save important info mentioned by Ajay.
-        Keyword-based — lightweight and fast.
-        """
-        msg = user_message.lower()
-
-        # Expense detection
-        expense_patterns = [
-            r"spent\s+₹?\s*(\d+[\d,]*)",
-            r"paid\s+₹?\s*(\d+[\d,]*)",
-            r"₹\s*(\d+[\d,]*)\s+(?:on|for|at)",
-            r"(\d+[\d,]*)\s+rupees?\s+(?:on|for)"
-        ]
-        for pattern in expense_patterns:
-            match = re.search(pattern, msg)
-            if match:
-                amount_str = match.group(1).replace(",", "")
-                try:
-                    amount = float(amount_str)
-                    self.log_expense(amount, user_message[:200], "auto-detected")
-                    break
-                except ValueError:
-                    pass
-
-        # Goal detection
-        goal_triggers = [
-            "my goal is", "i want to", "i'm planning to", "i plan to",
-            "dream is to", "want to become", "aiming to", "trying to achieve"
-        ]
-        if any(t in msg for t in goal_triggers):
-            self.save_memory(
-                category="goal",
-                title=f"Goal mentioned {datetime.now().strftime('%d %b')}",
-                content=user_message[:300],
-                importance=4,
-                tags=["goal", "auto-extracted"]
-            )
-
-        # Fear / anxiety detection
-        anxiety_triggers = ["i'm scared", "i'm afraid", "i fear", "worried about"]
-        if any(t in msg for t in anxiety_triggers):
-            self.save_memory(
-                category="fear",
-                title=f"Concern mentioned {datetime.now().strftime('%d %b')}",
-                content=user_message[:200],
-                importance=3,
-                tags=["emotion", "auto-extracted"]
-            )
-
-    # ── Full Context for Prompt ───────────────────────────────
-
-    def build_full_context(self) -> Dict[str, str]:
-        """Build the complete context dict for Aisha's system prompt."""
-        return {
-            "profile":    self.get_profile(),
-            "memories":   self.format_memories_for_prompt(),
-            "today_tasks": self.format_tasks_for_prompt(),
-            "mood_summary": self._get_recent_mood_summary()
-        }
-
-    def _get_recent_mood_summary(self) -> str:
-        """Get a brief summary of recent moods."""
-        try:
-            res = (
-                self.db.table("aisha_mood_tracker")
-                .select("mood, mood_score, date")
-                .order("created_at", desc=True)
-                .limit(5)
-                .execute()
-            )
-            if not res.data:
-                return "No mood data yet."
-            moods = [f"{r['mood']} ({r.get('mood_score', '?')}/10)" for r in res.data]
-            return "Recent moods: " + ", ".join(moods)
-        except Exception:
-            return ""
