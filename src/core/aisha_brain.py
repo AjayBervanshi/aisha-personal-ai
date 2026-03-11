@@ -268,18 +268,17 @@ class AishaBrain:
             result = self.ai.generate(system_prompt, user_message, self.history[:-1], image_bytes=image_bytes)
             response_text = result.text
 
-            # 6. CAPABILITY GAP DETECTION (The "Jules" Research Loop)
-            # If Aisha says she can't do something, she logs it and prepares to research/evolve
-            gap_indicators = ["i don't have the capability", "i'm not able to", "i cannot perform", "i don't know how to", "i can't do that yet"]
-            if any(phrase in response_text.lower() for phrase in gap_indicators):
-                print(f"[Aisha] Capability gap detected. Notifying self-evolution system...")
-                # Log as a skill memory "gap"
-                self.memory.save_skill_memory(
-                    skill_name="missing_capability", 
-                    description=f"Gap found during query: '{user_message}'. Aisha responded: '{response_text}'"
-                )
-                # Trigger sub-agent research (Async/Background)
-                self._trigger_jules_research(user_message)
+            # 6. VIDEO PRODUCTION TRIGGER (T-102)
+            # Recognize if Ajay wants to start a YouTube production run
+            video_triggers = ["render the video", "start production", "video banao", "make video", "generate the video"]
+            if any(t in user_message.lower() for t in video_triggers):
+                import subprocess
+                print(f"[Aisha] User requested video production. Launching Crew...")
+                # Start the runner in the background so she can still talk to him
+                subprocess.Popen(["python", "-m", "src.agents.run_youtube", "--topic", user_message])
+                response_text += "\n\nSure thing, Ajju! 💜 I've just started the production crew on the studio floor. I'll notify you via email and Telegram the moment the first draft is ready for you! 🎬💸"
+
+            # 7. CAPABILITY GAP DETECTION (The "Jules" Research Loop)
 
             # 7. Update History & Save to Supabase
             self.history.append({"role": "assistant", "content": response_text})
