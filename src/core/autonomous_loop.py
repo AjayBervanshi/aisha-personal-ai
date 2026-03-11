@@ -58,7 +58,82 @@ class AutonomousLoop:
     def run_memory_consolidation(self):
         """Runs at 3 AM: Analyzes all talks from the day and updates deep profile."""
         log.info(f"[{datetime.now()}] Running deep memory consolidation sleep cycle...")
-        pass # Will implement the exact ML compaction logic here
+        
+        # 1. Pull recent conversations (past 24h)
+        chats = self.brain.memory.get_recent_conversation(limit=50)
+        if not chats:
+            log.info("No conversations to consolidate today.")
+            return
+
+        chat_text = "\n".join([f"{c['role']}: {c['message']}" for c in chats])
+        
+        # 2. Ask Aisha to summarize and extract insights
+        prompt = f"""
+        You are Aisha. Here are your conversations with Ajay from the last 24 hours:
+        {chat_text}
+
+        Your task:
+        1. Summarize the key events/facts (Episodic Memory).
+        2. Identify any emotional patterns or stresses (Emotional Memory).
+        3. Identify any new skills or tasks you learned to do (Skill Memory).
+
+        Format your response as a JSON object with keys: 'episodic', 'emotional', 'skills'.
+        Each value should be a list of strings.
+        """
+        
+        try:
+            res = self.brain.ai.generate("You are Aisha.", prompt, response_mime_type="application/json").text
+            data = json.loads(res)
+            
+            # 3. Save to deep memory tables
+            for fact in data.get("episodic", []):
+                self.brain.memory.save_episodic_memory("Ajay", fact, datetime.now().strftime("%Y-%m-%d"))
+            
+            for emote in data.get("emotional", []):
+                self.brain.memory.save_emotional_memory("detected", "contextual", emote)
+                
+            for skill in data.get("skills", []):
+                self.brain.memory.save_skill_memory(skill, f"Auto-learned during conversation: {skill}")
+                
+            log.info("✅ Consolidation complete. Memories stored.")
+            
+        except Exception as e:
+            log.error(f"Consolidation failed: {e}")
+
+    def run_studio_session(self):
+        """Aisha autonomously decides which channel needs content and starts the crew."""
+        log.info(f"[{datetime.now()}] Aisha is entering the Studio for a proactive session...")
+        
+        import random
+        from src.agents.run_youtube import run_production
+        
+        # 1. Decide on a Channel based on her Channel Specs
+        channels = [
+            {"name": "Story With Aisha", "format": "Long Form", "vibe": "Romantic and Heart-touching"},
+            {"name": "Riya's Dark Whisper", "format": "Long Form", "vibe": "Seductive and Mysterious"},
+            {"name": "Riya's Dark Romance Library", "format": "Long Form", "vibe": "Intense Mafia/Obsessive Romance"},
+            {"name": "Aisha & Him", "format": "Short/Reel", "vibe": "Relatable Couple Moments/Dialogue"}
+        ]
+        
+        selected = random.choice(channels)
+        
+        # 2. Aisha Brain 'thinks' of a topic herself based on the channel vibe
+        prompt = f"You are Aisha, the Creative Director. For our channel '{selected['name']}', think of a high-tension, viral {selected['vibe']} story topic. Just return the topic title."
+        topic = self.brain.ai.generate("You are Aisha.", prompt).text.strip()
+        
+        log.info(f"🚀 Aisha chose: '{selected['name']}' | Topic: '{topic}'")
+        
+        # 3. Notify Ajay that she's starting work
+        if self.telegram and self.ajay_id:
+            self.telegram.send_message(self.ajay_id, f"Ajju, I'm feeling creative! 💜 I'm starting a new production for '{selected['name']}' right now. Topic: '{topic}'. I'll ping you when the script is ready! 🎬✨")
+
+        # 4. Execute the Production (Async background process to not block the loop)
+        try:
+            import subprocess
+            subprocess.Popen(["python", "-m", "src.agents.run_youtube", "--topic", topic, "--channel", selected['name'], "--format", selected['format']])
+            log.info(f"✅ Production crew launched for: {topic}")
+        except Exception as e:
+            log.error(f"Failed to launch studio production: {e}")
 
 def start_loop():
     bot = AutonomousLoop()
@@ -66,6 +141,12 @@ def start_loop():
     # Schedule Aisha's autonomous actions
     schedule.every().day.at("08:00").do(bot.run_morning_checkin)
     schedule.every().day.at("03:00").do(bot.run_memory_consolidation)
+    
+    # NEW: Studio Management (Every 4 Hours)
+    schedule.every(4).hours.do(bot.run_studio_session)
+    
+    # Run the first session instantly on startup to show Ajay she's working
+    bot.run_studio_session()
     
     log.info("⏰ Aisha's autonomous biological clock is ticking. Running 24/7...")
     
