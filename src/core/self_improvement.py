@@ -65,6 +65,43 @@ def create_github_pr(title: str, body: str, branch_name: str, file_path: str, fi
     return pr_res.get("html_url", "Failed to create PR")
 
 
+def get_pr_number_from_url(pr_url: str) -> int:
+    """Extracts PR number from GitHub URL."""
+    try:
+        return int(pr_url.split("/")[-1])
+    except:
+        return 0
+
+
+def merge_github_pr(pr_number: int) -> bool:
+    """
+    Merges a PR on GitHub.
+    """
+    token = os.getenv("GITHUB_TOKEN")
+    repo = os.getenv("GITHUB_REPO")
+    if not token or not repo or not pr_number:
+        return False
+
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/merge"
+
+    res = requests.put(url, headers=headers, json={
+        "commit_title": f"Auto-merging skill #{pr_number}",
+        "merge_method": "merge"
+    })
+
+    if res.status_code in [200, 201]:
+        log.info(f"Successfully merged PR #{pr_number}")
+        return True
+    else:
+        log.error(f"Failed to merge PR #{pr_number}: {res.text}")
+        return False
+
+
+
 def notify_ajay_for_approval(skill_name: str, pr_url: str):
     """
     Sends an interactive message to Ajay on Telegram to approve/review the PR.

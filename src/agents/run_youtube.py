@@ -9,15 +9,17 @@ import sys
 import argparse
 from src.agents.youtube_crew import YouTubeCrew
 
-def run_production(topic: str):
-    print(f"[YouTube Crew] Starting production on topic: '{topic}'")
+def run_production(topic: str, channel: str, format: str):
+    print(f"[YouTube Crew] Starting production for {channel} ({format})")
     
     # 1. Assemble the Crew
     crew_instance = YouTubeCrew()
     
     # 2. Kickoff the Sequential Process
     inputs = {
-        'topic': topic
+        'topic': topic,
+        'channel': channel,
+        'format': format
     }
     
     try:
@@ -28,13 +30,13 @@ def run_production(topic: str):
         print(f"Final Deliverable Details:\n{result}")
         print("-" * 50)
         
-        # 3. Notify Ajay via Gmail (since we just set it up!)
+        # 3. Notify Ajay via Gmail
         from src.core.gmail_engine import GmailEngine
         gmail = GmailEngine()
         gmail.send_email(
             "aishaa1662001@gmail.com",
-            f"YouTube Production Complete: {topic[:30]}",
-            f"Hey Ajay! I've finished the production phase for our new video.\n\n"
+            f"Production Complete: {channel} - {topic[:20]}",
+            f"Hey Ajay! I've finished the storytelling assets for {channel}.\n\n"
             f"Deliverable Details:\n{result}\n\n"
             f"Next step: Final video rendering and upload. Ready for review! 💜💸"
         )
@@ -44,7 +46,9 @@ def run_production(topic: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Aisha's YouTube Production Runner")
-    parser.add_argument("--topic", type=str, default="How AI will create millionaires in 2026", help="The topic for the video")
+    parser.add_argument("--topic", type=str, default="A Late Night Secret", help="The topic for the video")
+    parser.add_argument("--channel", type=str, default="Aisha & Him", help="Which channel is this for?")
+    parser.add_argument("--format", type=str, default="Short/Reel", help="Short/Reel or Long Form")
     
     args = parser.parse_args()
-    run_production(args.topic)
+    run_production(args.topic, args.channel, args.format)

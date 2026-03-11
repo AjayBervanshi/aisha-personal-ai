@@ -30,12 +30,9 @@ def _get(key: str, default: str = None, required: bool = False) -> str:
 # AI KEYS
 # ══════════════════════════════════════════════════════════════
 GEMINI_API_KEY   = _get("GEMINI_API_KEY",   required=True)
-OPENAI_API_KEY   = _get("OPENAI_API_KEY",   required=False)
 GROQ_API_KEY     = _get("GROQ_API_KEY",     required=False)
-
-GEMINI_MODEL     = "gemini-2.5-flash"       # Best available on free tier
-OPENAI_MODEL     = "gpt-4o"                # Upgraded from mini
-GROQ_MODEL       = "llama-3.3-70b-versatile" # Groq's most powerful
+GEMINI_MODEL     = "gemini-1.5-flash"
+GROQ_MODEL       = "llama3-70b-8192"
 
 # ══════════════════════════════════════════════════════════════
 # TELEGRAM
@@ -57,13 +54,6 @@ ELEVENLABS_API_KEY  = _get("ELEVENLABS_API_KEY")
 ELEVENLABS_VOICE_ID = _get("ELEVENLABS_VOICE_ID")
 
 # ══════════════════════════════════════════════════════════════
-# GMAIL (aishaa1662001@gmail.com)
-# ══════════════════════════════════════════════════════════════
-GMAIL_USER         = _get("GMAIL_USER", required=False)
-GMAIL_APP_PASSWORD = _get("GMAIL_APP_PASSWORD", required=False)
-
-
-# ══════════════════════════════════════════════════════════════
 # APP SETTINGS
 # ══════════════════════════════════════════════════════════════
 USER_NAME    = _get("USER_NAME",  "Ajay")
@@ -74,8 +64,8 @@ IS_DEV       = APP_ENV == "development"
 
 # AI generation settings
 AI_TEMPERATURE   = 0.88
-AI_MAX_TOKENS    = 8000  # Increased for full story scripts (was 1024 — too small!)
-AI_HISTORY_LIMIT = 12    # Max turns to keep in context
+AI_MAX_TOKENS    = 1024
+AI_HISTORY_LIMIT = 12   # Max turns to keep in context
 
 # ══════════════════════════════════════════════════════════════
 # VALIDATION

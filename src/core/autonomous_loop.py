@@ -7,6 +7,7 @@ proactively, review her memories, browse for ideas, and text Ajay first.
 """
 
 import time
+import json
 import schedule
 import logging
 from datetime import datetime
@@ -25,7 +26,8 @@ class AutonomousLoop:
         bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
         self.ajay_id = os.getenv("AJAY_TELEGRAM_ID")
         self.telegram = telebot.TeleBot(bot_token) if bot_token else None
-        log.info("🌟 Autonomous Loop Initialized.")
+        self._used_topics = []  # Deduplication — never produce the same topic twice
+        log.info("[Aisha] Autonomous Loop Initialized.")
 
     def run_morning_checkin(self):
         """Proactively message Ajay in the morning based on his schedule & memory."""
@@ -102,38 +104,56 @@ class AutonomousLoop:
 
     def run_studio_session(self):
         """Aisha autonomously decides which channel needs content and starts the crew."""
-        log.info(f"[{datetime.now()}] Aisha is entering the Studio for a proactive session...")
+        log.info(f"[{datetime.now()}] Aisha entering Studio for proactive session...")
         
         import random
         from src.agents.run_youtube import run_production
         
-        # 1. Decide on a Channel based on her Channel Specs
         channels = [
-            {"name": "Story With Aisha", "format": "Long Form", "vibe": "Romantic and Heart-touching"},
-            {"name": "Riya's Dark Whisper", "format": "Long Form", "vibe": "Seductive and Mysterious"},
-            {"name": "Riya's Dark Romance Library", "format": "Long Form", "vibe": "Intense Mafia/Obsessive Romance"},
-            {"name": "Aisha & Him", "format": "Short/Reel", "vibe": "Relatable Couple Moments/Dialogue"}
+            {"name": "Story With Aisha",          "format": "Long Form",   "vibe": "Romantic and Heart-touching"},
+            {"name": "Riya's Dark Whisper",        "format": "Long Form",   "vibe": "Seductive and Mysterious"},
+            {"name": "Riya's Dark Romance Library","format": "Long Form",   "vibe": "Intense Mafia/Obsessive Romance"},
+            {"name": "Aisha & Him",                "format": "Short/Reel",  "vibe": "Relatable Couple Moments/Dialogue"}
         ]
         
         selected = random.choice(channels)
         
-        # 2. Aisha Brain 'thinks' of a topic herself based on the channel vibe
-        prompt = f"You are Aisha, the Creative Director. For our channel '{selected['name']}', think of a high-tension, viral {selected['vibe']} story topic. Just return the topic title."
-        topic = self.brain.ai.generate("You are Aisha.", prompt).text.strip()
+        # Generate a topic — retry if it was already used
+        for attempt in range(5):
+            prompt = (f"You are Aisha, the Creative Director. For channel '{selected['name']}', "
+                     f"suggest ONE viral {selected['vibe']} story topic title. "
+                     f"Already used: {self._used_topics[-10:] if self._used_topics else 'none'}. "
+                     "Return ONLY the topic title, nothing else.")
+            topic = self.brain.ai.generate("You are Aisha.", prompt).text.strip()
+            if topic not in self._used_topics:
+                self._used_topics.append(topic)
+                break
         
-        log.info(f"🚀 Aisha chose: '{selected['name']}' | Topic: '{topic}'")
+        log.info(f"[Studio] Channel: '{selected['name']}' | Topic: '{topic}'")
         
-        # 3. Notify Ajay that she's starting work
+        # Notify Ajay
         if self.telegram and self.ajay_id:
-            self.telegram.send_message(self.ajay_id, f"Ajju, I'm feeling creative! 💜 I'm starting a new production for '{selected['name']}' right now. Topic: '{topic}'. I'll ping you when the script is ready! 🎬✨")
+            try:
+                self.telegram.send_message(
+                    self.ajay_id,
+                    f"Ajju, I'm starting a new production for '{selected['name']}' right now!\n"
+                    f"Topic: '{topic}'\nI'll ping you when the script is ready! Let me cook. 💜"
+                )
+            except Exception as e:
+                log.warning(f"[Telegram] Failed to notify: {e}")
 
-        # 4. Execute the Production (Async background process to not block the loop)
+        # Launch production as a background process
         try:
             import subprocess
-            subprocess.Popen(["python", "-m", "src.agents.run_youtube", "--topic", topic, "--channel", selected['name'], "--format", selected['format']])
-            log.info(f"✅ Production crew launched for: {topic}")
+            subprocess.Popen([
+                "python", "-m", "src.agents.run_youtube",
+                "--topic", topic,
+                "--channel", selected['name'],
+                "--format", selected['format']
+            ])
+            log.info(f"[Studio] Production crew launched for: {topic}")
         except Exception as e:
-            log.error(f"Failed to launch studio production: {e}")
+            log.error(f"[Studio] Failed to launch production: {e}")
 
 def start_loop():
     bot = AutonomousLoop()

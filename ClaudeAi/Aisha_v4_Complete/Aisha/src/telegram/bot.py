@@ -24,12 +24,8 @@ from supabase import create_client
 from dotenv import load_dotenv
 
 from src.core.aisha_brain import AishaBrain
-from src.core.voice_engine import generate_voice, cleanup_voice_file
 
 load_dotenv()
-
-# ─── Voice Mode State ─────────────────────────────────────────────────────────
-VOICE_MODE_ENABLED = True   # Start with voice ON — Aisha speaks by default!
 
 # ─── Configuration ─────────────────────────────────────────────────────────────
 
@@ -144,7 +140,6 @@ def cmd_help(message):
         "But here are some handy ones:\n\n"
         "📋 *Quick Commands:*\n"
         "/start — Greet Aisha\n"
-        "/imagine — Generate an image (e.g., /imagine a cyber city)\n"
         "/mood — Log how you're feeling\n"
         "/today — See today's tasks + summary\n"
         "/addtask — Add a task or reminder\n"
@@ -159,122 +154,9 @@ def cmd_help(message):
         "• 'I'm feeling stressed'\n"
         "• 'Motivate me'\n"
         "• 'What are my goals?'\n\n"
-        "🎙️ You can also send *voice messages!*\n\n"
-        "🎬 *YouTube Studio Commands:*\n"
-        "/channels — See all 4 channels\n"
-        "/produce Story With Aisha — Start a production\n"
-        "/studio — Aisha auto-picks a channel and starts\n"
-        "/inbox — Check business emails\n"
+        "🎙️ You can also send *voice messages!*"
     )
     bot.send_message(message.chat.id, help_text, parse_mode="Markdown")
-
-
-@bot.message_handler(commands=["channels"])
-def cmd_channels(message):
-    if not is_ajay(message): return unauthorized_response(message)
-    text = (
-        "🎬 *Your YouTube Empire — 4 Channels:*\n\n"
-        "1️⃣ *Story With Aisha* — Romantic storytelling (8-15 min)\n"
-        "2️⃣ *Riya's Dark Whisper* — Psychological dark tales (10-20 min)\n"
-        "3️⃣ *Riya's Dark Romance Library* — Novel-style dark romance (15-25 min)\n"
-        "4️⃣ *Aisha & Him* — Couple shorts & reels (30s-3 min)\n\n"
-        "📌 To start a production:\n"
-        "`/produce Story With Aisha`\n"
-        "`/produce Aisha & Him`\n"
-        "`/studio` — Let Aisha choose the channel herself"
-    )
-    bot.send_message(message.chat.id, text, parse_mode="Markdown")
-
-
-@bot.message_handler(commands=["produce"])
-def cmd_produce(message):
-    if not is_ajay(message): return unauthorized_response(message)
-    channel = message.text.replace("/produce", "").strip()
-    
-    VALID_CHANNELS = [
-        "Story With Aisha",
-        "Riya's Dark Whisper",
-        "Riya's Dark Romance Library",
-        "Aisha & Him"
-    ]
-    
-    if not channel or channel not in VALID_CHANNELS:
-        bot.send_message(
-            message.chat.id,
-            "Please specify a channel:\n\n"
-            "`/produce Story With Aisha`\n"
-            "`/produce Riya's Dark Whisper`\n"
-            "`/produce Riya's Dark Romance Library`\n"
-            "`/produce Aisha & Him`",
-            parse_mode="Markdown"
-        )
-        return
-
-    bot.send_message(message.chat.id, f"Got it Ajju! Starting production for *{channel}*... Give me a few minutes! 💜🎬", parse_mode="Markdown")
-    
-    import subprocess
-    fmt = "Short/Reel" if channel == "Aisha & Him" else "Long Form"
-    subprocess.Popen(["python", "-m", "src.agents.run_youtube", "--channel", channel, "--format", fmt])
-
-
-@bot.message_handler(commands=["studio"])
-def cmd_studio(message):
-    if not is_ajay(message): return unauthorized_response(message)
-    bot.send_message(message.chat.id, "Starting my creative session! I'll pick the best channel and topic myself. Check your email in a few minutes! 💜🎬")
-    
-    import subprocess
-    subprocess.Popen(["python", "-m", "src.core.autonomous_loop", "--once"])
-
-
-@bot.message_handler(commands=["inbox"])
-def cmd_inbox(message):
-    if not is_ajay(message): return unauthorized_response(message)
-    bot.send_message(message.chat.id, "Checking your business inbox... 📬")
-    
-    try:
-        from src.core.gmail_engine import GmailEngine
-        gmail = GmailEngine()
-        emails = gmail.check_inbox(limit=5)
-        
-        if not emails:
-            bot.send_message(message.chat.id, "No new emails! Inbox is clean. 💜")
-            return
-        
-        summary = f"📬 *{len(emails)} new email(s):*\n\n"
-        for i, e in enumerate(emails, 1):
-            summary += f"{i}. *From:* {e.get('from', 'Unknown')[:40]}\n"
-            summary += f"   *Subject:* {e.get('subject', 'No Subject')[:60]}\n\n"
-        
-        bot.send_message(message.chat.id, summary, parse_mode="Markdown")
-    except Exception as e:
-        bot.send_message(message.chat.id, f"Couldn't check inbox right now: {e}")
-
-@bot.message_handler(commands=["imagine"])
-def cmd_imagine(message):
-    if not is_ajay(message): return unauthorized_response(message)
-    prompt = message.text.replace("/imagine", "").strip()
-    if not prompt:
-        bot.send_message(message.chat.id, "Please tell me what to imagine! Like: `/imagine a beautiful futuristic sunset in Mumbai`", parse_mode="Markdown")
-        return
-    
-    bot.send_chat_action(message.chat.id, "upload_photo")
-    bot.reply_to(message, "🎨 Imagination spinning up... Give me a few seconds!")
-    
-    import concurrent.futures
-    from src.core.image_engine import generate_image
-    
-    try:
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(generate_image, prompt)
-            img_bytes = future.result(timeout=60)
-            
-        if img_bytes:
-            bot.send_photo(message.chat.id, img_bytes, caption=f"✨ {prompt}")
-        else:
-            bot.send_message(message.chat.id, "Sorry Aju, my imagination failed this time 😔 Try again?")
-    except Exception as e:
-        log.error(f"Image generation error: {e}")
-        bot.send_message(message.chat.id, "Sorry Aju, something went wrong with the image generation!")
 
 @bot.message_handler(commands=["mood"])
 def cmd_mood(message):
@@ -392,20 +274,6 @@ def cmd_reset(message):
         reply_markup=main_keyboard()
     )
 
-@bot.message_handler(commands=["voice"])
-def cmd_voice(message):
-    """Toggle Aisha's voice mode on/off."""
-    if not is_ajay(message): return unauthorized_response(message)
-    global VOICE_MODE_ENABLED
-    VOICE_MODE_ENABLED = not VOICE_MODE_ENABLED
-    status = "ON 🎙️" if VOICE_MODE_ENABLED else "OFF 🔇"
-    bot.send_message(
-        message.chat.id,
-        f"Voice mode is now *{status}*\n"
-        f"{'I\'ll speak to you with voice notes now! 💜' if VOICE_MODE_ENABLED else 'Text only mode. Say /voice again to hear me! 💜'}",
-        parse_mode="Markdown"
-    )
-
 @bot.message_handler(commands=["journal"])
 def cmd_journal(message):
     if not is_ajay(message): return unauthorized_response(message)
@@ -484,15 +352,14 @@ def handle_voice(message):
         f.write(downloaded)
         voice_path = f.name
     
-    # Transcribe with Gemini
+    # Try transcription with Gemini
     try:
         import google.generativeai as genai
         audio_file = genai.upload_file(voice_path)
-        transcript_model = genai.GenerativeModel("gemini-2.5-flash")
+        transcript_model = genai.GenerativeModel("gemini-1.5-flash")
         result = transcript_model.generate_content([
             "Transcribe this voice message exactly as spoken. "
-            "It may be in English, Hindi, Marathi, or Hinglish. "
-            "Return ONLY the transcription, nothing else.",
+            "It may be in English, Hindi, or Marathi.",
             audio_file
         ])
         transcribed_text = result.text.strip()
@@ -502,27 +369,8 @@ def handle_voice(message):
             parse_mode="Markdown")
         
         # Process as normal message
-        bot.send_chat_action(message.chat.id, "typing")
         response = aisha.think(transcribed_text, platform="telegram")
         bot.send_message(message.chat.id, response)
-        
-        # Send voice reply back (voice-in = voice-out)
-        if len(response) < 1000:
-            try:
-                bot.send_chat_action(message.chat.id, "record_voice")
-                from src.core.aisha_brain import detect_mood
-                from src.core.language_detector import detect_language
-                mood = detect_mood(transcribed_text)
-                lang_info = detect_language(transcribed_text)
-                language = lang_info.get("language", "English") if isinstance(lang_info, dict) else "English"
-                
-                voice_reply = generate_voice(response, language=language, mood=mood)
-                if voice_reply:
-                    with open(voice_reply, "rb") as vf:
-                        bot.send_voice(message.chat.id, vf)
-                    cleanup_voice_file(voice_reply)
-            except Exception as ve:
-                log.warning(f"Voice reply skipped: {ve}")
         
     except Exception as e:
         log.error(f"Voice transcription failed: {e}")
@@ -532,48 +380,6 @@ def handle_voice(message):
     finally:
         os.unlink(voice_path)
 
-
-# ─── Photo Message Handler ─────────────────────────────────────────────────────
-
-@bot.message_handler(content_types=["photo"])
-def handle_photo(message):
-    if not is_ajay(message): return unauthorized_response(message)
-    
-    bot.send_chat_action(message.chat.id, "typing")
-    
-    try:
-        # Get highest resolution photo
-        raw_photo = message.photo[-1]
-        file_info = bot.get_file(raw_photo.file_id)
-        downloaded_bytes = bot.download_file(file_info.file_path)
-        
-        user_text = message.caption if message.caption else "I sent you a photo. What do you see?"
-        
-        # Pass image to Aisha's brain
-        response = aisha.think(user_text, platform="telegram", image_bytes=downloaded_bytes)
-        bot.reply_to(message, response)
-        
-        # Optional: Voice reply
-        if VOICE_MODE_ENABLED and len(response) < 1000:
-            try:
-                bot.send_chat_action(message.chat.id, "record_voice")
-                from src.core.aisha_brain import detect_mood
-                from src.core.language_detector import detect_language
-                mood = detect_mood(user_text)
-                lang_info = detect_language(user_text)
-                language = lang_info.get("language", "English") if isinstance(lang_info, dict) else "English"
-                
-                voice_reply = generate_voice(response, language=language, mood=mood)
-                if voice_reply:
-                    with open(voice_reply, "rb") as vf:
-                        bot.send_voice(message.chat.id, vf)
-                    cleanup_voice_file(voice_reply)
-            except Exception as ve:
-                log.warning(f"Voice reply skipped for photo: {ve}")
-                
-    except Exception as e:
-        log.error(f"Image processing failed: {e}")
-        bot.reply_to(message, "Arre Ajay, I couldn't process that image 😔 Technical issue on my end!")
 
 # ─── Main Text Handler ─────────────────────────────────────────────────────────
 
@@ -592,33 +398,13 @@ def handle_text(message, override_text=None):
         log.info(f"[{message.from_user.first_name}] {user_text[:80]}")
         response = aisha.think(user_text, platform="telegram")
         
-        # Send text response
+        # Split long responses (Telegram limit: 4096 chars)
         if len(response) > 4000:
             chunks = [response[i:i+4000] for i in range(0, len(response), 4000)]
             for chunk in chunks:
                 bot.send_message(message.chat.id, chunk)
         else:
             bot.send_message(message.chat.id, response)
-        
-        # Send voice note if voice mode is enabled
-        if VOICE_MODE_ENABLED and len(response) < 1000:
-            try:
-                bot.send_chat_action(message.chat.id, "record_voice")
-                
-                # Detect language and mood for voice tuning
-                from src.core.aisha_brain import detect_mood
-                from src.core.language_detector import detect_language
-                mood = detect_mood(user_text)
-                lang_info = detect_language(user_text)
-                language = lang_info.get("language", "English") if isinstance(lang_info, dict) else "English"
-                
-                voice_path = generate_voice(response, language=language, mood=mood)
-                if voice_path:
-                    with open(voice_path, "rb") as voice_file:
-                        bot.send_voice(message.chat.id, voice_file)
-                    cleanup_voice_file(voice_path)
-            except Exception as ve:
-                log.warning(f"Voice generation skipped: {ve}")
             
     except Exception as e:
         log.error(f"Error processing message: {e}")
@@ -642,60 +428,9 @@ if __name__ == "__main__":
         telebot.types.BotCommand("/goals",   "See your goals"),
         telebot.types.BotCommand("/journal", "Write a journal entry"),
         telebot.types.BotCommand("/memory",  "What Aisha remembers"),
-        telebot.types.BotCommand("/voice",   "Toggle voice on/off"),
         telebot.types.BotCommand("/help",    "Help & commands"),
         telebot.types.BotCommand("/reset",   "Reset conversation"),
     ])
     
     print("✅ Aisha is live on Telegram! 💜")
     bot.infinity_polling(timeout=60, long_polling_timeout=60)
-
-# ─── Self Improvement Callbacks ──────────────────────────────────────────
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("deploy_skill_"))
-def handle_deploy_skill(call):
-    skill_name = call.data.replace("deploy_skill_", "")
-    
-    # We need the PR URL or number. Since we only have skill_name, 
-    # we'll look for it in the message text or would normally store it in a DB.
-    # For now, we'll try to find the PR URL from the original message's inline keyboard.
-    pr_url = None
-    for row in call.message.reply_markup.inline_keyboard:
-        for button in row:
-            if "Review Code" in button.text:
-                pr_url = button.url
-                break
-    
-    bot.answer_callback_query(call.id, text=f"Deploying {skill_name} now! 🚀")
-    
-    from src.core.self_improvement import merge_github_pr, get_pr_number_from_url
-    pr_number = get_pr_number_from_url(pr_url) if pr_url else 0
-    
-    if pr_number and merge_github_pr(pr_number):
-        bot.edit_message_text(
-            f"✅ Successfully deployed: **{skill_name}**!\n"
-            "The PR has been merged. My brain is now more powerful! 💜",
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            parse_mode="Markdown"
-        )
-    else:
-        bot.edit_message_text(
-            f"⚠️ Approved **{skill_name}**, but failed to auto-merge PR #{pr_number}.\n"
-            "Please check GitHub and merge it manually, Aju! 💜",
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            parse_mode="Markdown"
-        )
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("skip_skill_"))
-def handle_skip_skill(call):
-    skill_name = call.data.replace("skip_skill_", "")
-    bot.answer_callback_query(call.id, text=f"Skipping {skill_name}")
-    bot.edit_message_text(
-        f"❌ Skipped the new skill: **{skill_name}**.\n"
-        "Let me know if you want me to write it differently later! 💜",
-        chat_id=call.message.chat.id,
-        message_id=call.message.message_id,
-        parse_mode="Markdown"
-    )

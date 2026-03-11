@@ -1,29 +1,24 @@
 research_task:
-  description: Find 3 top-trending sub-topics and keywords related to {topic}.
-  expected_output: A detailed brief on what works best for the current algorithm.
+  description: Find a viral romance trope (e.g., Enemies to Lovers, Fake Dating, Forbidden Kiss) related to {topic}.
+  expected_output: A story brief including character names, core conflict, and the emotional hook.
   agent: riya
 
 script_task:
-  description: Based on the research, write a 3-minute viral YouTube script. Include hooks and CTA.
-  expected_output: A full text script with timestamps.
+  description: Write a high-tension, cinematic script (Short or Long form as requested). Focus on REAL dialogue and emotional hooks in the first 5 seconds.
+  expected_output: Full script with Dialogue, Narration, and Scene notes.
   agent: lexi
 
 audio_task:
-  description: Use the script provided to generate a high-quality voiceover. Break into scenes if necessary.
-  expected_output: Confirmation of audio file generation across all scenes.
+  description: Generate voiceover parameters. If it's Aisha's channel, keep it warm. If it's Riya's, keep it deep and seductive.
+  expected_output: Complete voiceover script and file manifest.
   agent: aria
 
 visual_task:
-  description: Generate 5-10 cinematic images that perfectly visualize the script content.
-  expected_output: A list of file paths to generated images.
+  description: Design 5-10 detailed prompts for cinematic visuals that match the specific channel's aesthetic (Golden Hour vs. Dark Noir).
+  expected_output: A list of visual scene prompts and thumbnail idea.
   agent: mia
 
-sync_task:
-  description: Compile the generated images and audio into a final cohesive video structure.
-  expected_output: A storyboard or file manifest for the final render.
-  agent: sync
-
 marketing_task:
-  description: Create a viral title, 500-word description, and 15 high-reach tags.
-  expected_output: SEO metadata package.
+  description: Create a viral title, 500-word seductive description, caption for Reels/Instagram, and 30 targeted hashtags for the romance niche.
+  expected_output: Full SEO & Social Media package.
   agent: cappy

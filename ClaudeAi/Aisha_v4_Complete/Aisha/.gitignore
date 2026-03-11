@@ -1,0 +1,48 @@
+# ============================================================
+# .gitignore for Aisha
+# IMPORTANT: .env contains your secret API keys — NEVER commit it!
+# ============================================================
+
+# Environment & Secrets
+.env
+.env.local
+.env.production
+*.key
+secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-log.txt
+.pytest_cache/
+
+# Logs
+*.log
+aisha.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Node (if using)
+node_modules/
+npm-debug.log
+
+# Temporary files
+tmp/
+temp/
+*.tmp

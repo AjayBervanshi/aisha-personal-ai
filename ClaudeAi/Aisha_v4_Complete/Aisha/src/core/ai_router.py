@@ -36,18 +36,13 @@ class ProviderStats:
     def is_cooling_down(self) -> bool:
         return time.time() < self.cooldown_until
 
-    def mark_failure(self, is_rate_limit=False, retry_after=0):
+    def mark_failure(self):
         self.failures += 1
         self.last_failure = time.time()
-        if is_rate_limit and retry_after > 0:
-            # For rate limits: wait exactly what the API tells us (usually 18-60s)
-            self.cooldown_until = time.time() + min(retry_after, 90)
-            log.warning(f"[{self.name}] Rate limited. Waiting {retry_after}s.")
-        else:
-            # For real errors: shorter backoff (30s → 60s → 120s max)
-            backoff = min(30 * (2 ** min(self.failures - 1, 2)), 120)
-            self.cooldown_until = time.time() + backoff
-            log.warning(f"[{self.name}] Failed #{self.failures}. Cooling down {backoff}s.")
+        # Exponential backoff: 1min → 5min → 15min
+        backoff = min(60 * (2 ** min(self.failures - 1, 4)), 900)
+        self.cooldown_until = time.time() + backoff
+        log.warning(f"[{self.name}] Failed #{self.failures}. Cooling down {backoff}s.")
 
     def mark_success(self):
         self.calls += 1
@@ -58,18 +53,15 @@ class ProviderStats:
 class AIRouter:
     """
     Routes AI calls through a waterfall of free providers.
-    Priority: Gemini → OpenAI → Groq → Mistral → Ollama
+    Handles failures silently and switches automatically.
     """
 
     def __init__(self):
         self._stats = {
-            "gemini":    ProviderStats("Gemini"),
-            "anthropic": ProviderStats("Claude"),
-            "groq":      ProviderStats("Groq"),
-            "xai":       ProviderStats("xAI-Grok"),
-            "openai":    ProviderStats("OpenAI"),
-            "mistral":   ProviderStats("Mistral"),
-            "ollama":    ProviderStats("Ollama"),
+            "gemini":  ProviderStats("Gemini"),
+            "groq":    ProviderStats("Groq"),
+            "mistral": ProviderStats("Mistral"),
+            "ollama":  ProviderStats("Ollama"),
         }
         self._clients = {}
         self._init_clients()
@@ -82,32 +74,12 @@ class AIRouter:
             key = os.getenv("GEMINI_API_KEY", "")
             if key and "your_" not in key:
                 genai.configure(api_key=key)
-                self._clients["gemini"] = genai.GenerativeModel("gemini-2.5-flash")
+                self._clients["gemini"] = genai.GenerativeModel("gemini-1.5-flash")
                 log.info("✅ Gemini initialized")
         except Exception as e:
             log.warning(f"Gemini init failed: {e}")
 
-        # OpenAI (ChatGPT)
-        try:
-            from openai import OpenAI
-            key = os.getenv("OPENAI_API_KEY", "")
-            if key and "your_" not in key:
-                self._clients["openai"] = OpenAI(api_key=key)
-                log.info("✅ OpenAI (ChatGPT) initialized")
-        except Exception as e:
-            log.warning(f"OpenAI init failed: {e}")
-
-        # Claude (Anthropic)
-        try:
-            from anthropic import Anthropic
-            key = os.getenv("ANTHROPIC_API_KEY", "")
-            if key and "your_" not in key:
-                self._clients["anthropic"] = Anthropic(api_key=key)
-                log.info("✅ Claude (Anthropic) initialized")
-        except Exception as e:
-            log.warning(f"Claude init failed: {e}")
-
-        # Groq (ultra-fast Llama)
+        # Groq
         try:
             from groq import Groq
             key = os.getenv("GROQ_API_KEY", "")
@@ -116,16 +88,6 @@ class AIRouter:
                 log.info("✅ Groq initialized")
         except Exception as e:
             log.warning(f"Groq init failed: {e}")
-
-        # xAI (Grok) — uses OpenAI-compatible API
-        try:
-            from openai import OpenAI
-            key = os.getenv("XAI_API_KEY", "")
-            if key and "your_" not in key:
-                self._clients["xai"] = OpenAI(api_key=key, base_url="https://api.x.ai/v1")
-                log.info("✅ xAI (Grok) initialized")
-        except Exception as e:
-            log.warning(f"xAI init failed: {e}")
 
         # Mistral (optional)
         try:
@@ -153,26 +115,18 @@ class AIRouter:
         self,
         system_prompt: str,
         user_message: str,
-        history: list = None,
-        image_bytes: bytes = None
+        history: list = None
     ) -> AIResult:
         """
         Try each provider in order. Return first successful response.
-        For rate limits: wait briefly and retry instead of giving up.
         """
-        if image_bytes:
-            order = ["gemini", "anthropic", "openai"]  # Only providers with Vision
-        else:
-            order = ["gemini", "anthropic", "groq", "xai", "openai", "mistral", "ollama"]
-            
+        order = ["gemini", "groq", "mistral", "ollama"]
         history = history or []
 
         for provider in order:
             if provider not in self._clients:
                 continue
             stats = self._stats[provider]
-            
-            # If cooling down, skip and move to next provider instantly
             if stats.is_cooling_down():
                 remaining = int(stats.cooldown_until - time.time())
                 log.info(f"[{provider}] Skipping — cooling down ({remaining}s left)")
@@ -180,7 +134,7 @@ class AIRouter:
 
             try:
                 start = time.time()
-                result = self._call_provider(provider, system_prompt, user_message, history, image_bytes)
+                result = self._call_provider(provider, system_prompt, user_message, history)
                 latency = int((time.time() - start) * 1000)
                 stats.mark_success()
                 log.info(f"[{provider}] ✅ Response in {latency}ms")
@@ -192,25 +146,8 @@ class AIRouter:
                 )
 
             except Exception as e:
-                error_str = str(e)
-                is_rate_limit = "429" in error_str or "RATE_LIMIT" in error_str.upper() or "quota" in error_str.lower()
-                
-                # Try to extract retry_delay from error
-                retry_after = 0
-                if is_rate_limit:
-                    import re
-                    delay_match = re.search(r'seconds:\s*(\d+)', error_str)
-                    if delay_match:
-                        retry_after = int(delay_match.group(1))
-                    else:
-                        retry_after = 30  # Default 30s for rate limits
-                
-                log.warning(f"[{provider}] ❌ Failed: {type(e).__name__}: {error_str[:150]}")
-                stats.mark_failure(is_rate_limit=is_rate_limit, retry_after=retry_after)
-                
-                # We no longer wait and retry. Since we have 6 brains, just fall through 
-                # to the next provider instantly to avoid delaying the response.
-                
+                log.warning(f"[{provider}] ❌ Failed: {type(e).__name__}: {str(e)[:100]}")
+                stats.mark_failure()
                 continue  # Try next provider
 
         # All providers failed
@@ -226,21 +163,14 @@ class AIRouter:
         provider: str,
         system_prompt: str,
         user_message: str,
-        history: list,
-        image_bytes: bytes = None
+        history: list
     ) -> str:
         """Call a specific provider and return text."""
 
         if provider == "gemini":
-            return self._call_gemini(system_prompt, user_message, history, image_bytes)
-        elif provider == "anthropic":
-            return self._call_anthropic(system_prompt, user_message, history, image_bytes)
-        elif provider == "openai":
-            return self._call_openai(system_prompt, user_message, history, image_bytes)
+            return self._call_gemini(system_prompt, user_message, history)
         elif provider == "groq":
             return self._call_groq(system_prompt, user_message, history)
-        elif provider == "xai":
-            return self._call_xai(system_prompt, user_message, history)
         elif provider == "mistral":
             return self._call_mistral(system_prompt, user_message, history)
         elif provider == "ollama":
@@ -250,7 +180,7 @@ class AIRouter:
 
     # ── Provider implementations ──────────────────────────────
 
-    def _call_gemini(self, system_prompt, user_message, history, image_bytes: bytes = None) -> str:
+    def _call_gemini(self, system_prompt, user_message, history) -> str:
         model = self._clients["gemini"]
 
         # Build history for Gemini format
@@ -261,72 +191,8 @@ class AIRouter:
 
         chat = model.start_chat(history=gemini_history)
         full_prompt = f"{system_prompt}\n\n---\n\nAjay says: {user_message}"
-        
-        message_parts = [full_prompt]
-        if image_bytes:
-            from PIL import Image
-            import io
-            img = Image.open(io.BytesIO(image_bytes))
-            message_parts.append(img)
-            
-        response = chat.send_message(message_parts)
+        response = chat.send_message(full_prompt)
         return response.text
-
-    def _call_anthropic(self, system_prompt, user_message, history, image_bytes: bytes = None) -> str:
-        client = self._clients["anthropic"]
-        messages = []
-        for msg in history[-8:]:
-            role = "assistant" if msg["role"] in ("model", "assistant") else "user"
-            messages.append({"role": role, "content": msg["content"]})
-            
-        content = [{"type": "text", "text": user_message}]
-        if image_bytes:
-            import base64
-            content.append({
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": "image/jpeg",
-                    "data": base64.b64encode(image_bytes).decode("utf-8"),
-                }
-            })
-            
-        messages.append({"role": "user", "content": content})
-
-        response = client.messages.create(
-            model="claude-3-5-sonnet-20241022",
-            max_tokens=8000,
-            system=system_prompt,
-            messages=messages
-        )
-        return response.content[0].text
-
-    def _call_openai(self, system_prompt, user_message, history, image_bytes: bytes = None) -> str:
-        client = self._clients["openai"]
-        messages = [{"role": "system", "content": system_prompt}]
-        for msg in history[-8:]:
-            role = "assistant" if msg["role"] == "model" else msg["role"]
-            messages.append({"role": role, "content": msg["content"]})
-            
-        content = [{"type": "text", "text": user_message}]
-        if image_bytes:
-            import base64
-            content.append({
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/jpeg;base64,{base64.b64encode(image_bytes).decode('utf-8')}"
-                }
-            })
-            
-        messages.append({"role": "user", "content": content})
-
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=messages,
-            max_tokens=8000,
-            temperature=0.88
-        )
-        return response.choices[0].message.content
 
     def _call_groq(self, system_prompt, user_message, history) -> str:
         client = self._clients["groq"]
@@ -336,26 +202,9 @@ class AIRouter:
         messages.append({"role": "user", "content": user_message})
 
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="llama3-70b-8192",
             messages=messages,
-            max_tokens=8000,
-            temperature=0.88
-        )
-        return response.choices[0].message.content
-
-    def _call_xai(self, system_prompt, user_message, history) -> str:
-        """xAI Grok — uses OpenAI-compatible API."""
-        client = self._clients["xai"]
-        messages = [{"role": "system", "content": system_prompt}]
-        for msg in history[-8:]:
-            role = "assistant" if msg["role"] in ("model", "assistant") else "user"
-            messages.append({"role": role, "content": msg["content"]})
-        messages.append({"role": "user", "content": user_message})
-
-        response = client.chat.completions.create(
-            model="grok-2-latest",
-            messages=messages,
-            max_tokens=8000,
+            max_tokens=1024,
             temperature=0.88
         )
         return response.choices[0].message.content
@@ -397,13 +246,10 @@ class AIRouter:
 
     def _model_name(self, provider: str) -> str:
         names = {
-            "gemini":    "gemini-2.5-flash",
-            "anthropic": "claude-3.5-sonnet",
-            "groq":      "llama-3.3-70b",
-            "xai":       "grok-2-latest",
-            "openai":    "gpt-4o-mini",
-            "mistral":   "mistral-small",
-            "ollama":    "llama3-local",
+            "gemini":  "gemini-1.5-flash",
+            "groq":    "llama3-70b-8192",
+            "mistral": "mistral-small",
+            "ollama":  "llama3-local",
         }
         return names.get(provider, "unknown")
 

@@ -46,7 +46,7 @@ class GmailEngine:
 
         try:
             # Connect to IMAP
-            mail = imaplib.IMAP4_SSL('imap.imap.gmail.com')
+            mail = imaplib.IMAP4_SSL('imap.gmail.com')
             mail.login(self.user, self.password)
             mail.select('inbox')
 
