@@ -226,6 +226,34 @@ def cmd_studio(message):
     subprocess.Popen(["python", "-m", "src.core.autonomous_loop", "--once"])
 
 
+@bot.message_handler(commands=["aistatus"])
+def cmd_aistatus(message):
+    """Show which AI brains and social platforms are connected."""
+    if not is_ajay(message): return unauthorized_response(message)
+    
+    from src.core.ai_router import AIRouter
+    from src.core.social_media_engine import SocialMediaEngine
+    
+    router = AIRouter()
+    sm = SocialMediaEngine()
+    
+    ai_status = router.status()
+    social_status = sm.status()
+    
+    lines = ["*Aisha — System Status*\n"]
+    lines.append("*AI Brains:*")
+    for name, info in ai_status.items():
+        icon = "✅" if info["available"] and not info["cooling_down"] else "⚠️" if info["available"] else "❌"
+        model = router._model_name(name)
+        lines.append(f"{icon} `{name}` → `{model}`")
+    
+    lines.append(f"\n*Social Media:*")
+    for line in social_status.split("\n")[1:]:
+        lines.append(line)
+    
+    bot.send_message(message.chat.id, "\n".join(lines), parse_mode="Markdown")
+
+
 @bot.message_handler(commands=["inbox"])
 def cmd_inbox(message):
     if not is_ajay(message): return unauthorized_response(message)

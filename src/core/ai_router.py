@@ -82,8 +82,15 @@ class AIRouter:
             key = os.getenv("GEMINI_API_KEY", "")
             if key and "your_" not in key:
                 genai.configure(api_key=key)
-                self._clients["gemini"] = genai.GenerativeModel("gemini-2.5-flash")
-                log.info("✅ Gemini initialized")
+                # Try gemini-2.5-pro first, fall back to 2.0-flash
+                for model_name in ["gemini-2.5-pro-exp-03-25", "gemini-2.0-flash", "gemini-1.5-pro"]:
+                    try:
+                        self._clients["gemini"] = genai.GenerativeModel(model_name)
+                        self._gemini_model_name = model_name
+                        log.info(f"Gemini initialized: {model_name}")
+                        break
+                    except Exception:
+                        continue
         except Exception as e:
             log.warning(f"Gemini init failed: {e}")
 
@@ -294,8 +301,8 @@ class AIRouter:
         messages.append({"role": "user", "content": content})
 
         response = client.messages.create(
-            model="claude-3-5-sonnet-20241022",
-            max_tokens=8000,
+            model="claude-3-7-sonnet-20250219",
+            max_tokens=16000,
             system=system_prompt,
             messages=messages
         )
@@ -323,7 +330,7 @@ class AIRouter:
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=messages,
-            max_tokens=8000,
+            max_tokens=16000,
             temperature=0.88
         )
         return response.choices[0].message.content
@@ -338,7 +345,7 @@ class AIRouter:
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=messages,
-            max_tokens=8000,
+            max_tokens=32000,  # Groq supports huge context
             temperature=0.88
         )
         return response.choices[0].message.content
@@ -355,7 +362,7 @@ class AIRouter:
         response = client.chat.completions.create(
             model="grok-2-latest",
             messages=messages,
-            max_tokens=8000,
+            max_tokens=16000,
             temperature=0.88
         )
         return response.choices[0].message.content
@@ -397,12 +404,12 @@ class AIRouter:
 
     def _model_name(self, provider: str) -> str:
         names = {
-            "gemini":    "gemini-2.5-flash",
-            "anthropic": "claude-3.5-sonnet",
-            "groq":      "llama-3.3-70b",
+            "gemini":    getattr(self, '_gemini_model_name', 'gemini-2.5-pro-exp-03-25'),
+            "anthropic": "claude-3-7-sonnet-20250219",
+            "groq":      "llama-3.3-70b-versatile",
             "xai":       "grok-2-latest",
-            "openai":    "gpt-4o-mini",
-            "mistral":   "mistral-small",
+            "openai":    "gpt-4o",
+            "mistral":   "mistral-large-latest",
             "ollama":    "llama3-local",
         }
         return names.get(provider, "unknown")
