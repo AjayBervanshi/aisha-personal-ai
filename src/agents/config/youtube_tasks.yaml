@@ -1,5 +1,29 @@
 research_task:
   description: Find 3 top-trending sub-topics and keywords related to {topic}.
-  expected_output: A brief on what works best for the current algorithm.
+  expected_output: A detailed brief on what works best for the current algorithm.
   agent: riya
-# Other tasks omitted for brevity. You can add script_task, audio_task, visual_task, sync_task, publish_task etc.
+
+script_task:
+  description: Based on the research, write a 3-minute viral YouTube script. Include hooks and CTA.
+  expected_output: A full text script with timestamps.
+  agent: lexi
+
+audio_task:
+  description: Use the script provided to generate a high-quality voiceover. Break into scenes if necessary.
+  expected_output: Confirmation of audio file generation across all scenes.
+  agent: aria
+
+visual_task:
+  description: Generate 5-10 cinematic images that perfectly visualize the script content.
+  expected_output: A list of file paths to generated images.
+  agent: mia
+
+sync_task:
+  description: Compile the generated images and audio into a final cohesive video structure.
+  expected_output: A storyboard or file manifest for the final render.
+  agent: sync
+
+marketing_task:
+  description: Create a viral title, 500-word description, and 15 high-reach tags.
+  expected_output: SEO metadata package.
+  agent: cappy

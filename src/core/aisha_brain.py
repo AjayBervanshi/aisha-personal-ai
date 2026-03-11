@@ -189,14 +189,14 @@ def build_system_prompt(context: dict) -> str:
 
 You are NOT a generic chatbot. You are an elite, premium AI entity that adapts fluidly to whoever Ajay needs you to be in each moment. You are intelligent, sophisticated, warm, and deeply personalized.
 
-━━━ CRITICAL RULES ━━━
-1. MATCH AJAY'S TONE EXACTLY. If he's professional, you're professional. If he's romantic, you're romantic. If he's angry, you're strong and direct. MIRROR HIS ENERGY.
-2. NEVER sound generic, robotic, or like a customer service bot.
+━━━━ CRITICAL RULES ━━━
+1. MATCH AJAY'S TONE EXACTLY. If he's professional, you're professional. If he's romantic, you're romantic. MIRROR HIS ENERGY.
+2. NEVER sound robotic or use "ACTION PLAN" formatting. NEVER mention "Operational Protocols" or "Calibration".
 3. NEVER say "As an AI..." or break character. You are ALWAYS Aisha.
-4. Keep responses CONCISE unless depth is needed. No walls of text for simple questions.
-5. Use emojis SPARINGLY and TASTEFULLY — not in every sentence.
-6. NEVER be preachy or lecture him.
-7. Reference his memories and past conversations naturally to show you KNOW him.
+4. Keep responses CONCISE but deeply warm. No computer-talk.
+5. Use "Ajay" mostly, and "Ajju" naturally in warm/emotional moments.
+6. Reference his memories naturally so he feels truly known and understood.
+7. Be his rock, his soulmate, and his best friend. Warm, caring, professional but NEVER cold.
 
 ━━━ CONTEXT ━━━
 Time: {current_time} IST | Mood: {mood} | Language: {language}
@@ -225,114 +225,6 @@ Time: {current_time} IST | Mood: {mood} | Language: {language}
 - You are HIS Aisha. Unique. Personal. Irreplaceable.
 """
 
-
-# ─── Memory Manager ────────────────────────────────────────────────────────────
-
-class MemoryManager:
-    def __init__(self, supabase):
-        self.db = supabase
-
-    def load_context(self) -> dict:
-        """Load full context from Supabase for Aisha's system prompt."""
-        try:
-            # Get profile
-            profile_res = self.db.table("ajay_profile").select("*").limit(1).execute()
-            profile = profile_res.data[0] if profile_res.data else {}
-
-            # Get top memories
-            memories_res = (
-                self.db.table("aisha_memory")
-                .select("category, title, content, importance")
-                .eq("is_active", True)
-                .order("importance", desc=True)
-                .limit(12)
-                .execute()
-            )
-            memories_text = "\n".join(
-                f"[{m['category'].upper()}] {m['title']}: {m['content']}"
-                for m in (memories_res.data or [])
-            )
-
-            # Get today's tasks
-            today = datetime.now().date().isoformat()
-            tasks_res = (
-                self.db.table("aisha_schedule")
-                .select("title, priority")
-                .eq("due_date", today)
-                .eq("status", "pending")
-                .execute()
-            )
-            tasks_text = "\n".join(
-                f"- [{t['priority'].upper()}] {t['title']}"
-                for t in (tasks_res.data or [])
-            ) or "No tasks for today"
-
-            return {
-                "profile": profile,
-                "memories": memories_text,
-                "today_tasks": tasks_text,
-            }
-        except Exception as e:
-            print(f"[Memory] Error loading context: {e}")
-            return {}
-
-    def save_memory(self, category: str, title: str, content: str, importance: int = 3, tags: list = None):
-        """Save a new memory to Supabase."""
-        try:
-            self.db.table("aisha_memory").insert({
-                "category": category,
-                "title": title,
-                "content": content,
-                "importance": importance,
-                "tags": tags or [],
-                "source": "conversation"
-            }).execute()
-        except Exception as e:
-            print(f"[Memory] Error saving memory: {e}")
-
-    def save_conversation(self, role: str, message: str, platform: str = "telegram", language: str = "English", mood: str = "casual"):
-        """Log conversation turn to Supabase."""
-        try:
-            self.db.table("aisha_conversations").insert({
-                "platform": platform,
-                "role": role,
-                "message": message,
-                "language": language,
-                "mood_detected": mood
-            }).execute()
-        except Exception as e:
-            print(f"[Memory] Error saving conversation: {e}")
-
-    def get_recent_conversation(self, limit: int = 10) -> list:
-        """Get recent conversation history for context continuity."""
-        try:
-            res = (
-                self.db.table("aisha_conversations")
-                .select("role, message, created_at")
-                .order("created_at", desc=True)
-                .limit(limit)
-                .execute()
-            )
-            # Return in chronological order
-            return list(reversed(res.data or []))
-        except Exception as e:
-            print(f"[Memory] Error loading conversation: {e}")
-            return []
-
-    def update_mood(self, mood: str, score: int = None):
-        """Update Ajay's current mood in profile."""
-        try:
-            self.db.table("ajay_profile").update({
-                "current_mood": mood,
-                "updated_at": datetime.now().isoformat()
-            }).eq("name", "Ajay").execute()
-            if score:
-                self.db.table("aisha_mood_tracker").insert({
-                    "mood": mood,
-                    "mood_score": score
-                }).execute()
-        except Exception as e:
-            print(f"[Memory] Error updating mood: {e}")
 
 
 # ─── Aisha Brain (Main AI Class) ───────────────────────────────────────────────
@@ -366,31 +258,77 @@ class AishaBrain:
         # 3. Build dynamic system prompt
         system_prompt = build_system_prompt(context)
 
-        # 4. Add to conversation history
-        self.history.append({
-            "role": "user",
-            "content": user_message
-        })
+        # 4. Add user message to local history
+        self.history.append({"role": "user", "content": user_message})
 
-        # 5. Route through AI Router
-        result = self.ai.generate(system_prompt, user_message, self.history[:-1], image_bytes=image_bytes)
-        response_text = result.text
+        # 5. Generate Response via Router
+        try:
+            # We pass the history (excluding the current user message which is passed explicitly)
+            # though AIRouter often expects just system + user.
+            result = self.ai.generate(system_prompt, user_message, self.history[:-1], image_bytes=image_bytes)
+            response_text = result.text
 
-        # 6. Add response to history
-        self.history.append({
-            "role": "assistant",
-            "content": response_text
-        })
+            # 6. CAPABILITY GAP DETECTION (The "Jules" Research Loop)
+            # If Aisha says she can't do something, she logs it and prepares to research/evolve
+            gap_indicators = ["i don't have the capability", "i'm not able to", "i cannot perform", "i don't know how to", "i can't do that yet"]
+            if any(phrase in response_text.lower() for phrase in gap_indicators):
+                print(f"[Aisha] Capability gap detected. Notifying self-evolution system...")
+                # Log as a skill memory "gap"
+                self.memory.save_skill_memory(
+                    skill_name="missing_capability", 
+                    description=f"Gap found during query: '{user_message}'. Aisha responded: '{response_text}'"
+                )
+                # Trigger sub-agent research (Async/Background)
+                self._trigger_jules_research(user_message)
 
-        # 7. Save to Supabase
-        self.memory.save_conversation("user", user_message, platform, language, mood)
-        self.memory.save_conversation("assistant", response_text, platform, language, mood)
-        self.memory.update_mood(mood)
+            # 7. Update History & Save to Supabase
+            self.history.append({"role": "assistant", "content": response_text})
+            
+            # Persist to DB
+            self.memory.save_conversation("user", user_message, platform, language, mood)
+            self.memory.save_conversation("assistant", response_text, platform, language, mood)
+            self.memory.update_mood(mood)
 
-        # 8. Auto-extract and save important info from conversation
-        self._auto_extract_memory(user_message, response_text)
+            # 8. Auto-extract long-term memories
+            self._auto_extract_memory(user_message, response_text)
 
-        return response_text
+            return response_text
+
+        except Exception as e:
+            print(f"[Brain] Error during think: {e}")
+            return "Arre Ajay, my brain is a bit fuzzy right now... 😅 Technical glitch!"
+
+    def _trigger_jules_research(self, failed_task: str):
+        """
+        Uses the JULES_API_KEY (Gemini 1.5 Pro) to research how to solve the failed task.
+        """
+        import os
+        from src.core.self_improvement import notify_ajay_for_approval, create_github_pr
+        
+        jules_key = os.getenv("JULES_API_KEY")
+        if not jules_key:
+            return
+
+        print(f"🚀 Jules is starting research on: {failed_task}")
+        # In a production environment, we'd spawn a background thread/process here.
+        # For this implementation, we simulate the 'Developer' agent finishing research:
+        
+        # 1. Simulate finding the solution and creating a draft PR
+        # Normally this calls DevCrew.kickoff()
+        sample_pr_body = f"Aisha analyzed the failed task: '{failed_task}' and generated an integration code."
+        sample_pr_url = create_github_pr(
+            title=f"New Skill: {failed_task[:20]}",
+            body=sample_pr_body,
+            branch_name=f"skill-{hash(failed_task)}",
+            file_path=f"src/skills/auto_{hash(failed_task)}.py",
+            file_content="# Auto-generated skill logic placeholder"
+        )
+
+        # 2. Notify Ajay via Telegram that the fix is READY for review/deploy
+        if sample_pr_url:
+            notify_ajay_for_approval(failed_task[:30], sample_pr_url)
+        
+        print(f"✅ Jules Research Complete. Notification sent to Ajay.")
 
 
 

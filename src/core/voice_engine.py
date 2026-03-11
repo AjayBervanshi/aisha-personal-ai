@@ -89,44 +89,77 @@ async def _generate_voice_async(
     return filepath
 
 
+# ── ElevenLabs Key Pool ───────────────────────────────────────
+_EL_KEYS = []
+_EL_INDEX = 0
+
+def _get_next_el_key():
+    global _EL_KEYS, _EL_INDEX
+    if not _EL_KEYS:
+        env_keys = os.getenv("ELEVENLABS_API_KEY", "")
+        _EL_KEYS = [k.strip() for k in env_keys.split(",") if k.strip() and "your_" not in k]
+    
+    if not _EL_KEYS:
+        return None
+        
+    key = _EL_KEYS[_EL_INDEX]
+    return key
+
+def _mark_key_failed():
+    global _EL_KEYS, _EL_INDEX
+    if _EL_KEYS:
+        print(f"[ElevenLabs] Key failed or exhausted: {_EL_KEYS[_EL_INDEX][:6]}...")
+        _EL_INDEX = (_EL_INDEX + 1) % len(_EL_KEYS)
+
 def _generate_elevenlabs(text: str, language: str = "English", mood: str = "casual") -> str:
     import requests
-    api_key = os.getenv("ELEVENLABS_API_KEY")
     
-    # Dynamic Voice Selection Based on Mood
-    if mood in ["romantic", "flirty", "late_night"]:
-        voice_id = "BpjGufoPiobT79j2vtj4"  # Special intimate mode
-    else:
-        voice_id = "wdymxIQkYn7MJCYCQF2Q"  # Normal mode
+    # Try multiple keys from the pool
+    for _ in range(len(_EL_KEYS) or 1):
+        api_key = _get_next_el_key()
+        if not api_key:
+            return None
+            
+        # Dynamic Voice Selection Based on Mood
+        if mood in ["romantic", "flirty", "late_night"]:
+            voice_id = "BpjGufoPiobT79j2vtj4"  # Special intimate mode
+        else:
+            voice_id = "wdymxIQkYn7MJCYCQF2Q"  # Normal mode
+            
+        filename = f"aisha_voice_{uuid.uuid4().hex[:8]}.mp3"
+        filepath = os.path.join(VOICE_DIR, filename)
+        clean_text = _clean_for_speech(text)
         
-    filename = f"aisha_voice_{uuid.uuid4().hex[:8]}.mp3"
-    filepath = os.path.join(VOICE_DIR, filename)
-    clean_text = _clean_for_speech(text)
-    
-    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
-    headers = {
-        "Accept": "audio/mpeg",
-        "Content-Type": "application/json",
-        "xi-api-key": api_key
-    }
-    data = {
-        "text": clean_text,
-        "model_id": "eleven_multilingual_v2",
-        "voice_settings": {
-            "stability": 0.5,
-            "similarity_boost": 0.75
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+        headers = {
+            "Accept": "audio/mpeg",
+            "Content-Type": "application/json",
+            "xi-api-key": api_key
         }
-    }
-    
-    try:
-        response = requests.post(url, json=data, headers=headers, timeout=30)
-        response.raise_for_status()
-        with open(filepath, 'wb') as f:
-            f.write(response.content)
-        return filepath
-    except Exception as e:
-        print(f"[ElevenLabs] Error: {e}")
-        return None
+        data = {
+            "text": clean_text,
+            "model_id": "eleven_multilingual_v2",
+            "voice_settings": {
+                "stability": 0.5,
+                "similarity_boost": 0.75
+            }
+        }
+        
+        try:
+            response = requests.post(url, json=data, headers=headers, timeout=30)
+            if response.status_code == 401 or response.status_code == 429:
+                _mark_key_failed()
+                continue
+                
+            response.raise_for_status()
+            with open(filepath, 'wb') as f:
+                f.write(response.content)
+            return filepath
+        except Exception as e:
+            print(f"[ElevenLabs] Error with key: {e}")
+            _mark_key_failed()
+            
+    return None
 
 
 def _transliterate_hinglish(text: str) -> str:

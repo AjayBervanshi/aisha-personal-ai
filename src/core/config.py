@@ -57,6 +57,13 @@ ELEVENLABS_API_KEY  = _get("ELEVENLABS_API_KEY")
 ELEVENLABS_VOICE_ID = _get("ELEVENLABS_VOICE_ID")
 
 # ══════════════════════════════════════════════════════════════
+# GMAIL (aishaa1662001@gmail.com)
+# ══════════════════════════════════════════════════════════════
+GMAIL_USER         = _get("GMAIL_USER", required=False)
+GMAIL_APP_PASSWORD = _get("GMAIL_APP_PASSWORD", required=False)
+
+
+# ══════════════════════════════════════════════════════════════
 # APP SETTINGS
 # ══════════════════════════════════════════════════════════════
 USER_NAME    = _get("USER_NAME",  "Ajay")
