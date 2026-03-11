@@ -23,14 +23,49 @@ log = logging.getLogger("Aisha.SocialMedia")
 class SocialMediaEngine:
     """
     Aisha's unified social media manager.
-    Each platform has its own post() method.
+    ONE codebase manages ALL channel accounts.
+    Routing: channel name → correct account credentials.
     """
 
+    # Maps channel names to their .env token keys
+    CHANNEL_TO_ENV = {
+        "Story With Aisha": {
+            "instagram_token": "INSTAGRAM_TOKEN_STORY_WITH_AISHA",
+            "instagram_biz":   "INSTAGRAM_BIZ_ID_STORY_WITH_AISHA",
+            "youtube_token":   "youtube_token_Story_With_Aisha.json",
+        },
+        "Riya's Dark Whisper": {
+            "instagram_token": "INSTAGRAM_TOKEN_RIYAS_DARK_WHISPER",
+            "instagram_biz":   "INSTAGRAM_BIZ_ID_RIYAS_DARK_WHISPER",
+            "youtube_token":   "youtube_token_Riyas_Dark_Whisper.json",
+        },
+        "Riya's Dark Romance Library": {
+            "instagram_token": "INSTAGRAM_TOKEN_RIYAS_DARK_LIBRARY",
+            "instagram_biz":   "INSTAGRAM_BIZ_ID_RIYAS_DARK_LIBRARY",
+            "youtube_token":   "youtube_token_Riyas_Dark_Romance_Library.json",
+        },
+        "Aisha & Him": {
+            "instagram_token": "INSTAGRAM_TOKEN_AISHA_AND_HIM",
+            "instagram_biz":   "INSTAGRAM_BIZ_ID_AISHA_AND_HIM",
+            "youtube_token":   "youtube_token_Aisha_Him.json",
+        },
+    }
+
     def __init__(self):
-        self.instagram_token  = os.getenv("INSTAGRAM_ACCESS_TOKEN")
-        self.instagram_biz_id = os.getenv("INSTAGRAM_BUSINESS_ID")
         self.youtube_client_id     = os.getenv("YOUTUBE_CLIENT_ID")
         self.youtube_client_secret = os.getenv("YOUTUBE_CLIENT_SECRET")
+
+    def _get_instagram_creds(self, channel: str) -> tuple:
+        """Get the Instagram token + biz_id for a specific channel."""
+        mapping = self.CHANNEL_TO_ENV.get(channel, {})
+        token  = os.getenv(mapping.get("instagram_token", ""), "")
+        biz_id = os.getenv(mapping.get("instagram_biz", ""), "")
+        return token, biz_id
+
+    def _get_youtube_token_file(self, channel: str) -> str:
+        """Get the YouTube OAuth token file path for a specific channel."""
+        mapping = self.CHANNEL_TO_ENV.get(channel, {})
+        return mapping.get("youtube_token", "youtube_token_default.json")
 
     # ── INSTAGRAM ──────────────────────────────────────────────────────────────
 

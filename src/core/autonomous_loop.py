@@ -155,24 +155,52 @@ class AutonomousLoop:
         except Exception as e:
             log.error(f"[Studio] Failed to launch production: {e}")
 
-def start_loop():
+def run_self_improvement(loop: AutonomousLoop):
+    """Aisha audits and improves her own code every night."""
+    log.info("[SelfEditor] Starting nightly self-improvement session...")
+    try:
+        from src.core.self_editor import SelfEditor
+        editor = SelfEditor()
+        editor.run_improvement_session()
+    except Exception as e:
+        log.error(f"[SelfEditor] Session failed: {e}")
+
+
+def start_loop(once: bool = False):
+    """
+    Start Aisha's autonomous loop.
+    --once: Run one studio session and exit (for manual trigger from Telegram)
+    """
     bot = AutonomousLoop()
-    
+
+    if once:
+        log.info("[Aisha] Running single studio session (--once mode)...")
+        bot.run_studio_session()
+        return
+
     # Schedule Aisha's autonomous actions
     schedule.every().day.at("08:00").do(bot.run_morning_checkin)
     schedule.every().day.at("03:00").do(bot.run_memory_consolidation)
-    
-    # NEW: Studio Management (Every 4 Hours)
+
+    # Studio Management (Every 4 Hours)
     schedule.every(4).hours.do(bot.run_studio_session)
-    
-    # Run the first session instantly on startup to show Ajay she's working
+
+    # Nightly Self-Improvement (2 AM — she fixes herself while you sleep)
+    schedule.every().day.at("02:00").do(run_self_improvement, bot)
+
+    # Run the first studio session instantly on startup
     bot.run_studio_session()
-    
-    log.info("⏰ Aisha's autonomous biological clock is ticking. Running 24/7...")
-    
+
+    log.info("[Aisha] Autonomous biological clock is ticking. Running 24/7...")
+
     while True:
         schedule.run_pending()
         time.sleep(60)
 
+
 if __name__ == "__main__":
-    start_loop()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--once", action="store_true", help="Run one session and exit")
+    args = parser.parse_args()
+    start_loop(once=args.once)

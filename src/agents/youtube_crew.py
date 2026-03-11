@@ -48,15 +48,24 @@ CHANNEL_IDENTITY = {
 
 class YouTubeCrew:
     def __init__(self):
-        # Use AIRouter directly — NOT AishaBrain — to avoid memory pollution
         self.ai = AIRouter()
         self.results = {}
 
-    def _generate(self, prompt: str, max_len: int = 4000) -> str:
+    def _generate(self, prompt: str, preferred_provider: str = None) -> str:
         """
-        Direct AI call with large token budget for full scripts.
-        Falls back gracefully if provider fails.
+        Direct AI call. Uses preferred_provider if specified (e.g. 'xai' for Riya's channels).
+        Falls back to normal routing if preferred is unavailable.
         """
+        if preferred_provider:
+            # Try preferred provider first
+            try:
+                result = self.ai._call_provider(preferred_provider, 
+                    "You are an expert content creator for YouTube and Instagram storytelling channels.",
+                    prompt, [], None)
+                return result.strip()
+            except Exception:
+                pass  # Fall through to normal routing
+
         result = self.ai.generate(
             system_prompt="You are an expert content creator for YouTube and Instagram storytelling channels.",
             user_message=prompt,
@@ -64,74 +73,87 @@ class YouTubeCrew:
         return result.text.strip()
 
     def kickoff(self, inputs: dict) -> str:
-        topic   = inputs.get("topic",   "A Late Night Secret")
-        channel = inputs.get("channel", "Story With Aisha")
-        fmt     = inputs.get("format",  "Long Form")
+        topic    = inputs.get("topic",   "A Late Night Secret")
+        channel  = inputs.get("channel", "Story With Aisha")
+        fmt      = inputs.get("format",  "Long Form")
+        # Use master prompt if provided, else fall back to built-in identity
+        master_prompt = inputs.get("master_prompt", "")
 
         identity = CHANNEL_IDENTITY.get(channel, CHANNEL_IDENTITY["Story With Aisha"])
+        
+        # Riya's channels use Grok; Aisha's use Gemini
+        from src.core.config import CHANNEL_AI_PROVIDER
+        preferred_ai = CHANNEL_AI_PROVIDER.get(channel, "gemini")
 
-        print(f"[Crew] Production: '{channel}' | '{topic}' | {fmt}")
+        print(f"[Crew] {channel} | {topic} | AI: {preferred_ai.upper()}")
+
+        channel_context = master_prompt if master_prompt else (
+            f"Channel: {channel}\n"
+            f"Tone: {identity['tone']}\n"
+            f"Themes: {identity['themes']}\n"
+            f"Format: {identity['format_hint']}\n"
+            f"Hook style: {identity['hook_style']}\n"
+            f"Voice: {identity['voice_style']}"
+        )
 
         # ── STEP 1: RIYA — Story Research & Trope Selection ───────────────────
         print("[Riya] Researching story trope...")
         self.results["research"] = self._generate(
-            f"""You are Riya, the Story Researcher for '{channel}'.
-Channel tone: {identity['tone']}
-Themes: {identity['themes']}
-Topic requested: {topic}
+            f"""You are Riya, the Story Researcher.
+{channel_context}
+Topic: {topic}
 
 Find the most viral, emotionally gripping angle for this story.
-Output: Character names, core conflict, emotional hook, and why this will go viral.
-Keep it to 300 words."""
+Output: Character names, core conflict, emotional hook, why this will go viral.
+Keep it to 300 words.""",
+            preferred_provider=preferred_ai
         )
 
         # ── STEP 2: LEXI — Full Script Writing ───────────────────────────────
         print("[Lexi] Writing full script...")
         self.results["script"] = self._generate(
-            f"""You are Lexi, the Master Scriptwriter for '{channel}'.
-Channel format: {identity['format_hint']}
-Tone: {identity['tone']}
-Hook style: {identity['hook_style']}
-Voice style: {identity['voice_style']}
+            f"""You are Lexi, the Master Scriptwriter.
+{channel_context}
 
-Story Brief from Riya:
+Story Brief:
 {self.results['research']}
 
-Write the COMPLETE, FULL script now. Include:
+Write the COMPLETE, FULL script. Include:
 1. HOOK (first 5 seconds — no setup, pure emotion)
 2. STORY NARRATION with natural dialogue
-3. SCENE BREAKS (e.g., [PAUSE], [MUSIC SWELLS])
+3. SCENE BREAKS ([PAUSE], [MUSIC SWELLS], [SILENCE])
 4. EMOTIONAL CLIFFHANGER at the end
-5. CALL TO ACTION (subscribe/follow for Part 2)
+5. CALL TO ACTION (Part 2 hook)
 
-Format: Numbered dialogue lines. Make it feel like a web series episode.
-Length: {'30-60 second short script' if fmt == 'Short/Reel' else 'Full 8-15 minute story script'}"""
+Length: {'30-60 second reel script with punchy dialogue' if fmt == 'Short/Reel' else 'Full story script (8-15 minutes of narration)'}
+Make every line count. This must be addictive.""",
+            preferred_provider=preferred_ai
         )
 
         # ── STEP 3: MIA — Visual Direction ────────────────────────────────────
         print("[Mia] Designing visuals...")
         self.results["visuals"] = self._generate(
-            f"""You are Mia, the Visual Director for '{channel}'.
-Channel aesthetic: {'Dark, moody, cinematic noir' if 'Riya' in channel else 'Warm, golden hour, emotional close-ups'}
+            f"""You are Mia, the Visual Director.
+{channel_context}
+Aesthetic: {'Dark, moody, cinematic noir — deep shadows, candlelight, rain' if 'Riya' in channel else 'Warm, golden hour, soft bokeh, emotional close-ups'}
 
-Based on this script excerpt:
+Script:
 {self.results['script'][:800]}
 
 Create:
-1. THUMBNAIL IDEA — One powerful image that makes people stop scrolling
-2. 5 SCENE VISUAL PROMPTS for AI image generation
-3. BACKGROUND MUSIC MOOD — describe what the music should feel like
-
-Be specific and cinematic."""
+1. THUMBNAIL — One frame that stops the scroll (describe it precisely)
+2. 5 SCENE PROMPTS for AI image generation (be specific about lighting, mood, composition)
+3. MUSIC MOOD — what should the background music feel like?""",
+            preferred_provider=preferred_ai
         )
 
         # ── STEP 4: CAPPY — SEO & Marketing ──────────────────────────────────
         print("[Cappy] Building SEO package...")
         self.results["marketing"] = self._generate(
-            f"""You are Cappy, the SEO and Viral Marketing Expert for '{channel}'.
-
-Story topic: {topic}
-Script excerpt: {self.results['script'][:400]}
+            f"""You are Cappy, the SEO and Viral Marketing Expert.
+{channel_context}
+Topic: {topic}
+Script: {self.results['script'][:400]}
 
 Create the COMPLETE marketing package:
 1. YOUTUBE TITLE — Emotional, curiosity-driven, max 60 chars

@@ -160,13 +160,134 @@ def cmd_help(message):
         "• 'Motivate me'\n"
         "• 'What are my goals?'\n\n"
         "🎙️ You can also send *voice messages!*\n\n"
-        "🎬 *YouTube Studio Commands:*\n"
-        "/channels — See all 4 channels\n"
-        "/produce Story With Aisha — Start a production\n"
-        "/studio — Aisha auto-picks a channel and starts\n"
-        "/inbox — Check business emails\n"
+        "🎬 *YouTube Studio:*\n"
+        "/channels — Your 4 channel brands\n"
+        "/produce [channel] — Start a production\n"
+        "/studio — Aisha auto-picks topic & channel\n"
+        "/inbox — Check business email\n"
+        "/aistatus — See active AI brains\n\n"
+        "🧠 *Aisha Self-Improvement:*\n"
+        "/selfaudit — Aisha audits her own code\n"
+        "/addtool [description] — Aisha builds a new tool\n"
+        "/skills — See all skills Aisha has learned\n"
     )
     bot.send_message(message.chat.id, help_text, parse_mode="Markdown")
+
+
+@bot.message_handler(commands=["selfaudit"])
+def cmd_selfaudit(message):
+    """Trigger Aisha's self-improvement engine."""
+    if not is_ajay(message): return unauthorized_response(message)
+    bot.send_message(message.chat.id, "Starting self-audit now, Ajju! Reading my own code, finding bugs, fixing what I can. I'll report back in a few minutes. 💜🧠")
+    import subprocess
+    subprocess.Popen(["python", "-c",
+        "import sys; sys.path.insert(0,'e:/VSCode/Aisha'); from src.core.self_editor import SelfEditor; e=SelfEditor(); e.run_improvement_session()"
+    ], cwd="e:/VSCode/Aisha")
+
+
+@bot.message_handler(commands=["skills"])
+def cmd_skills(message):
+    """Show all skills Aisha has learned so far."""
+    if not is_ajay(message): return unauthorized_response(message)
+    from src.core.self_modifier import get_modifier
+    modifier = get_modifier()
+    skills = modifier.get_skill_list()
+    if not skills:
+        bot.send_message(message.chat.id, "I haven't built any new skills yet! Use `/addtool` to ask me to build one. 💜", parse_mode="Markdown")
+        return
+    text = f"*My Self-Built Skills ({len(skills)}):*\n\n"
+    for s in skills:
+        text += f"- `{s}`\n"
+    text += "\nEach is a Python module I wrote myself! 💜🆙"
+    bot.send_message(message.chat.id, text, parse_mode="Markdown")
+
+
+@bot.message_handler(commands=["addtool"])
+def cmd_addtool(message):
+    """Ask Aisha to write and add a new tool to herself."""
+    if not is_ajay(message): return unauthorized_response(message)
+    description = message.text.replace("/addtool", "").strip()
+
+    if not description:
+        bot.send_message(
+            message.chat.id,
+            "Tell me what tool to build! Example:\n"
+            "`/addtool A tool that checks trending hashtags on Instagram`\n"
+            "`/addtool A tool that converts my script to an audio file`",
+            parse_mode="Markdown"
+        )
+        return
+
+    bot.send_message(message.chat.id, f"On it! Building the tool: *{description}*\nGive me a minute... 💜🛠️", parse_mode="Markdown")
+
+    try:
+        from src.core.self_editor import SelfEditor
+        editor = SelfEditor()
+        # Generate tool name from description
+        tool_name = "_".join(description.lower().split()[:4])
+        path = editor.write_new_tool(tool_name, description)
+        if path.startswith("ERROR"):
+            bot.send_message(message.chat.id, f"Something went wrong: {path}")
+        else:
+            bot.send_message(
+                message.chat.id,
+                f"Done, Ajju! I wrote the new tool and saved it to:\n`{path}`\n\nI'm ready to use it! 💜✅",
+                parse_mode="Markdown"
+            )
+    except Exception as e:
+        bot.send_message(message.chat.id, f"Couldn't build the tool right now: {e}")
+
+
+@bot.message_handler(commands=["aistatus"])
+def cmd_aistatus(message):
+    """Show which AI brains and social platforms are connected."""
+    if not is_ajay(message): return unauthorized_response(message)
+
+    from src.core.ai_router import AIRouter
+    from src.core.social_media_engine import SocialMediaEngine
+
+    router = AIRouter()
+    sm = SocialMediaEngine()
+
+    ai_status = router.status()
+    social_status = sm.status()
+
+    lines = ["*Aisha — System Status*\n", "*AI Brains:*"]
+    for name, info in ai_status.items():
+        icon = "✅" if info["available"] and not info["cooling_down"] else "⚠️" if info["available"] else "❌"
+        model = router._model_name(name)
+        lines.append(f"{icon} `{name}` → `{model}`")
+
+    lines.append("\n*Social Media:*")
+    for line in social_status.split("\n")[1:]:
+        lines.append(line)
+
+    bot.send_message(message.chat.id, "\n".join(lines), parse_mode="Markdown")
+
+
+@bot.message_handler(commands=["inbox"])
+def cmd_inbox(message):
+    if not is_ajay(message): return unauthorized_response(message)
+    bot.send_message(message.chat.id, "Checking your business inbox... 📬")
+
+    try:
+        from src.core.gmail_engine import GmailEngine
+        gmail = GmailEngine()
+        emails = gmail.check_inbox(limit=5)
+
+        if not emails:
+            bot.send_message(message.chat.id, "No new emails! Inbox is clean. 💜")
+            return
+
+        summary = f"📬 *{len(emails)} new email(s):*\n\n"
+        for i, e in enumerate(emails, 1):
+            summary += f"{i}. *From:* {e.get('from', 'Unknown')[:40]}\n"
+            summary += f"   *Subject:* {e.get('subject', 'No Subject')[:60]}\n\n"
+
+        bot.send_message(message.chat.id, summary, parse_mode="Markdown")
+    except Exception as e:
+        bot.send_message(message.chat.id, f"Couldn't check inbox right now: {e}")
+
 
 
 @bot.message_handler(commands=["channels"])

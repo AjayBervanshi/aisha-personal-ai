@@ -97,6 +97,18 @@ AI_MAX_TOKENS    = 16000  # Maximum for long-form story scripts
 AI_HISTORY_LIMIT = 20     # More context = smarter Aisha
 
 # ══════════════════════════════════════════════════════════════
+# CHANNEL → AI MODEL ROUTING
+# Riya's channels use Grok (xAI) — dark, edgy, bold writing
+# Aisha's channels use Gemini — warm, emotional, cinematic
+# ══════════════════════════════════════════════════════════════
+CHANNEL_AI_PROVIDER = {
+    "Story With Aisha":           "gemini",   # Warm, emotional
+    "Riya's Dark Whisper":        "xai",      # Grok — dark, seductive
+    "Riya's Dark Romance Library":"xai",      # Grok — intense, bold
+    "Aisha & Him":                "gemini",   # Light, relatable
+}
+
+# ══════════════════════════════════════════════════════════════
 # YOUTUBE CHANNELS
 # ══════════════════════════════════════════════════════════════
 YOUTUBE_CHANNELS = {
