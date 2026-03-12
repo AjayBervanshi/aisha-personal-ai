@@ -111,7 +111,6 @@ class AutonomousLoop:
         log.info(f"[{datetime.now()}] Aisha entering Studio for proactive session...")
         
         import random
-        from src.agents.run_youtube import run_production
         
         channels = [
             {"name": "Story With Aisha",          "format": "Long Form",   "vibe": "Romantic and Heart-touching"},
@@ -146,18 +145,31 @@ class AutonomousLoop:
             except Exception as e:
                 log.warning(f"[Telegram] Failed to notify: {e}")
 
-        # Launch production as a background process
+        # Primary path: enqueue job for Antigravity queue worker
         try:
-            import subprocess
-            subprocess.Popen([
-                "python", "-m", "src.agents.run_youtube",
-                "--topic", topic,
-                "--channel", selected['name'],
-                "--format", selected['format']
-            ], cwd=str(PROJECT_ROOT))
-            log.info(f"[Studio] Production crew launched for: {topic}")
+            from src.agents.antigravity_agent import AntigravityAgent
+            job = AntigravityAgent().enqueue_job(
+                topic=topic,
+                channel=selected["name"],
+                fmt=selected["format"],
+                platform_targets=["instagram"],
+                auto_post=True,
+            )
+            log.info(f"[Studio] Enqueued content job: {job.get('id')}")
         except Exception as e:
-            log.error(f"[Studio] Failed to launch production: {e}")
+            log.error(f"[Studio] Queue enqueue failed, falling back to local process: {e}")
+            # Fallback path: launch production script directly
+            try:
+                import subprocess
+                subprocess.Popen([
+                    "python", "-m", "src.agents.run_youtube",
+                    "--topic", topic,
+                    "--channel", selected['name'],
+                    "--format", selected['format']
+                ], cwd=str(PROJECT_ROOT))
+                log.info(f"[Studio] Production crew launched for: {topic}")
+            except Exception as ex:
+                log.error(f"[Studio] Failed to launch production fallback: {ex}")
 
 def run_self_improvement(loop: AutonomousLoop):
     """Aisha audits and improves her own code every night."""

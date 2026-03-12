@@ -31,3 +31,10 @@
 5. **[QUEUED] Multi-Agent Refinement**
    - [ ] Test the "Boss Aisha" delegation flow.
    - [ ] Ensure `CrewAI` manager can spawn sub-crews correctly.
+
+6. **[IN_PROGRESS] Antigravity Content Ops (Supabase Queue)**
+   - [x] Add `content_jobs` + `content_performance` Supabase schema migration.
+   - [x] Add queue worker: `src/agents/antigravity_agent.py`.
+   - [x] Hook autonomous studio sessions to enqueue jobs first.
+   - [ ] Add final video render step and pass `video_path` into queue payload.
+   - [ ] Add YouTube + Instagram analytics pullback to populate `content_performance`.
