@@ -161,7 +161,8 @@ class AIRouter:
         system_prompt: str,
         user_message: str,
         history: list = None,
-        image_bytes: bytes = None
+        image_bytes: bytes = None,
+        preferred_provider: str = None
     ) -> AIResult:
         """
         Try each provider in order. Return first successful response.
@@ -171,6 +172,12 @@ class AIRouter:
             order = ["gemini", "anthropic", "openai"]  # Only providers with Vision
         else:
             order = ["gemini", "anthropic", "groq", "xai", "openai", "mistral", "ollama"]
+            
+        if preferred_provider and preferred_provider in self._clients:
+            # Move preferred to the front if it's not already there
+            if preferred_provider in order:
+                order.remove(preferred_provider)
+            order.insert(0, preferred_provider)
             
         history = history or []
 

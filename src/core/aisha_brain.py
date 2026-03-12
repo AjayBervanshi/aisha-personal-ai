@@ -71,11 +71,24 @@ class AishaBrain:
         # 4. Add user message to local history
         self.history.append({"role": "user", "content": user_message})
 
-        # 5. Generate Response via Router
+        # 5. Determine preferred provider (e.g. Riya loves Grok)
+        preferred_provider = None
+        if mood == "riya" or any(x in user_message.lower() for x in ["riya", "shadow mode", "dark side"]):
+             preferred_provider = "xai"
+             if mood != "riya":
+                 mood = "riya"
+                 context["mood"] = "riya"
+                 system_prompt = build_system_prompt(context)
+
+        # 6. Generate Response via Router
         try:
-            # We pass the history (excluding the current user message which is passed explicitly)
-            # though AIRouter often expects just system + user.
-            result = self.ai.generate(system_prompt, user_message, self.history[:-1], image_bytes=image_bytes)
+            result = self.ai.generate(
+                system_prompt, 
+                user_message, 
+                self.history[:-1], 
+                image_bytes=image_bytes,
+                preferred_provider=preferred_provider
+            )
             response_text = result.text
 
             # 6. VIDEO PRODUCTION TRIGGER (T-102)
