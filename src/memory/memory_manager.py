@@ -110,7 +110,7 @@ class MemoryManager:
                 import google.generativeai as genai
                 genai.configure(api_key=api_key)
                 result = genai.embed_content(
-                    model="models/text-embedding-004",
+                    model="models/gemini-embedding-001",
                     content=text,
                     task_type="retrieval_document",
                 )
@@ -184,15 +184,13 @@ class MemoryManager:
 
     def save_conversation(self, role: str, message: str, platform: str = "telegram", language: str = "English", mood: str = "casual"):
         """Log conversation turn to Supabase."""
-        embedding = self._generate_embedding(message)
         try:
             self.db.table("aisha_conversations").insert({
                 "platform": platform,
                 "role": role,
                 "message": message,
                 "language": language,
-                "mood_detected": mood,
-                "embedding": embedding
+                "mood_detected": mood
             }).execute()
         except Exception as e:
             print(f"[Memory] Error saving conversation: {e}")

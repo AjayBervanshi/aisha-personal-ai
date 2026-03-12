@@ -39,11 +39,22 @@ XAI_API_KEY       = _get("XAI_API_KEY",       required=False)
 HUGGINGFACE_API_KEY = _get("HUGGINGFACE_API_KEY", required=False)
 
 # ══════════════════════════════════════════════════════════════
+# CALL-ME PLUGIN SETTINGS
+# ══════════════════════════════════════════════════════════════
+CALLME_PHONE_PROVIDER    = _get("CALLME_PHONE_PROVIDER", "telnyx")
+CALLME_PHONE_ACCOUNT_SID = _get("CALLME_PHONE_ACCOUNT_SID")
+CALLME_PHONE_AUTH_TOKEN  = _get("CALLME_PHONE_AUTH_TOKEN")
+CALLME_PHONE_NUMBER      = _get("CALLME_PHONE_NUMBER")
+CALLME_USER_PHONE_NUMBER = _get("CALLME_USER_PHONE_NUMBER")
+CALLME_OPENAI_API_KEY    = _get("CALLME_OPENAI_API_KEY")
+CALLME_NGROK_AUTHTOKEN   = _get("CALLME_NGROK_AUTHTOKEN")
+
+# ══════════════════════════════════════════════════════════════
 # AI MODELS — Always use the most powerful available
 # ══════════════════════════════════════════════════════════════
 # These are tried in order by AIRouter. First available wins.
-GEMINI_MODEL    = "gemini-2.5-pro-exp-03-25"  # Most powerful Gemini (experimental access)
-GEMINI_FALLBACK = "gemini-2.0-flash"          # Fast fallback
+GEMINI_MODEL    = "gemini-2.5-pro"  # Most powerful Gemini
+GEMINI_FALLBACK = "gemini-2.5-flash"          # Fast fallback
 OPENAI_MODEL    = "gpt-4o"                    # Best available OpenAI
 GROQ_MODEL      = "llama-3.3-70b-versatile"   # Most powerful on Groq (free, ultra-fast)
 ANTHROPIC_MODEL = "claude-3-7-sonnet-20250219" # Most powerful Claude available

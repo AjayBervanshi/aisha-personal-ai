@@ -6,6 +6,7 @@ google-generativeai>=0.7.0     # Gemini AI — primary brain
 groq>=0.9.0                     # Groq + Llama — backup brain
 openai>=1.0.0                   # OpenAI (ChatGPT)
 schedule>=1.2.0                 # Autonomous Cron Engine
+agentlightning>=0.2.1           # Microsoft Agent Lightning for reinforcement learning
 
 # Telegram Bot
 pyTelegramBotAPI>=4.20.0        # Telegram bot framework

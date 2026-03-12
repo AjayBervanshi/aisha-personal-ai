@@ -2,6 +2,13 @@
 
 ## Loophole Fixes & Enhancements
 
+0. **[IN_PROGRESS] Install & Integrate Agent-Lightning & CallMe**
+   - [x] Clone agent-lightning repository to workspace.
+   - [x] Add it to Aisha's requirements.txt.
+   - [x] Install package and test import.
+   - [x] Set up CallMe plugin environment variables for Telnyx/Twilio.
+   - [ ] Register `CallMe` capabilities with Aisha's brain.
+
 1. **[IN_PROGRESS] Fix Deployment Pipeline**
    - [ ] Implement `merge_github_pr` in `src/core/self_improvement.py`.
    - [ ] Add Railway/Vercel redeploy webhook trigger.

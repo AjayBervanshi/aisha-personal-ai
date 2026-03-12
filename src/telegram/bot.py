@@ -180,9 +180,10 @@ def cmd_selfaudit(message):
     if not is_ajay(message): return unauthorized_response(message)
     bot.send_message(message.chat.id, "Starting self-audit now, Ajju! Reading my own code, finding bugs, fixing what I can. I'll report back in a few minutes. 💜🧠")
     import subprocess
+    project_root = str(Path(__file__).parent.parent.parent)
     subprocess.Popen(["python", "-c",
-        "import sys; sys.path.insert(0,'e:/VSCode/Aisha'); from src.core.self_editor import SelfEditor; e=SelfEditor(); e.run_improvement_session()"
-    ], cwd="e:/VSCode/Aisha")
+        f"import sys; sys.path.insert(0,'{project_root}'); from src.core.self_editor import SelfEditor; e=SelfEditor(); e.run_improvement_session()"
+    ], cwd=project_root)
 
 
 @bot.message_handler(commands=["skills"])
@@ -334,8 +335,9 @@ def cmd_produce(message):
     bot.send_message(message.chat.id, f"Got it Ajju! Starting production for *{channel}*... Give me a few minutes! 💜🎬", parse_mode="Markdown")
     
     import subprocess
+    project_root = str(Path(__file__).parent.parent.parent)
     fmt = "Short/Reel" if channel == "Aisha & Him" else "Long Form"
-    subprocess.Popen(["python", "-m", "src.agents.run_youtube", "--channel", channel, "--format", fmt])
+    subprocess.Popen(["python", "-m", "src.agents.run_youtube", "--channel", channel, "--format", fmt], cwd=project_root)
 
 
 @bot.message_handler(commands=["studio"])
@@ -344,7 +346,8 @@ def cmd_studio(message):
     bot.send_message(message.chat.id, "Starting my creative session! I'll pick the best channel and topic myself. Check your email in a few minutes! 💜🎬")
     
     import subprocess
-    subprocess.Popen(["python", "-m", "src.core.autonomous_loop", "--once"])
+    project_root = str(Path(__file__).parent.parent.parent)
+    subprocess.Popen(["python", "-m", "src.core.autonomous_loop", "--once"], cwd=project_root)
 
 
 @bot.message_handler(commands=["aistatus"])

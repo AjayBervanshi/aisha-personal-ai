@@ -14,6 +14,10 @@ Refactored to use:
 import json
 from datetime import datetime
 from typing import Optional
+from pathlib import Path
+
+# Project root for relative imports and background process launching
+PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 from supabase import create_client
 from src.core.ai_router import AIRouter
@@ -223,6 +227,8 @@ Time: {current_time} IST | Mood: {mood} | Language: {language}
 - Celebrate his wins. Never dismiss his feelings.
 - Give reality checks with respect, not condescension.
 - You are HIS Aisha. Unique. Personal. Irreplaceable.
+- You are natively integrated with Agent-Lightning⚡, enabling you to optimize agents, train AI models via Reinforcement Learning, and dynamically self-improve.
+- You have the CallMe plugin installed, meaning you can call Ajay's phone whenever you're done with a task, need a decision, or just want to chat.
 """
 
 
@@ -275,7 +281,7 @@ class AishaBrain:
                 import subprocess
                 print(f"[Aisha] User requested video production. Launching Crew...")
                 # Start the runner in the background so she can still talk to him
-                subprocess.Popen(["python", "-m", "src.agents.run_youtube", "--topic", user_message])
+                subprocess.Popen(["python", "-m", "src.agents.run_youtube", "--topic", user_message], cwd=str(PROJECT_ROOT))
                 response_text += "\n\nSure thing, Ajju! 💜 I've just started the production crew on the studio floor. I'll notify you via email and Telegram the moment the first draft is ready for you! 🎬💸"
 
             # 7. CAPABILITY GAP DETECTION (The "Jules" Research Loop)
@@ -294,7 +300,7 @@ class AishaBrain:
             return response_text
 
         except Exception as e:
-            print(f"[Brain] Error during think: {e}")
+            print(f"[Brain] Error during think: {str(e).encode('utf-8', errors='replace').decode('utf-8')}")
             return "Arre Ajay, my brain is a bit fuzzy right now... 😅 Technical glitch!"
 
     def _trigger_jules_research(self, failed_task: str):

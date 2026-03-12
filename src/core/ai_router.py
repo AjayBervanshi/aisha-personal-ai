@@ -82,8 +82,8 @@ class AIRouter:
             key = os.getenv("GEMINI_API_KEY", "")
             if key and "your_" not in key:
                 genai.configure(api_key=key)
-                # Try gemini-2.5-pro first, fall back to 2.0-flash
-                for model_name in ["gemini-2.5-pro-exp-03-25", "gemini-2.0-flash", "gemini-1.5-pro"]:
+                # Try gemini-2.5-pro first, fall back to 2.5-flash then 2.0-flash
+                for model_name in ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"]:
                     try:
                         self._clients["gemini"] = genai.GenerativeModel(model_name)
                         self._gemini_model_name = model_name
@@ -258,15 +258,12 @@ class AIRouter:
     # ── Provider implementations ──────────────────────────────
 
     def _call_gemini(self, system_prompt, user_message, history, image_bytes: bytes = None) -> str:
-        model = self._clients["gemini"]
-
         # Build history for Gemini format
         gemini_history = []
         for msg in history[-10:]:
             role = "model" if msg["role"] == "assistant" else "user"
             gemini_history.append({"role": role, "parts": [msg["content"]]})
 
-        chat = model.start_chat(history=gemini_history)
         full_prompt = f"{system_prompt}\n\n---\n\nAjay says: {user_message}"
         
         message_parts = [full_prompt]
@@ -276,8 +273,22 @@ class AIRouter:
             img = Image.open(io.BytesIO(image_bytes))
             message_parts.append(img)
             
-        response = chat.send_message(message_parts)
-        return response.text
+        import google.generativeai as genai
+        try:
+            # First try the primary model
+            model = genai.GenerativeModel("gemini-2.5-pro")
+            chat = model.start_chat(history=gemini_history)
+            response = chat.send_message(message_parts)
+            return response.text
+        except Exception as e:
+            if "429" in str(e) or "ResourceExhausted" in str(type(e).__name__):
+                log.warning(f"[Gemini] Rate limit hit on Pro model. Falling back to Flash model!")
+                # Fallback to flash
+                model = genai.GenerativeModel("gemini-2.5-flash")
+                chat = model.start_chat(history=gemini_history)
+                response = chat.send_message(message_parts)
+                return response.text
+            raise e
 
     def _call_anthropic(self, system_prompt, user_message, history, image_bytes: bytes = None) -> str:
         client = self._clients["anthropic"]
@@ -404,7 +415,7 @@ class AIRouter:
 
     def _model_name(self, provider: str) -> str:
         names = {
-            "gemini":    getattr(self, '_gemini_model_name', 'gemini-2.5-pro-exp-03-25'),
+            "gemini":    getattr(self, '_gemini_model_name', 'gemini-2.5-pro'),
             "anthropic": "claude-3-7-sonnet-20250219",
             "groq":      "llama-3.3-70b-versatile",
             "xai":       "grok-2-latest",

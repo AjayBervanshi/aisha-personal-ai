@@ -11,6 +11,10 @@ import json
 import schedule
 import logging
 from datetime import datetime
+from pathlib import Path
+
+# Project root for relative imports and background process launching
+PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 from src.core.config import TIMEZONE
 from src.core.aisha_brain import AishaBrain
@@ -150,7 +154,7 @@ class AutonomousLoop:
                 "--topic", topic,
                 "--channel", selected['name'],
                 "--format", selected['format']
-            ])
+            ], cwd=str(PROJECT_ROOT))
             log.info(f"[Studio] Production crew launched for: {topic}")
         except Exception as e:
             log.error(f"[Studio] Failed to launch production: {e}")

@@ -31,3 +31,6 @@ tmp/
 *.tmp
 *.log
 Aisha_Antigravity_log.txt
+
+# Project Logs
+logs/
