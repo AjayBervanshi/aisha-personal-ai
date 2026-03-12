@@ -28,6 +28,14 @@ def _get(key: str, default: str = None, required: bool = False) -> str:
     return val
 
 
+def _get_int(key: str, default: int = 0) -> int:
+    raw = _get(key, str(default))
+    try:
+        return int(str(raw))
+    except (TypeError, ValueError):
+        return default
+
+
 # ══════════════════════════════════════════════════════════════
 # AI KEYS
 # ══════════════════════════════════════════════════════════════
@@ -64,7 +72,7 @@ XAI_MODEL       = "grok-2-latest"             # xAI Grok
 # TELEGRAM
 # ══════════════════════════════════════════════════════════════
 TELEGRAM_BOT_TOKEN  = _get("TELEGRAM_BOT_TOKEN", required=True)
-AJAY_TELEGRAM_ID    = int(_get("AJAY_TELEGRAM_ID", "0"))
+AJAY_TELEGRAM_ID    = _get_int("AJAY_TELEGRAM_ID", 0)
 
 # ══════════════════════════════════════════════════════════════
 # SUPABASE

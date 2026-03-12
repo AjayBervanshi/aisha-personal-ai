@@ -16,7 +16,12 @@ def build_system_prompt(context: dict) -> str:
     memories     = context.get("memories", "")
     today_tasks  = context.get("today_tasks", "None")
     profile      = context.get("profile", {})
-    current_time = datetime.now().strftime("%I:%M %p")
+    now          = datetime.now()
+    current_time = now.strftime("%I:%M %p")
+
+    # Late-night guardrail: if mood is still casual, gently switch to night mode.
+    if mood == "casual" and (now.hour >= 22 or now.hour < 4):
+        mood = "late_night"
     
     # Assembly
     rules_str = "\n".join([f"{i+1}. {rule}" for i, rule in enumerate(RULES)])

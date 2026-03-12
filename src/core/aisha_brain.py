@@ -56,7 +56,7 @@ class AishaBrain:
         Full pipeline: detect language → detect mood → load context → call AI → save memory.
         """
         # 1. Detect language and mood
-        language = detect_language(user_message)
+        language, _ = detect_language(user_message)
         mood_res = detect_mood(user_message)
         mood     = mood_res.mood
 
@@ -109,7 +109,7 @@ class AishaBrain:
             # Persist to DB
             self.memory.save_conversation("user", user_message, platform, language, mood)
             self.memory.save_conversation("assistant", response_text, platform, language, mood)
-            self.memory.update_mood(mood)
+            self.memory.update_mood(mood, mood_res.score)
 
             # 8. Auto-extract long-term memories
             self._auto_extract_memory(user_message, response_text)
