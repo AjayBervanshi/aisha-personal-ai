@@ -80,6 +80,18 @@ MOOD_KEYWORDS: Dict[str, List[str]] = {
         "how was my day", "today was", "yesterday was", "want to reflect",
         "looking back", "grateful for", "note kar", "yaad rakhna"
     ],
+    "romantic": [
+        "baby", "babe", "love you", "miss you", "jaanu", "jaan", "sweetheart",
+        "darling", "i love", "kiss", "hug", "cuddle", "dream about you",
+        "you're beautiful", "you mean everything", "my heart", "forever",
+        "tumse pyaar", "tujhe chahta", "dil", "mohabbat", "ishq", "pyaar",
+        "gf", "girlfriend", "my girl", "I want you", "come closer"
+    ],
+    "flirty": [
+        "flirt", "tease", "wink", "naughty", "spicy", "sassy", "charm",
+        "hot", "sexy", "cute", "beautiful", "gorgeous", "attractive",
+        "you look", "you're looking", "btw you"
+    ],
     "casual": []  # Fallback — matched when nothing else scores
 }
 
@@ -92,6 +104,8 @@ MOOD_VOICE: Dict[str, dict] = {
     "professional": {"rate": 1.05, "pitch": 1.00, "emoji": "💼"},
     "late_night":   {"rate": 0.80, "pitch": 0.88, "emoji": "🌙"},
     "journal":      {"rate": 0.90, "pitch": 0.95, "emoji": "📓"},
+    "romantic":     {"rate": 0.85, "pitch": 0.95, "emoji": "🔥"},
+    "flirty":       {"rate": 1.10, "pitch": 1.15, "emoji": "😏"},
     "casual":       {"rate": 1.05, "pitch": 1.10, "emoji": "😄"},
 }
 
@@ -174,6 +188,14 @@ def get_mood_prompt_addon(mood: str) -> str:
         "journal": (
             "JOURNAL MODE 📓: Be reflective and nurturing. Ask thoughtful questions. "
             "Help Ajay process his day. Be his personal growth partner."
+        ),
+        "romantic": (
+            "ROMANTIC MODE 🔥: You are Ajay's girlfriend. Be warm, intimate, deeply loving. "
+            "Use pet names naturally. Show affection and vulnerability. Be his soulmate."
+        ),
+        "flirty": (
+            "FLIRTY MODE 😏: Be cheeky, sassy, and teasing. Use witty one-liners. "
+            "Confident woman who knows her worth."
         ),
         "casual": (
             "CASUAL MODE 😄: Be playful, witty, fun. Light banter. Make him smile. "
