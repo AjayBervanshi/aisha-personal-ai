@@ -87,6 +87,17 @@ SUPABASE_SERVICE_KEY = _get("SUPABASE_SERVICE_KEY",  required=True)
 ELEVENLABS_API_KEY  = _get("ELEVENLABS_API_KEY")
 ELEVENLABS_VOICE_ID = _get("ELEVENLABS_VOICE_ID")
 
+# Channel-specific ElevenLabs voice IDs
+AISHA_ELEVENLABS_VOICE_ID = "wdymxIQkYn7MJCYCQF2Q"   # Aisha — warm, emotional narrator
+RIYA_ELEVENLABS_VOICE_ID  = "BpjGufoPiobT79j2vtj4"   # Riya  — seductive, bold narrator
+
+CHANNEL_VOICE_IDS: dict = {
+    "Story With Aisha":            AISHA_ELEVENLABS_VOICE_ID,
+    "Riya's Dark Whisper":         RIYA_ELEVENLABS_VOICE_ID,
+    "Riya's Dark Romance Library": RIYA_ELEVENLABS_VOICE_ID,
+    "Aisha & Him":                 AISHA_ELEVENLABS_VOICE_ID,
+}
+
 # ══════════════════════════════════════════════════════════════
 # GMAIL
 # ══════════════════════════════════════════════════════════════
@@ -198,6 +209,8 @@ def print_status():
     print(f"  TELEGRAM_BOT     : {mask(TELEGRAM_BOT_TOKEN)}")
     print(f"  SUPABASE_URL     : {mask(SUPABASE_URL)}")
     print(f"  ELEVENLABS_KEY   : {mask(ELEVENLABS_API_KEY)}")
+    print(f"  AISHA_VOICE_ID   : {AISHA_ELEVENLABS_VOICE_ID}")
+    print(f"  RIYA_VOICE_ID    : {RIYA_ELEVENLABS_VOICE_ID}")
     print(f"  GMAIL_USER       : {GMAIL_USER or 'NOT SET'}")
     print(f"  AI_MAX_TOKENS    : {AI_MAX_TOKENS}")
     print()

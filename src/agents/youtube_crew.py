@@ -9,6 +9,10 @@ import os
 from src.core.ai_router import AIRouter
 from src.core.voice_engine import generate_voice
 from src.core.image_engine import generate_image
+from src.core.video_engine import render_video
+from src.core.trend_engine import get_trends_for_channel
+from src.core.prompts.personality import CHANNEL_PROMPTS
+from src.core.config import CHANNEL_VOICE_IDS
 
 CHANNEL_IDENTITY = {
     "Story With Aisha": {
@@ -72,36 +76,77 @@ class YouTubeCrew:
         return result.text.strip()
 
     def kickoff(self, inputs: dict) -> str:
-        topic = inputs.get("topic", "A Late Night Secret")
         channel = inputs.get("channel", "Story With Aisha")
         fmt = inputs.get("format", "Long Form")
         master_prompt = inputs.get("master_prompt", "")
+        render_mp4 = inputs.get("render_video", False)  # Set True to also render MP4
 
         identity = CHANNEL_IDENTITY.get(channel, CHANNEL_IDENTITY["Story With Aisha"])
 
         from src.core.config import CHANNEL_AI_PROVIDER
 
         preferred_ai = CHANNEL_AI_PROVIDER.get(channel, "gemini")
+
+        # Fetch real-time trends first — then use as topic if none given
+        print("[TrendEngine] Fetching real-time trends...")
+        trends = {}
+        try:
+            trends = get_trends_for_channel(channel)
+        except Exception as e:
+            print(f"[TrendEngine] Warning: trend fetch failed ({e}), using fallback")
+
+        # Use trending topic if none provided, or enhance provided topic with trend data
+        raw_topic = inputs.get("topic", "")
+        if not raw_topic and trends.get("recommended_topic"):
+            topic = trends["recommended_topic"]
+            print(f"[TrendEngine] Auto-selected trending topic: {topic}")
+        else:
+            topic = raw_topic or "A Late Night Secret"
+
+        # Append trend context to enrich research
+        trend_context = ""
+        if trends.get("viral_keywords"):
+            trend_context = (
+                f"\n\nCURRENT TREND DATA (real-time):\n"
+                f"Viral keywords: {', '.join(trends.get('viral_keywords', []))}\n"
+                f"Trending topics: {', '.join(trends.get('trending_topics', []))}\n"
+                f"Top angles: {chr(10).join(trends.get('top_angles', []))}\n"
+                f"Best hook idea: {trends.get('hook_idea', '')}\n"
+            )
+
         print(f"[Crew] {channel} | {topic} | AI: {preferred_ai.upper()}")
 
-        channel_context = master_prompt if master_prompt else (
-            f"Channel: {channel}\n"
-            f"Tone: {identity['tone']}\n"
-            f"Themes: {identity['themes']}\n"
-            f"Format: {identity['format_hint']}\n"
-            f"Hook style: {identity['hook_style']}\n"
-            f"Voice: {identity['voice_style']}"
+        # Use full channel identity prompt → minimal fallback
+        channel_context = (
+            master_prompt
+            or CHANNEL_PROMPTS.get(channel)
+            or (
+                f"Channel: {channel}\n"
+                f"Tone: {identity['tone']}\n"
+                f"Themes: {identity['themes']}\n"
+                f"Format: {identity['format_hint']}\n"
+                f"Hook style: {identity['hook_style']}\n"
+                f"Voice: {identity['voice_style']}"
+            )
         )
 
-        print("[Riya] Researching story trope...")
+        print("[Riya] Researching trending angles + story brief...")
         self.results["research"] = self._generate(
             f"""You are Riya, the Story Researcher.
 {channel_context}
 Topic: {topic}
+{trend_context}
 
-Find the most viral, emotionally gripping angle for this story.
-Output: Character names, core conflict, emotional hook, why this will go viral.
-Keep it to 300 words.""",
+STEP 1 — TREND ANALYSIS:
+Using the real-time trend data above (if available), identify the single most viral story angle right now for the '{channel}' niche. Consider: titles with high CTR patterns, emotional hooks driving comments, trending tropes in Hindi storytelling channels, popular scenarios in this category.
+
+STEP 2 — STORY BRIEF (using the top trending angle):
+- Character names + quick backstory (fresh, never reused)
+- Core conflict (what creates the tension/desire)
+- Emotional/sensory hook (why viewers will stop scrolling for this)
+- Viral potential reasoning (why this gets clicks and watch time)
+
+Output: 300 words max. Be specific and concrete.""",
             preferred_provider=preferred_ai,
         )
 
@@ -162,10 +207,12 @@ Create:
         self.results["thumbnail_path"] = None
 
         mood_for_voice = "romantic" if ("Riya" in channel or "Aisha & Him" in channel) else "personal"
+        # Both Aisha and Riya channels use Devanagari Hindi scripts
+        voice_language = "Hindi" if channel in ("Story With Aisha", "Riya's Dark Whisper", "Riya's Dark Romance Library") else "English"
         voice_text = self.results["script"][:3500]
 
         try:
-            voice_path = generate_voice(voice_text, language="English", mood=mood_for_voice)
+            voice_path = generate_voice(voice_text, language=voice_language, mood=mood_for_voice, channel=channel)
             if voice_path:
                 self.results["voice_path"] = voice_path
         except Exception as e:
@@ -188,6 +235,24 @@ Create:
         except Exception as e:
             print(f"[Mia] Thumbnail generation failed: {e}")
 
+        # Step: Render final MP4 if requested
+        self.results["video_path"] = None
+        if render_mp4 and self.results.get("voice_path"):
+            print("[VideoEngine] Rendering final MP4 (voice + AI scenes)...")
+            try:
+                video_path = render_video(
+                    voice_path=self.results["voice_path"],
+                    script=self.results["script"],
+                    channel=channel,
+                    topic=topic,
+                    thumbnail_path=self.results.get("thumbnail_path"),
+                )
+                if video_path:
+                    self.results["video_path"] = video_path
+                    print(f"[VideoEngine] MP4 ready: {video_path}")
+            except Exception as e:
+                print(f"[VideoEngine] Video render failed: {e}")
+
         final = (
             f"{'='*60}\n"
             f"CHANNEL: {channel}\n"
@@ -202,7 +267,8 @@ Create:
             f"{'-'*40}\n"
             f"[ASSETS]\n"
             f"Voice: {self.results.get('voice_path') or 'Not generated'}\n"
-            f"Thumbnail: {self.results.get('thumbnail_path') or 'Not generated'}\n\n"
+            f"Thumbnail: {self.results.get('thumbnail_path') or 'Not generated'}\n"
+            f"Video MP4: {self.results.get('video_path') or 'Not rendered (set render_video=True)'}\n\n"
             f"{'-'*40}\n"
             f"[STORY BRIEF]\n{self.results['research']}\n"
             f"{'='*60}"

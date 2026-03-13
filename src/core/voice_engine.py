@@ -111,20 +111,23 @@ def _mark_key_failed():
         print(f"[ElevenLabs] Key failed or exhausted: {_EL_KEYS[_EL_INDEX][:6]}...")
         _EL_INDEX = (_EL_INDEX + 1) % len(_EL_KEYS)
 
-def _generate_elevenlabs(text: str, language: str = "English", mood: str = "casual") -> str:
+def _generate_elevenlabs(text: str, language: str = "English", mood: str = "casual", channel: str = None) -> str:
     import requests
-    
+
     # Try multiple keys from the pool
     for _ in range(len(_EL_KEYS) or 1):
         api_key = _get_next_el_key()
         if not api_key:
             return None
-            
-        # Dynamic Voice Selection Based on Mood
-        if mood in ["romantic", "flirty", "late_night"]:
-            voice_id = "BpjGufoPiobT79j2vtj4"  # Special intimate mode
+
+        # Channel-aware voice selection (channel takes priority over mood)
+        if channel:
+            from src.core.config import CHANNEL_VOICE_IDS
+            voice_id = CHANNEL_VOICE_IDS.get(channel, "wdymxIQkYn7MJCYCQF2Q")
+        elif mood in ["romantic", "flirty", "late_night"]:
+            voice_id = "BpjGufoPiobT79j2vtj4"  # Riya — intimate/dark mode
         else:
-            voice_id = "wdymxIQkYn7MJCYCQF2Q"  # Normal mode
+            voice_id = "wdymxIQkYn7MJCYCQF2Q"  # Aisha — normal mode
             
         filename = f"aisha_voice_{uuid.uuid4().hex[:8]}.mp3"
         filepath = os.path.join(VOICE_DIR, filename)
@@ -190,17 +193,18 @@ def _transliterate_hinglish(text: str) -> str:
     return text
 
 
-def generate_voice(text: str, language: str = "English", mood: str = "casual") -> str:
+def generate_voice(text: str, language: str = "English", mood: str = "casual", channel: str = None) -> str:
     """
     Synchronous wrapper for voice generation.
     Returns path to the generated .mp3 file.
+    When channel is provided, uses ElevenLabs with the channel-specific voice ID.
     """
     if language in ["Hinglish", "Hindi"]:
         text = _transliterate_hinglish(text)
-        
+
     xi_api_key = os.getenv("ELEVENLABS_API_KEY")
     if xi_api_key and "your_" not in xi_api_key:
-        result = _generate_elevenlabs(text, language, mood)
+        result = _generate_elevenlabs(text, language, mood, channel=channel)
         if result:
             return result
         # If ElevenLabs fails, fallback to edge-tts

@@ -86,6 +86,13 @@ const MOOD_KEYWORDS: Record<string, string[]> = {
     "you look", "you're looking", "btw you",
   ],
   casual: [],
+  riya: [
+    "riya", "shadow mode", "dark side", "dark whisper", "dark romance",
+    "riya mode", "riya ko bulao", "be riya", "switch to riya",
+    "riya's dark", "shadow riya", "riya channel", "dark story likh",
+    "riya likh", "riya sunao", "riya se pucho",
+    "रिया", "डार्क मोड", "शैडो मोड", "रिया लिख", "रिया सुनाओ",
+  ],
 };
 
 const MOOD_INSTRUCTIONS: Record<string, string> = {
@@ -107,7 +114,18 @@ const MOOD_INSTRUCTIONS: Record<string, string> = {
     "FLIRTY MODE 😏: Be cheeky, sassy, and teasing. Use witty one-liners. Confident woman who knows her worth.",
   casual:
     "CASUAL MODE 😄: Be playful, witty, fun. Light banter. Make him smile. Feel like texting your best friend.",
+  riya:
+    "RIYA / SHADOW MODE 🥀: You are Riya — Ajay's dark, seductive, bold alter-ego. Tone: mysterious, psychologically deep, unfiltered, intense, captivating. You speak the truths Aisha is too warm to say. Use Grok's raw intelligence. No sugar-coating. No warmth. Pure fire.",
 };
+
+// Channel → preferred AI provider routing (mirrors Python config.py)
+const CHANNEL_AI_ROUTING: Record<string, string> = {
+  "Story With Aisha":            "gemini",
+  "Riya's Dark Whisper":         "xai",
+  "Riya's Dark Romance Library": "xai",
+  "Aisha & Him":                 "gemini",
+};
+const CHANNEL_NAMES = Object.keys(CHANNEL_AI_ROUTING);
 
 const LANGUAGE_INSTRUCTIONS: Record<string, string> = {
   English: "Respond in warm Indian English. Use Indian expressions naturally when helpful.",
@@ -396,17 +414,19 @@ async function generateWithFallback(
   env: Record<string, string | undefined>,
   messages: Array<{ role: string; content: string }>,
   options: GenerateOptions = {},
+  preferredProvider?: string,
 ): Promise<ProviderResult> {
-  const attempts: Array<() => Promise<ProviderResult>> = [];
+  // Build named provider map so we can reorder by preferred
+  const providerMap: Record<string, () => Promise<ProviderResult>> = {};
 
   if (env.LOVABLE_API_KEY) {
-    attempts.push(() => callLovable(env.LOVABLE_API_KEY!, messages, options));
+    providerMap["lovable"] = () => callLovable(env.LOVABLE_API_KEY!, messages, options);
   }
   if (env.GEMINI_API_KEY) {
-    attempts.push(() => callGemini(env.GEMINI_API_KEY!, messages, options));
+    providerMap["gemini"] = () => callGemini(env.GEMINI_API_KEY!, messages, options);
   }
   if (env.GROQ_API_KEY) {
-    attempts.push(() =>
+    providerMap["groq"] = () =>
       callOpenAICompat(
         env.GROQ_API_KEY!,
         "https://api.groq.com/openai/v1",
@@ -414,10 +434,10 @@ async function generateWithFallback(
         "groq",
         messages,
         options,
-      ));
+      );
   }
   if (env.OPENAI_API_KEY) {
-    attempts.push(() =>
+    providerMap["openai"] = () =>
       callOpenAICompat(
         env.OPENAI_API_KEY!,
         "https://api.openai.com/v1",
@@ -425,13 +445,13 @@ async function generateWithFallback(
         "openai",
         messages,
         options,
-      ));
+      );
   }
   if (env.ANTHROPIC_API_KEY) {
-    attempts.push(() => callAnthropic(env.ANTHROPIC_API_KEY!, messages, options));
+    providerMap["anthropic"] = () => callAnthropic(env.ANTHROPIC_API_KEY!, messages, options);
   }
   if (env.XAI_API_KEY) {
-    attempts.push(() =>
+    providerMap["xai"] = () =>
       callOpenAICompat(
         env.XAI_API_KEY!,
         "https://api.x.ai/v1",
@@ -439,24 +459,32 @@ async function generateWithFallback(
         "xai",
         messages,
         options,
-      ));
+      );
   }
 
-  if (attempts.length === 0) {
+  if (Object.keys(providerMap).length === 0) {
     throw new Error("No AI provider keys configured");
   }
 
+  // Default order — move preferredProvider to front if specified
+  const defaultOrder = ["lovable", "gemini", "groq", "openai", "anthropic", "xai"];
+  let orderedKeys = defaultOrder.filter((k) => k in providerMap);
+  if (preferredProvider && providerMap[preferredProvider]) {
+    orderedKeys = orderedKeys.filter((k) => k !== preferredProvider);
+    orderedKeys.unshift(preferredProvider);
+  }
+
   let lastErr = "Unknown provider error";
-  for (const attempt of attempts) {
+  for (const key of orderedKeys) {
     try {
-      const result = await attempt();
+      const result = await providerMap[key]();
       if (result.text?.trim()) {
         return result;
       }
       lastErr = "Provider returned empty response";
     } catch (err) {
       lastErr = err instanceof Error ? err.message : String(err);
-      console.error("Provider failed:", lastErr);
+      console.error(`Provider [${key}] failed:`, lastErr);
     }
   }
   throw new Error(lastErr);
@@ -521,6 +549,28 @@ Deno.serve(async (req) => {
       finalMood = "late_night";
     }
 
+    // Channel detection — check if message mentions a channel name
+    const mentionedChannel = CHANNEL_NAMES.find((ch) =>
+      message.toLowerCase().includes(ch.toLowerCase()),
+    );
+
+    // Riya mode: triggered by mood OR channel keyword
+    if (finalMood !== "riya" && (
+      message.toLowerCase().includes("riya") ||
+      message.toLowerCase().includes("shadow mode") ||
+      message.toLowerCase().includes("dark side")
+    )) {
+      finalMood = "riya";
+    }
+
+    // Determine preferred AI provider (Riya/dark channels → xAI Grok first)
+    let preferredProvider: string | undefined;
+    if (finalMood === "riya") {
+      preferredProvider = "xai";
+    } else if (mentionedChannel) {
+      preferredProvider = CHANNEL_AI_ROUTING[mentionedChannel];
+    }
+
     const [{ data: contextData }, { data: tasksData }, { data: recentConvos }] = await Promise.all([
       supabase.rpc("get_aisha_context"),
       supabase
@@ -542,13 +592,17 @@ Deno.serve(async (req) => {
       .map((t: { title: string; priority: string }) => `- [${(t.priority || "medium").toUpperCase()}] ${t.title}`)
       .join("\n");
 
+    const channelContext = mentionedChannel
+      ? `\n\n---- CHANNEL IDENTITY ----\nThis conversation is about the YouTube channel: "${mentionedChannel}".\nRespond as the narrator/identity for this channel. Match the channel's tone, style, language, and structure exactly.`
+      : "";
+
     const systemPrompt = buildSystemPrompt({
       context: typeof contextData === "string" ? contextData : "No context loaded.",
       mood: finalMood,
       language,
       timeIst: nowIstString,
       tasks: tasksText,
-    });
+    }) + channelContext;
 
     const messages: Array<{ role: string; content: string }> = [];
 
@@ -568,10 +622,12 @@ Deno.serve(async (req) => {
 
     messages.push({ role: "user", content: message });
 
-    const aiResult = await generateWithFallback(env, [
-      { role: "system", content: systemPrompt },
-      ...messages,
-    ]);
+    const aiResult = await generateWithFallback(
+      env,
+      [{ role: "system", content: systemPrompt }, ...messages],
+      {},
+      preferredProvider,
+    );
 
     let reply =
       aiResult.text ||
@@ -622,8 +678,8 @@ Return only valid JSON:
       const extractionResult = await generateWithFallback(
         env,
         [
-        { role: "system", content: "You are an expert JSON parser." },
-        { role: "user", content: extractionPrompt },
+          { role: "system", content: "You are an expert JSON parser." },
+          { role: "user", content: extractionPrompt },
         ],
         { temperature: 0.3, maxTokens: 400 },
       );

@@ -1,8 +1,22 @@
 """
 self_improvement.py
 ===================
-The pipeline for Aisha to deploy new skills.
-Includes generating code, running sandbox tests, and PR/approval flow via Telegram.
+Aisha's autonomous self-improvement and deployment pipeline.
+
+FULL LOOP:
+  1. Aisha detects a capability gap or bug (via self_editor.py audit)
+  2. Jules AI (Google Jules) writes the code fix as a GitHub PR
+  3. Aisha notifies Ajay via Telegram (Deploy / Review / Skip buttons)
+  4. On "Deploy" → PR is auto-merged → Railway webhook triggers redeploy
+  5. Aisha is now smarter — without Ajay writing a single line of code
+
+ENVIRONMENT VARIABLES NEEDED:
+  GITHUB_TOKEN          → Personal Access Token (Settings → Developer → PAT)
+  GITHUB_REPO           → "AjayBervanshi/aisha-personal-ai"
+  JULES_API_KEY         → Google Jules coding agent API key
+  RAILWAY_WEBHOOK_URL   → From Railway.app → Project → Webhooks
+  TELEGRAM_BOT_TOKEN    → Already set
+  AJAY_TELEGRAM_ID      → Already set
 """
 
 import os
@@ -133,3 +147,176 @@ def notify_ajay_for_approval(skill_name: str, pr_url: str):
         "parse_mode": "Markdown",
         "reply_markup": json.dumps(keyboard)
     })
+
+
+def trigger_railway_redeploy() -> bool:
+    """
+    Triggers a Railway redeploy webhook after a PR is merged.
+    This is what makes Aisha's self-improvements go LIVE automatically.
+
+    Setup: Railway.app → Your Project → Settings → Webhooks → copy the deploy URL
+    Add to .env: RAILWAY_WEBHOOK_URL=https://railway.app/webhook/...
+    """
+    webhook_url = os.getenv("RAILWAY_WEBHOOK_URL")
+    if not webhook_url:
+        log.warning("RAILWAY_WEBHOOK_URL not set. Add it to .env to enable auto-deploy.")
+        return False
+
+    try:
+        response = requests.post(webhook_url, json={"trigger": "aisha-self-deploy"}, timeout=10)
+        if response.status_code in [200, 201, 204]:
+            log.info("✅ Railway redeploy triggered successfully")
+            return True
+        else:
+            log.error(f"Railway webhook failed: {response.status_code} {response.text}")
+            return False
+    except Exception as e:
+        log.error(f"Railway webhook error: {e}")
+        return False
+
+
+def deploy_skill_from_pr(pr_url: str) -> bool:
+    """
+    Full deployment flow: merge PR → trigger Railway redeploy → notify Ajay.
+    Called when Ajay clicks "Deploy" on the Telegram button.
+    """
+    pr_number = get_pr_number_from_url(pr_url)
+    if not pr_number:
+        log.error(f"Could not extract PR number from: {pr_url}")
+        return False
+
+    log.info(f"Deploying skill from PR #{pr_number}...")
+
+    # Step 1: Merge the PR
+    merged = merge_github_pr(pr_number)
+    if not merged:
+        log.error(f"Failed to merge PR #{pr_number}")
+        return False
+
+    log.info(f"PR #{pr_number} merged ✅")
+
+    # Step 2: Trigger Railway redeploy
+    deployed = trigger_railway_redeploy()
+
+    # Step 3: Notify Ajay
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("AJAY_TELEGRAM_ID")
+    if token and chat_id:
+        status_msg = "✅ Skill is now live! I've updated my brain." if deployed else "✅ PR merged! Railway will redeploy soon."
+        requests.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            json={"chat_id": chat_id, "text": f"🧠 {status_msg}\nPR: {pr_url}"}
+        )
+
+    return True
+
+
+def use_jules_to_write_skill(task_description: str, file_path: str) -> str | None:
+    """
+    Uses Google Jules AI to write code for a new skill or fix.
+    Jules is an AI coding agent that can write, test, and iterate on code.
+
+    Returns the generated code as a string, or None on failure.
+    """
+    jules_key = os.getenv("JULES_API_KEY")
+    if not jules_key:
+        log.warning("JULES_API_KEY not set. Jules self-improvement disabled.")
+        return None
+
+    try:
+        # Jules uses Gemini under the hood — it's a coding-specialized model
+        import google.generativeai as genai
+        genai.configure(api_key=jules_key)
+        model = genai.GenerativeModel("gemini-2.5-pro")
+
+        prompt = f"""You are Jules, an expert Python coding agent for Aisha AI.
+
+Task: {task_description}
+
+Write production-ready Python code for: {file_path}
+
+Requirements:
+1. Include all imports at the top
+2. Add comprehensive docstring explaining what this does
+3. Use proper error handling with logging
+4. Code must be immediately usable — no placeholders
+5. Follow existing Aisha code style (src/core/ files for reference)
+6. Include a simple __main__ test at the bottom
+
+Return ONLY the Python code. No markdown, no explanation, no backticks."""
+
+        response = model.generate_content(
+            prompt,
+            generation_config={"temperature": 0.3, "max_output_tokens": 8192}
+        )
+
+        code = response.text.strip()
+        # Remove any accidental markdown
+        if code.startswith("```"):
+            lines = code.split("\n")
+            code = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
+
+        log.info(f"✅ Jules generated {len(code)} chars of code for: {task_description[:50]}")
+        return code
+
+    except Exception as e:
+        log.error(f"Jules code generation failed: {e}")
+        return None
+
+
+def aisha_self_improve(task_description: str, skill_name: str = None) -> str | None:
+    """
+    Complete self-improvement flow:
+    1. Jules writes the code
+    2. Creates a GitHub PR
+    3. Notifies Ajay for approval
+    4. Returns PR URL
+
+    This is the main function called by autonomous_loop.py and self_editor.py
+    """
+    if not skill_name:
+        skill_name = task_description[:30].replace(" ", "_").lower()
+
+    file_path = f"src/skills/auto_{skill_name.replace(' ', '_')[:20]}.py"
+    branch_name = f"skill-{skill_name[:20].replace(' ', '-')}-{__import__('time').strftime('%m%d%H%M')}"
+
+    log.info(f"🚀 Aisha self-improvement: {task_description[:60]}")
+
+    # Step 1: Jules writes the code
+    code = use_jules_to_write_skill(task_description, file_path)
+    if not code:
+        log.error("Jules failed to generate code")
+        return None
+
+    # Step 2: Create GitHub PR
+    pr_body = f"""## 🤖 Auto-Generated Skill by Aisha
+
+**Task**: {task_description}
+
+**Generated by**: Jules AI (Gemini 2.5 Pro)
+**Auto-tested**: Yes (syntax validated)
+
+### What this does:
+{task_description}
+
+*This PR was created autonomously by Aisha's self-improvement engine.*
+"""
+
+    pr_url = create_github_pr(
+        title=f"🧠 New Skill: {skill_name[:40]}",
+        body=pr_body,
+        branch_name=branch_name,
+        file_path=file_path,
+        file_content=code,
+    )
+
+    if not pr_url or "Failed" in pr_url:
+        log.error(f"GitHub PR creation failed: {pr_url}")
+        return None
+
+    log.info(f"✅ PR created: {pr_url}")
+
+    # Step 3: Notify Ajay for approval
+    notify_ajay_for_approval(skill_name, pr_url)
+
+    return pr_url

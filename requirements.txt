@@ -21,9 +21,22 @@ pydantic>=2.0.0                 # Data validation
 fastapi>=0.111.0                # Web API Backend for Lovable App
 uvicorn>=0.30.0                 # Web Server for API
 
-# Voice (Optional - for server-side TTS)
-# elevenlabs>=1.0.0             # ElevenLabs TTS (uncomment if using)
-# openai-whisper>=20231117      # Whisper transcription (heavier option)
+# Voice
+elevenlabs>=1.0.0               # ElevenLabs TTS — Aisha + Riya voice narration
+requests>=2.31.0                # HTTP requests (trend engine, analytics, APIs)
+
+# Video Rendering
+moviepy>=1.0.3                  # Audio + image → MP4 stitching
+Pillow>=10.0.0                  # Image processing for Ken Burns effect
+numpy>=1.24.0                   # Array ops for Ken Burns frame transforms
+
+# Trend Research
+pytrends>=4.9.2                 # Google Trends (free, no API key)
+
+# YouTube OAuth + Analytics
+google-auth-oauthlib>=1.2.0     # OAuth 2.0 flow for YouTube
+google-api-python-client>=2.120.0  # YouTube Data API v3 + Analytics API
+google-auth-httplib2>=0.2.0     # HTTP transport for Google auth
 
 # Development
 pytest>=7.0.0                   # Testing

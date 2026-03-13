@@ -126,10 +126,12 @@ class AntigravityAgent:
                     "channel": channel,
                     "format": fmt,
                     "master_prompt": payload.get("master_prompt", ""),
+                    "render_video": payload.get("render_video", False),
                 }
             )
 
             marketing = self._extract_marketing_fields(self.crew.results.get("marketing", ""))
+            video_path = self.crew.results.get("video_path") or payload.get("video_path")
             result = {
                 "channel": channel,
                 "topic": topic,
@@ -140,14 +142,15 @@ class AntigravityAgent:
                 "marketing": self.crew.results.get("marketing"),
                 "voice_path": self.crew.results.get("voice_path"),
                 "thumbnail_path": self.crew.results.get("thumbnail_path"),
+                "video_path": video_path,
             }
 
             post_results: Dict[str, Any] = {}
 
             if auto_post:
-                if "youtube" in platform_targets and payload.get("video_path"):
+                if "youtube" in platform_targets and video_path:
                     yt = self.social.upload_youtube_video(
-                        video_path=payload["video_path"],
+                        video_path=video_path,
                         title=payload.get("title", marketing["title"]),
                         description=payload.get("description", marketing["description"]),
                         tags=payload.get("tags", marketing["hashtags"]),
