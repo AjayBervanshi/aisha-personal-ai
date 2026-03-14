@@ -33,7 +33,7 @@ async function callGroq(apiKey: string, system: string, messages: { role: string
       body: JSON.stringify({
         model: "llama-3.3-70b-versatile",
         messages: [{ role: "system", content: system }, ...messages],
-        temperature: 0.88, max_tokens: 1024,
+        temperature: 0.88, max_tokens: 600,
       }),
     });
     if (!res.ok) { console.error("Groq:", res.status); return null; }
@@ -282,7 +282,7 @@ Deno.serve(async (req) => {
       if (reply) { await sendMessage(token, chatId, reply); return new Response("OK", { status: 200 }); }
     }
 
-    // Typing indicator
+    // Typing indicator (fire-and-forget — don't await)
     sendTyping(token, chatId);
 
     const supabase = createClient(supabaseUrl, supabaseKey);
@@ -291,44 +291,51 @@ Deno.serve(async (req) => {
     const wantsImage  = IMAGE_TRIGGERS.some(t => msgLower.includes(t));
     const wantsMemory = MEMORY_TRIGGERS.some(t => msgLower.includes(t));
 
-    // Parallel DB fetches (all graceful)
-    const [contextR, historyR, memoryR] = await Promise.allSettled([
-      supabase.rpc("get_aisha_context"),
-      supabase.from("aisha_conversations")
-        .select("role, message").eq("platform", "telegram")
-        .order("created_at", { ascending: false }).limit(12),
-      wantsMemory
-        ? supabase.from("aisha_memory").select("category, title, content")
-            .eq("is_active", true)
-            .or(`title.ilike.%${text.slice(0,50)}%,content.ilike.%${text.slice(0,50)}%`)
-            .order("importance", { ascending: false }).limit(5)
-        : Promise.resolve({ data: null }),
-    ]);
-
-    const dbContext    = contextR.status  === "fulfilled" ? String(contextR.value.data  ?? "") : "";
-    const history      = historyR.status  === "fulfilled" ? (historyR.value.data ?? []).reverse() : [];
-    const memData      = memoryR.status   === "fulfilled" ? (memoryR.value as any).data : null;
-    const memoriesText = memData?.length
-      ? memData.map((m: any) => `• [${m.category}] ${m.title}: ${m.content.slice(0, 100)}`).join("\n")
-      : "";
-
     const hourIst = Number(new Intl.DateTimeFormat("en-US", {
       timeZone: "Asia/Kolkata", hour: "numeric", hour12: false,
     }).format(new Date()));
 
-    const systemPrompt = buildSystemPrompt(hourIst, isRiya, dbContext, memoriesText);
+    // ── DB fetch with hard 2-second timeout — never block AI on slow DB ──────
+    const DB_TIMEOUT = 2000;
+    const timeout2s = (fallback: any) =>
+      new Promise(resolve => setTimeout(() => resolve(fallback), DB_TIMEOUT));
+
+    const [historyR, memoryR] = await Promise.all([
+      Promise.race([
+        supabase.from("aisha_conversations")
+          .select("role, message").eq("platform", "telegram")
+          .order("created_at", { ascending: false }).limit(6),
+        timeout2s({ data: [] }),
+      ]),
+      wantsMemory
+        ? Promise.race([
+            supabase.from("aisha_memory").select("category, title, content")
+              .eq("is_active", true)
+              .or(`title.ilike.%${text.slice(0,50)}%,content.ilike.%${text.slice(0,50)}%`)
+              .order("importance", { ascending: false }).limit(4),
+            timeout2s({ data: null }),
+          ])
+        : Promise.resolve({ data: null }),
+    ]);
+
+    const history      = ((historyR as any)?.data ?? []).slice().reverse();
+    const memData      = (memoryR as any)?.data;
+    const memoriesText = memData?.length
+      ? memData.map((m: any) => `• [${m.category}] ${m.title}: ${m.content.slice(0, 100)}`).join("\n")
+      : "";
+
+    const systemPrompt = buildSystemPrompt(hourIst, isRiya, "", memoriesText);
     const messages = [
-      ...(history as any[]).map(c => ({
+      ...(history as any[]).map((c: any) => ({
         role: c.role === "assistant" ? "assistant" : "user",
         content: c.message,
       })),
       { role: "user", content: text },
     ];
 
-    // AI response + image in parallel
+    // AI response + optional image in parallel
     const [reply, imageUrl] = await Promise.all([
       (async () => {
-        // Riya → xAI first
         if (isRiya && xaiKey) {
           const r = await callXAI(xaiKey, systemPrompt, messages);
           if (r) return r;
