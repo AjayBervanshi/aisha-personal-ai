@@ -65,7 +65,7 @@ GEMINI_MODEL    = "gemini-2.5-pro"  # Most powerful Gemini
 GEMINI_FALLBACK = "gemini-2.5-flash"          # Fast fallback
 OPENAI_MODEL    = "gpt-4o"                    # Best available OpenAI
 GROQ_MODEL      = "llama-3.3-70b-versatile"   # Most powerful on Groq (free, ultra-fast)
-ANTHROPIC_MODEL = "claude-3-7-sonnet-20250219" # Most powerful Claude available
+ANTHROPIC_MODEL = "claude-opus-4-6"            # Most powerful Claude — adaptive thinking
 XAI_MODEL       = "grok-2-latest"             # xAI Grok
 
 # ══════════════════════════════════════════════════════════════

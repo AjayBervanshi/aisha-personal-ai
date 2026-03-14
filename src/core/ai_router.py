@@ -298,12 +298,18 @@ class AIRouter:
             raise e
 
     def _call_anthropic(self, system_prompt, user_message, history, image_bytes: bytes = None) -> str:
+        """
+        Claude Opus 4.6 with adaptive thinking + streaming.
+        - Adaptive thinking: Claude decides how much to reason internally
+        - Streaming: prevents timeout on long story scripts (8-15 min narration)
+        - 128K max_tokens: enough for full Hindi story scripts
+        """
         client = self._clients["anthropic"]
         messages = []
         for msg in history[-8:]:
             role = "assistant" if msg["role"] in ("model", "assistant") else "user"
             messages.append({"role": role, "content": msg["content"]})
-            
+
         content = [{"type": "text", "text": user_message}]
         if image_bytes:
             import base64
@@ -315,16 +321,54 @@ class AIRouter:
                     "data": base64.b64encode(image_bytes).decode("utf-8"),
                 }
             })
-            
+
         messages.append({"role": "user", "content": content})
 
-        response = client.messages.create(
-            model="claude-3-7-sonnet-20250219",
-            max_tokens=16000,
-            system=system_prompt,
-            messages=messages
-        )
-        return response.content[0].text
+        # Detect if this is a long-form creative task (story script generation)
+        is_long_form = any(kw in user_message.lower() for kw in [
+            "script", "story", "kahani", "episode", "chapter", "narrat", "write"
+        ])
+
+        try:
+            # Use streaming for long-form content to avoid HTTP timeouts
+            if is_long_form:
+                with client.messages.stream(
+                    model="claude-opus-4-6",
+                    max_tokens=128000,
+                    thinking={"type": "adaptive"},
+                    system=system_prompt,
+                    messages=messages,
+                ) as stream:
+                    return stream.get_final_message().content[0].text
+            else:
+                response = client.messages.create(
+                    model="claude-opus-4-6",
+                    max_tokens=16000,
+                    thinking={"type": "adaptive"},
+                    system=system_prompt,
+                    messages=messages,
+                )
+                # Extract text (skip thinking blocks)
+                for block in response.content:
+                    if block.type == "text":
+                        return block.text
+                return response.content[0].text
+
+        except Exception as e:
+            # Fall back to Sonnet 4.6 if Opus quota is hit
+            if "529" in str(e) or "overloaded" in str(e).lower():
+                log.warning("[Claude] Opus overloaded, falling back to Sonnet 4.6")
+                response = client.messages.create(
+                    model="claude-sonnet-4-6",
+                    max_tokens=16000,
+                    thinking={"type": "adaptive"},
+                    system=system_prompt,
+                    messages=messages,
+                )
+                for block in response.content:
+                    if block.type == "text":
+                        return block.text
+            raise
 
     def _call_openai(self, system_prompt, user_message, history, image_bytes: bytes = None) -> str:
         client = self._clients["openai"]
@@ -423,7 +467,7 @@ class AIRouter:
     def _model_name(self, provider: str) -> str:
         names = {
             "gemini":    getattr(self, '_gemini_model_name', 'gemini-2.5-pro'),
-            "anthropic": "claude-3-7-sonnet-20250219",
+            "anthropic": "claude-opus-4-6",
             "groq":      "llama-3.3-70b-versatile",
             "xai":       "grok-2-latest",
             "openai":    "gpt-4o",
