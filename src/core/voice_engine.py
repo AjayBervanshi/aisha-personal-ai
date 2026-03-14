@@ -124,10 +124,11 @@ def _generate_elevenlabs(text: str, language: str = "English", mood: str = "casu
         if channel:
             from src.core.config import CHANNEL_VOICE_IDS
             voice_id = CHANNEL_VOICE_IDS.get(channel, "wdymxIQkYn7MJCYCQF2Q")
-        elif mood in ["romantic", "flirty", "late_night"]:
-            voice_id = "BpjGufoPiobT79j2vtj4"  # Riya — intimate/dark mode
+        elif mood in ["romantic", "flirty", "late_night", "riya"]:
+            riya_id = os.getenv("RIYA_ELEVENLABS_VOICE_ID", "BpjGufoPiobT79j2vtj4")
+            voice_id = riya_id if riya_id else "wdymxIQkYn7MJCYCQF2Q"
         else:
-            voice_id = "wdymxIQkYn7MJCYCQF2Q"  # Aisha — normal mode
+            voice_id = os.getenv("AISHA_ELEVENLABS_VOICE_ID", "wdymxIQkYn7MJCYCQF2Q")
             
         filename = f"aisha_voice_{uuid.uuid4().hex[:8]}.mp3"
         filepath = os.path.join(VOICE_DIR, filename)
@@ -139,13 +140,19 @@ def _generate_elevenlabs(text: str, language: str = "English", mood: str = "casu
             "Content-Type": "application/json",
             "xi-api-key": api_key
         }
+        # Riya gets intimate/erotic settings; Aisha gets warm/natural settings
+        riya_id = os.getenv("RIYA_ELEVENLABS_VOICE_ID", "BpjGufoPiobT79j2vtj4")
+        is_riya = (voice_id == riya_id)
+        voice_settings = {
+            "stability":        0.30 if is_riya else 0.50,   # Riya: expressive & breathy
+            "similarity_boost": 0.88 if is_riya else 0.75,   # Riya: stay true to her velvet tone
+            "style":            0.70 if is_riya else 0.35,   # Riya: high dramatic style
+            "use_speaker_boost": True
+        }
         data = {
             "text": clean_text,
             "model_id": "eleven_multilingual_v2",
-            "voice_settings": {
-                "stability": 0.5,
-                "similarity_boost": 0.75
-            }
+            "voice_settings": voice_settings
         }
         
         try:
