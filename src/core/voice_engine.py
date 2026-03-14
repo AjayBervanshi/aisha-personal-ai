@@ -149,7 +149,7 @@ def _generate_elevenlabs(text: str, language: str = "English", mood: str = "casu
         }
         
         try:
-            response = requests.post(url, json=data, headers=headers, timeout=30)
+            response = requests.post(url, json=data, headers=headers, timeout=90)
             if response.status_code == 401 or response.status_code == 429:
                 _mark_key_failed()
                 continue
@@ -171,25 +171,24 @@ def _transliterate_hinglish(text: str) -> str:
     This drastically improves the TTS quality for ElevenLabs/EdgeTTS.
     """
     try:
-        import os
-        import google.generativeai as genai
+        import os, requests as _req
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key: return text
-        
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-2.5-flash")
-        
+
         prompt = (
             "Transliterate the following Roman Hinglish text exactly into Devanagari script (Hindi). "
             "Return ONLY the pure Devanagari translation, nothing else, no quotes, no extra words:\n\n"
             f"{text}"
         )
-        response = model.generate_content(prompt)
-        if response and response.text:
-            return response.text.strip()
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+        payload = {"contents": [{"parts": [{"text": prompt}]}]}
+        resp = _req.post(url, json=payload, timeout=30)
+        if resp.status_code == 200:
+            data = resp.json()
+            return data["candidates"][0]["content"]["parts"][0]["text"].strip()
     except Exception as e:
         print(f"[Voice Engine] Transliteration failed, using original text: {e}")
-        
+
     return text
 
 

@@ -2,11 +2,12 @@
 # Install: pip install -r requirements.txt
 
 # Core AI
-google-generativeai>=0.7.0     # Gemini AI — primary brain
-groq>=0.9.0                     # Groq + Llama — backup brain
-openai>=1.0.0                   # OpenAI (ChatGPT)
+google-genai>=1.0.0             # Gemini AI — new SDK (primary)
+google-generativeai>=0.7.0      # Gemini AI — legacy SDK fallback
+anthropic>=0.40.0               # Claude Opus 4.6 (with adaptive thinking + streaming)
+groq>=0.9.0                     # Groq + Llama — ultra-fast backup brain
+openai>=1.0.0                   # OpenAI (ChatGPT) + xAI Grok (OpenAI-compatible)
 schedule>=1.2.0                 # Autonomous Cron Engine
-agentlightning>=0.2.1           # Microsoft Agent Lightning for reinforcement learning
 
 # Telegram Bot
 pyTelegramBotAPI>=4.20.0        # Telegram bot framework
@@ -23,6 +24,7 @@ uvicorn>=0.30.0                 # Web Server for API
 
 # Voice
 elevenlabs>=1.0.0               # ElevenLabs TTS — Aisha + Riya voice narration
+edge-tts>=6.1.9                 # Microsoft Edge TTS — free fallback voice engine
 requests>=2.31.0                # HTTP requests (trend engine, analytics, APIs)
 
 # Video Rendering

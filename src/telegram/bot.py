@@ -636,38 +636,36 @@ def handle_voice(message):
         f.write(downloaded)
         voice_path = f.name
     
-    # Transcribe with Gemini
+    # Transcribe with Groq Whisper (reliable on Windows venv)
     try:
-        import google.generativeai as genai
-        audio_file = genai.upload_file(voice_path)
-        transcript_model = genai.GenerativeModel("gemini-2.5-flash")
-        result = transcript_model.generate_content([
-            "Transcribe this voice message exactly as spoken. "
-            "It may be in English, Hindi, Marathi, or Hinglish. "
-            "Return ONLY the transcription, nothing else.",
-            audio_file
-        ])
-        transcribed_text = result.text.strip()
-        
-        bot.send_message(message.chat.id, 
-            f"🎙️ _Heard: \"{transcribed_text}\"_", 
+        from groq import Groq
+        from src.core.mood_detector import detect_mood
+        from src.core.language_detector import detect_language
+
+        groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        with open(voice_path, "rb") as audio_file:
+            transcript = groq_client.audio.transcriptions.create(
+                model="whisper-large-v3",
+                file=("voice.ogg", audio_file),
+            )
+        transcribed_text = transcript.text.strip()
+
+        bot.send_message(message.chat.id,
+            f"Heard: \"{transcribed_text}\"",
             parse_mode="Markdown")
-        
-        # Process as normal message
+
         bot.send_chat_action(message.chat.id, "typing")
         response = aisha.think(transcribed_text, platform="telegram")
         bot.send_message(message.chat.id, response)
-        
+
         # Send voice reply back (voice-in = voice-out)
         if len(response) < 1000:
             try:
                 bot.send_chat_action(message.chat.id, "record_voice")
-                from src.core.aisha_brain import detect_mood
-                from src.core.language_detector import detect_language
-                mood = detect_mood(transcribed_text)
-                lang_info = detect_language(transcribed_text)
-                language = lang_info.get("language", "English") if isinstance(lang_info, dict) else "English"
-                
+                mood_res = detect_mood(transcribed_text)
+                mood = mood_res.mood if hasattr(mood_res, "mood") else str(mood_res)
+                lang_tuple = detect_language(transcribed_text)
+                language = lang_tuple[0] if isinstance(lang_tuple, tuple) else "English"
                 voice_reply = generate_voice(response, language=language, mood=mood)
                 if voice_reply:
                     with open(voice_reply, "rb") as vf:
@@ -675,14 +673,16 @@ def handle_voice(message):
                     cleanup_voice_file(voice_reply)
             except Exception as ve:
                 log.warning(f"Voice reply skipped: {ve}")
-        
+
     except Exception as e:
         log.error(f"Voice transcription failed: {e}")
-        bot.send_message(message.chat.id, 
-            "Arre Ajay, I couldn't catch that voice message 😅 "
-            "Try typing it out? Technical issue on my end!")
+        bot.send_message(message.chat.id,
+            "Arre Ajay, I couldn't catch that voice message. Try typing it out?")
     finally:
-        os.unlink(voice_path)
+        try:
+            os.unlink(voice_path)
+        except Exception:
+            pass
 
 
 # ─── Photo Message Handler ─────────────────────────────────────────────────────
@@ -709,11 +709,12 @@ def handle_photo(message):
         if VOICE_MODE_ENABLED and len(response) < 1000:
             try:
                 bot.send_chat_action(message.chat.id, "record_voice")
-                from src.core.aisha_brain import detect_mood
+                from src.core.mood_detector import detect_mood
                 from src.core.language_detector import detect_language
-                mood = detect_mood(user_text)
-                lang_info = detect_language(user_text)
-                language = lang_info.get("language", "English") if isinstance(lang_info, dict) else "English"
+                mood_res = detect_mood(user_text)
+                mood = mood_res.mood if hasattr(mood_res, "mood") else str(mood_res)
+                lang_tuple = detect_language(user_text)
+                language = lang_tuple[0] if isinstance(lang_tuple, tuple) else "English"
                 
                 voice_reply = generate_voice(response, language=language, mood=mood)
                 if voice_reply:
@@ -758,11 +759,12 @@ def handle_text(message, override_text=None):
                 bot.send_chat_action(message.chat.id, "record_voice")
                 
                 # Detect language and mood for voice tuning
-                from src.core.aisha_brain import detect_mood
+                from src.core.mood_detector import detect_mood
                 from src.core.language_detector import detect_language
-                mood = detect_mood(user_text)
-                lang_info = detect_language(user_text)
-                language = lang_info.get("language", "English") if isinstance(lang_info, dict) else "English"
+                mood_res = detect_mood(user_text)
+                mood = mood_res.mood if hasattr(mood_res, "mood") else str(mood_res)
+                lang_tuple = detect_language(user_text)
+                language = lang_tuple[0] if isinstance(lang_tuple, tuple) else "English"
                 
                 voice_path = generate_voice(response, language=language, mood=mood)
                 if voice_path:

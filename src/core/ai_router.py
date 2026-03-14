@@ -11,8 +11,16 @@ Aisha never goes down because one API is tired.
 import os
 import time
 import logging
+from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass, field
+
+# Load .env from project root so AIRouter works standalone
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent.parent.parent / ".env")
+except ImportError:
+    pass
 
 log = logging.getLogger("Aisha.AIRouter")
 
@@ -76,21 +84,22 @@ class AIRouter:
 
     def _init_clients(self):
         """Initialize available AI clients."""
-        # Gemini
+        # Gemini — direct REST API via requests (avoids httpx/DNS issues on Windows)
         try:
-            import google.generativeai as genai
+            import requests as _req
             key = os.getenv("GEMINI_API_KEY", "")
             if key and "your_" not in key:
-                genai.configure(api_key=key)
-                # Try gemini-2.5-pro first, fall back to 2.5-flash then 2.0-flash
-                for model_name in ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"]:
-                    try:
-                        self._clients["gemini"] = genai.GenerativeModel(model_name)
-                        self._gemini_model_name = model_name
-                        log.info(f"Gemini initialized: {model_name}")
-                        break
-                    except Exception:
-                        continue
+                self._gemini_key = key
+                self._gemini_model_name = os.getenv("AI_MODEL_GEMINI", "gemini-2.0-flash")
+                self._gemini_fallback_model = os.getenv("AI_MODEL_GEMINI_FALLBACK", "gemini-1.5-flash")
+                # Quick connectivity check (200 = ok, 429 = quota but key valid)
+                test_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={key}"
+                r = _req.get(test_url, timeout=8)
+                if r.status_code in (200, 429):
+                    self._clients["gemini"] = "rest"
+                    log.info(f"Gemini REST initialized: {self._gemini_model_name}")
+                else:
+                    log.warning(f"Gemini key check failed: {r.status_code}")
         except Exception as e:
             log.warning(f"Gemini init failed: {e}")
 
@@ -265,37 +274,43 @@ class AIRouter:
     # ── Provider implementations ──────────────────────────────
 
     def _call_gemini(self, system_prompt, user_message, history, image_bytes: bytes = None) -> str:
-        # Build history for Gemini format
-        gemini_history = []
-        for msg in history[-10:]:
-            role = "model" if msg["role"] == "assistant" else "user"
-            gemini_history.append({"role": role, "parts": [msg["content"]]})
+        """Call Gemini via direct REST API (avoids httpx/DNS issues on Windows)."""
+        import requests, json, base64
 
-        full_prompt = f"{system_prompt}\n\n---\n\nAjay says: {user_message}"
-        
-        message_parts = [full_prompt]
+        # Build prompt with history
+        if history:
+            hist_text = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in history[-6:]])
+            full_prompt = f"{system_prompt}\n\nRecent conversation:\n{hist_text}\n\n---\n\nAjay says: {user_message}"
+        else:
+            full_prompt = f"{system_prompt}\n\n---\n\nAjay says: {user_message}"
+
+        parts = [{"text": full_prompt}]
         if image_bytes:
-            from PIL import Image
-            import io
-            img = Image.open(io.BytesIO(image_bytes))
-            message_parts.append(img)
-            
-        import google.generativeai as genai
-        try:
-            # First try the primary model
-            model = genai.GenerativeModel("gemini-2.5-pro")
-            chat = model.start_chat(history=gemini_history)
-            response = chat.send_message(message_parts)
-            return response.text
-        except Exception as e:
-            if "429" in str(e) or "ResourceExhausted" in str(type(e).__name__):
-                log.warning(f"[Gemini] Rate limit hit on Pro model. Falling back to Flash model!")
-                # Fallback to flash
-                model = genai.GenerativeModel("gemini-2.5-flash")
-                chat = model.start_chat(history=gemini_history)
-                response = chat.send_message(message_parts)
-                return response.text
-            raise e
+            parts.append({
+                "inline_data": {
+                    "mime_type": "image/jpeg",
+                    "data": base64.b64encode(image_bytes).decode("utf-8")
+                }
+            })
+
+        payload = {"contents": [{"parts": parts}]}
+
+        for model in [self._gemini_model_name, self._gemini_fallback_model]:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self._gemini_key}"
+            try:
+                resp = requests.post(url, json=payload, timeout=60)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    return data["candidates"][0]["content"]["parts"][0]["text"]
+                elif resp.status_code == 429:
+                    log.warning(f"[Gemini] {model} quota exhausted. Trying next model.")
+                    continue
+                else:
+                    raise Exception(f"Gemini {model} returned {resp.status_code}: {resp.text[:150]}")
+            except requests.exceptions.ConnectionError as e:
+                raise Exception(f"Gemini network error: {e}")
+
+        raise Exception("All Gemini models exhausted quota.")
 
     def _call_anthropic(self, system_prompt, user_message, history, image_bytes: bytes = None) -> str:
         """
@@ -339,7 +354,11 @@ class AIRouter:
                     system=system_prompt,
                     messages=messages,
                 ) as stream:
-                    return stream.get_final_message().content[0].text
+                    final = stream.get_final_message()
+                    for block in final.content:
+                        if block.type == "text":
+                            return block.text
+                    return final.content[0].text
             else:
                 response = client.messages.create(
                     model="claude-opus-4-6",
@@ -421,8 +440,9 @@ class AIRouter:
             messages.append({"role": role, "content": msg["content"]})
         messages.append({"role": "user", "content": user_message})
 
+        model = os.getenv("AI_MODEL_XAI", "grok-2-latest")
         response = client.chat.completions.create(
-            model="grok-2-latest",
+            model=model,
             messages=messages,
             max_tokens=16000,
             temperature=0.88
@@ -481,6 +501,19 @@ class AIRouter:
             "Arre Ajay, all my AI brains are taking a nap right now 😴\n"
             "Give me a minute and try again? I promise I'll be back! 💜"
         )
+
+    @property
+    def available_providers(self) -> list:
+        return list(self._clients.keys())
+
+    def chat(self, message: str, system_prompt: str = None, preferred_provider: str = None) -> str:
+        """Simple wrapper — returns just the text string."""
+        result = self.generate(
+            system_prompt=system_prompt or "You are Aisha, a helpful AI assistant.",
+            user_message=message,
+            preferred_provider=preferred_provider
+        )
+        return result.text
 
     def status(self) -> dict:
         """Return current status of all providers."""
