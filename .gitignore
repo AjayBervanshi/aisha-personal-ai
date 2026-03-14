@@ -34,3 +34,6 @@ Aisha_Antigravity_log.txt
 
 # Project Logs
 logs/
+
+# Supabase local cache
+supabase/.temp/
