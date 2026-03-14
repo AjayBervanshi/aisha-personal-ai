@@ -313,30 +313,36 @@ async function callGemini(
   messages: Array<{ role: string; content: string }>,
   options: GenerateOptions = {},
 ): Promise<ProviderResult> {
+  // 4-model fallback chain — if primary is quota-exhausted, try next
+  const GEMINI_MODELS = [
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-flash-lite-latest",
+    "gemini-3.1-flash-lite-preview",
+    "gemini-flash-latest",
+  ];
   const prompt = flattenMessages(messages);
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: options.temperature ?? 0.88,
-          maxOutputTokens: options.maxTokens ?? 2048,
-        },
-      }),
+  const body = JSON.stringify({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature: options.temperature ?? 0.88,
+      maxOutputTokens: options.maxTokens ?? 2048,
     },
-  );
-  if (!res.ok) {
-    throw new Error(`gemini -> ${res.status}: ${await res.text()}`);
+  });
+
+  for (const model of GEMINI_MODELS) {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body },
+    );
+    if (res.status === 429) { console.log(`Gemini ${model}: quota, trying next`); continue; }
+    if (res.status === 404) { console.log(`Gemini ${model}: not found, skipping`); continue; }
+    if (!res.ok) { throw new Error(`gemini -> ${res.status}: ${await res.text()}`); }
+    const data = await res.json();
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    if (text) return { text, provider: "gemini", model };
   }
-  const data = await res.json();
-  return {
-    text: data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "",
-    provider: "gemini",
-    model: "gemini-2.5-flash",
-  };
+  throw new Error("All Gemini models quota exhausted");
 }
 
 async function callOpenAICompat(
@@ -392,7 +398,7 @@ async function callAnthropic(
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "claude-3-7-sonnet-20250219",
+      model: "claude-opus-4-6",
       max_tokens: options.maxTokens ?? 2048,
       temperature: options.temperature ?? 0.88,
       system,
@@ -406,7 +412,7 @@ async function callAnthropic(
   return {
     text: data?.content?.[0]?.text ?? "",
     provider: "anthropic",
-    model: "claude-3-7-sonnet-20250219",
+    model: "claude-opus-4-6",
   };
 }
 
@@ -455,7 +461,7 @@ async function generateWithFallback(
       callOpenAICompat(
         env.XAI_API_KEY!,
         "https://api.x.ai/v1",
-        "grok-2-latest",
+        "grok-3-mini",
         "xai",
         messages,
         options,
@@ -466,8 +472,8 @@ async function generateWithFallback(
     throw new Error("No AI provider keys configured");
   }
 
-  // Default order — move preferredProvider to front if specified
-  const defaultOrder = ["lovable", "gemini", "groq", "openai", "anthropic", "xai"];
+  // Default order: Groq first (fastest + most reliable), Gemini second (4-model fallback), then rest
+  const defaultOrder = ["groq", "lovable", "gemini", "openai", "anthropic", "xai"];
   let orderedKeys = defaultOrder.filter((k) => k in providerMap);
   if (preferredProvider && providerMap[preferredProvider]) {
     orderedKeys = orderedKeys.filter((k) => k !== preferredProvider);
