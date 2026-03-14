@@ -39,7 +39,7 @@ def _get_int(key: str, default: int = 0) -> int:
 # ══════════════════════════════════════════════════════════════
 # AI KEYS
 # ══════════════════════════════════════════════════════════════
-GEMINI_API_KEY    = _get("GEMINI_API_KEY",    required=True)
+GEMINI_API_KEY    = _get("GEMINI_API_KEY",    required=False)
 OPENAI_API_KEY    = _get("OPENAI_API_KEY",    required=False)
 GROQ_API_KEY      = _get("GROQ_API_KEY",      required=False)
 ANTHROPIC_API_KEY = _get("ANTHROPIC_API_KEY", required=False)
@@ -61,12 +61,13 @@ CALLME_NGROK_AUTHTOKEN   = _get("CALLME_NGROK_AUTHTOKEN")
 # AI MODELS — Always use the most powerful available
 # ══════════════════════════════════════════════════════════════
 # These are tried in order by AIRouter. First available wins.
-GEMINI_MODEL    = "gemini-2.5-pro"  # Most powerful Gemini
-GEMINI_FALLBACK = "gemini-2.5-flash"          # Fast fallback
-OPENAI_MODEL    = "gpt-4o"                    # Best available OpenAI
-GROQ_MODEL      = "llama-3.3-70b-versatile"   # Most powerful on Groq (free, ultra-fast)
-ANTHROPIC_MODEL = "claude-opus-4-6"            # Most powerful Claude — adaptive thinking
-XAI_MODEL       = "grok-2-latest"             # xAI Grok
+# Allow .env overrides so model routing can be tuned without code edits.
+GEMINI_MODEL    = _get("AI_MODEL_GEMINI", "gemini-2.5-pro")        # Most powerful Gemini
+GEMINI_FALLBACK = _get("AI_MODEL_GEMINI_FALLBACK", "gemini-2.5-flash")
+OPENAI_MODEL    = _get("AI_MODEL_OPENAI", "gpt-4o")
+GROQ_MODEL      = _get("AI_MODEL_GROQ", "llama-3.3-70b-versatile")
+ANTHROPIC_MODEL = _get("AI_MODEL_ANTHROPIC", "claude-opus-4-6")
+XAI_MODEL       = _get("AI_MODEL_XAI", "grok-2-latest")
 
 # ══════════════════════════════════════════════════════════════
 # TELEGRAM
@@ -173,12 +174,22 @@ YOUTUBE_CHANNELS = {
 # ══════════════════════════════════════════════════════════════
 def validate_required() -> bool:
     required_keys = {
-        "GEMINI_API_KEY":      GEMINI_API_KEY,
-        "TELEGRAM_BOT_TOKEN":  TELEGRAM_BOT_TOKEN,
-        "SUPABASE_URL":        SUPABASE_URL,
+        "TELEGRAM_BOT_TOKEN":   TELEGRAM_BOT_TOKEN,
+        "SUPABASE_URL":         SUPABASE_URL,
         "SUPABASE_SERVICE_KEY": SUPABASE_SERVICE_KEY,
     }
     missing = [k for k, v in required_keys.items() if not v or "your_" in str(v).lower()]
+
+    ai_keys = {
+        "GEMINI_API_KEY": GEMINI_API_KEY,
+        "OPENAI_API_KEY": OPENAI_API_KEY,
+        "GROQ_API_KEY": GROQ_API_KEY,
+        "ANTHROPIC_API_KEY": ANTHROPIC_API_KEY,
+        "XAI_API_KEY": XAI_API_KEY,
+    }
+    has_any_ai = any(v and "your_" not in str(v).lower() for v in ai_keys.values())
+    if not has_any_ai:
+        missing.append("AT_LEAST_ONE_AI_API_KEY")
 
     if missing:
         print("\nMissing required environment variables:")
