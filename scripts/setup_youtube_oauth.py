@@ -26,6 +26,11 @@ import json
 import webbrowser
 from pathlib import Path
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
 PROJECT_ROOT = Path(__file__).parent.parent
 TOKEN_PATH = PROJECT_ROOT / "tokens" / "youtube_token.json"
 CLIENT_SECRET_PATH = PROJECT_ROOT / "tokens" / "youtube_client_secret.json"
