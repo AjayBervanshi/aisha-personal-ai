@@ -90,8 +90,15 @@ class AIRouter:
             key = os.getenv("GEMINI_API_KEY", "")
             if key and "your_" not in key:
                 self._gemini_key = key
-                self._gemini_model_name = os.getenv("AI_MODEL_GEMINI", "gemini-2.0-flash")
-                self._gemini_fallback_model = os.getenv("AI_MODEL_GEMINI_FALLBACK", "gemini-1.5-flash")
+                self._gemini_model_name = os.getenv("AI_MODEL_GEMINI", "gemini-2.5-flash")
+                # Multi-model fallback chain — env var OR hardcoded safe list
+                fallback_env = os.getenv("AI_MODEL_GEMINI_FALLBACK", "")
+                self._gemini_fallback_models = [m.strip() for m in fallback_env.split(",") if m.strip()] or [
+                    "gemini-2.5-flash-lite",
+                    "gemini-flash-lite-latest",
+                    "gemini-3.1-flash-lite-preview",
+                    "gemini-flash-latest",
+                ]
                 # Quick connectivity check (200 = ok, 429 = quota but key valid)
                 test_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={key}"
                 r = _req.get(test_url, timeout=8)
@@ -295,15 +302,20 @@ class AIRouter:
 
         payload = {"contents": [{"parts": parts}]}
 
-        for model in [self._gemini_model_name, self._gemini_fallback_model]:
+        all_models = [self._gemini_model_name] + self._gemini_fallback_models
+        for model in all_models:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self._gemini_key}"
             try:
                 resp = requests.post(url, json=payload, timeout=60)
                 if resp.status_code == 200:
                     data = resp.json()
+                    log.info(f"[Gemini] Responded via {model}")
                     return data["candidates"][0]["content"]["parts"][0]["text"]
                 elif resp.status_code == 429:
                     log.warning(f"[Gemini] {model} quota exhausted. Trying next model.")
+                    continue
+                elif resp.status_code == 404:
+                    log.warning(f"[Gemini] {model} not found/deprecated. Skipping.")
                     continue
                 else:
                     raise Exception(f"Gemini {model} returned {resp.status_code}: {resp.text[:150]}")
