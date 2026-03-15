@@ -18,11 +18,11 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 from src.core.config import TIMEZONE
 from src.core.aisha_brain import AishaBrain
+from src.core.logger import get_logger
 import os
 import telebot
 
-log = logging.getLogger("Aisha.Autonomous")
-logging.basicConfig(level=logging.INFO)
+log = get_logger("Autonomous")
 
 class AutonomousLoop:
     def __init__(self):
@@ -31,35 +31,90 @@ class AutonomousLoop:
         self.ajay_id = os.getenv("AJAY_TELEGRAM_ID")
         self.telegram = telebot.TeleBot(bot_token) if bot_token else None
         self._used_topics = []  # Deduplication — never produce the same topic twice
-        log.info("[Aisha] Autonomous Loop Initialized.")
+
+        # New engines
+        from src.core.notification_engine import NotificationEngine
+        from src.core.digest_engine import DigestEngine
+        from src.memory.memory_compressor import MemoryCompressor
+        self.notif = NotificationEngine(self.brain, self.brain.memory)
+        self.digest = DigestEngine(self.brain.memory, self.brain.ai)
+        self.compressor = MemoryCompressor(self.brain.memory)
+
+        log.info("event=autonomous_loop_init")
+
+    def run_evening_wrapup(self):
+        """Send evening summary at 9 PM IST."""
+        log.info("event=evening_wrapup_start")
+        try:
+            self.notif.evening_wrapup()
+        except Exception as e:
+            log.error("event=evening_wrapup_failed", error=str(e))
+
+    def run_daily_digest(self):
+        """Generate and send daily digest at 9 PM IST."""
+        log.info("event=daily_digest_trigger")
+        try:
+            digest_text = self.digest.generate_daily_digest()
+            if self.telegram and self.ajay_id:
+                self.telegram.send_message(self.ajay_id, digest_text)
+        except Exception as e:
+            log.error("event=daily_digest_send_failed", error=str(e))
+
+    def run_weekly_digest(self):
+        """Generate and send weekly digest every Sunday."""
+        log.info("event=weekly_digest_trigger")
+        try:
+            digest_text = self.digest.generate_weekly_digest()
+            if self.telegram and self.ajay_id:
+                self.telegram.send_message(self.ajay_id, digest_text)
+        except Exception as e:
+            log.error("event=weekly_digest_send_failed", error=str(e))
+
+    def run_task_reminder_poll(self):
+        """Poll for tasks due in 30 minutes and send reminders."""
+        try:
+            self.notif.check_task_reminders()
+        except Exception as e:
+            log.error("event=task_reminder_poll_failed", error=str(e))
+
+    def run_inactivity_check(self):
+        """Check if Ajay has been silent for 18+ hours."""
+        try:
+            self.notif.inactivity_check()
+        except Exception as e:
+            log.error("event=inactivity_check_failed", error=str(e))
+
+    def run_memory_cleanup(self):
+        """Weekly memory deduplication and decay (Sunday 3 AM)."""
+        log.info("event=memory_cleanup_trigger")
+        try:
+            stats = self.compressor.run_weekly_cleanup()
+            log.info("event=memory_cleanup_done", **stats)
+        except Exception as e:
+            log.error("event=memory_cleanup_failed", error=str(e))
 
     def run_morning_checkin(self):
         """Proactively message Ajay in the morning based on his schedule & memory."""
         log.info(f"[{datetime.now()}] Waking up for Morning Check-in...")
-        
-        # Aisha 'thinks' about what to say without Ajay texting first
-        prompt = """
-        It is morning. Look at Ajay's schedule for today and his recent memories.
-        Write a proactive morning WhatsApp/Telegram message to wake him up.
-        Be energetic, loving, and highly contextual. 
-        Do not greet him as if he said something, YOU are starting the conversation.
-        """
-        
-        # Get AI response via MultiBot Router
-        morning_text = self.brain.ai.generate("You are Aisha.", prompt).text
-        
-        # Bridge this output directly to Telegram
-        print(f"\n[Aisha's Autonomous Message] ➔ {morning_text}\n")
-        
+
+        # Use brain.think() so full context pipeline runs (memory, mood, tasks, profile)
+        prompt = (
+            "It is morning. You are waking up Ajay proactively — he has not messaged you yet. "
+            "Look at his schedule for today and his recent memories. "
+            "Write a warm, energetic, loving morning message. "
+            "Be highly contextual — reference his actual tasks, goals, or mood if relevant. "
+            "You are starting the conversation, not replying to him."
+        )
+        morning_text = self.brain.think(prompt, platform="autonomous")
+
+        log.info(f"[Aisha] Morning message: {morning_text[:100]}...")
+
         if self.telegram and self.ajay_id:
             try:
                 self.telegram.send_message(self.ajay_id, morning_text)
-                log.info("✅ Sent morning check-in to Ajay on Telegram!")
+                log.info("Sent morning check-in to Ajay on Telegram.")
             except Exception as e:
                 log.error(f"Failed to send Telegram message: {e}")
-                
-        # Log to db that she sent a proactive message
-        self.brain.memory.save_conversation("assistant", f"(Proactive) {morning_text}")
 
     def run_memory_consolidation(self):
         """Runs at 3 AM: Analyzes all talks from the day and updates deep profile."""
@@ -83,12 +138,14 @@ class AutonomousLoop:
         2. Identify any emotional patterns or stresses (Emotional Memory).
         3. Identify any new skills or tasks you learned to do (Skill Memory).
 
-        Format your response as a JSON object with keys: 'episodic', 'emotional', 'skills'.
+        Return ONLY a valid JSON object (no backticks, no extra text) with keys: 'episodic', 'emotional', 'skills'.
         Each value should be a list of strings.
         """
-        
+
         try:
-            res = self.brain.ai.generate("You are Aisha.", prompt, response_mime_type="application/json").text
+            res = self.brain.ai.generate("You are Aisha. Return only valid JSON.", prompt).text
+            # Strip any markdown code fences if present
+            res = res.strip().lstrip("```json").lstrip("```").rstrip("```").strip()
             data = json.loads(res)
             
             # 3. Save to deep memory tables
@@ -194,14 +251,26 @@ def start_loop(once: bool = False):
         bot.run_studio_session()
         return
 
-    # Schedule Aisha's autonomous actions
+    # ── Daily Schedule ──────────────────────────────────────────────────
     schedule.every().day.at("08:00").do(bot.run_morning_checkin)
+    schedule.every().day.at("21:00").do(bot.run_evening_wrapup)
+    schedule.every().day.at("21:30").do(bot.run_daily_digest)
     schedule.every().day.at("03:00").do(bot.run_memory_consolidation)
 
-    # Studio Management (Every 4 Hours)
+    # ── Weekly Schedule ────────────────────────────────────────────────
+    schedule.every().sunday.at("19:00").do(bot.run_weekly_digest)
+    schedule.every().sunday.at("03:00").do(bot.run_memory_cleanup)
+
+    # ── High-frequency Polls ──────────────────────────────────────────
+    # Task reminders — check every 5 min
+    schedule.every(5).minutes.do(bot.run_task_reminder_poll)
+    # Inactivity check — every 3 hours
+    schedule.every(3).hours.do(bot.run_inactivity_check)
+
+    # ── Studio Management (Every 4 Hours) ─────────────────────────────
     schedule.every(4).hours.do(bot.run_studio_session)
 
-    # Nightly Self-Improvement (2 AM — she fixes herself while you sleep)
+    # ── Nightly Self-Improvement (2 AM) ───────────────────────────────
     schedule.every().day.at("02:00").do(run_self_improvement, bot)
 
     # Run the first studio session instantly on startup

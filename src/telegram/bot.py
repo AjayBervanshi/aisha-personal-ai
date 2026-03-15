@@ -350,57 +350,6 @@ def cmd_studio(message):
     subprocess.Popen(["python", "-m", "src.core.autonomous_loop", "--once"], cwd=project_root)
 
 
-@bot.message_handler(commands=["aistatus"])
-def cmd_aistatus(message):
-    """Show which AI brains and social platforms are connected."""
-    if not is_ajay(message): return unauthorized_response(message)
-    
-    from src.core.ai_router import AIRouter
-    from src.core.social_media_engine import SocialMediaEngine
-    
-    router = AIRouter()
-    sm = SocialMediaEngine()
-    
-    ai_status = router.status()
-    social_status = sm.status()
-    
-    lines = ["*Aisha — System Status*\n"]
-    lines.append("*AI Brains:*")
-    for name, info in ai_status.items():
-        icon = "✅" if info["available"] and not info["cooling_down"] else "⚠️" if info["available"] else "❌"
-        model = router._model_name(name)
-        lines.append(f"{icon} `{name}` → `{model}`")
-    
-    lines.append(f"\n*Social Media:*")
-    for line in social_status.split("\n")[1:]:
-        lines.append(line)
-    
-    bot.send_message(message.chat.id, "\n".join(lines), parse_mode="Markdown")
-
-
-@bot.message_handler(commands=["inbox"])
-def cmd_inbox(message):
-    if not is_ajay(message): return unauthorized_response(message)
-    bot.send_message(message.chat.id, "Checking your business inbox... 📬")
-    
-    try:
-        from src.core.gmail_engine import GmailEngine
-        gmail = GmailEngine()
-        emails = gmail.check_inbox(limit=5)
-        
-        if not emails:
-            bot.send_message(message.chat.id, "No new emails! Inbox is clean. 💜")
-            return
-        
-        summary = f"📬 *{len(emails)} new email(s):*\n\n"
-        for i, e in enumerate(emails, 1):
-            summary += f"{i}. *From:* {e.get('from', 'Unknown')[:40]}\n"
-            summary += f"   *Subject:* {e.get('subject', 'No Subject')[:60]}\n\n"
-        
-        bot.send_message(message.chat.id, summary, parse_mode="Markdown")
-    except Exception as e:
-        bot.send_message(message.chat.id, f"Couldn't check inbox right now: {e}")
-
 @bot.message_handler(commands=["imagine"])
 def cmd_imagine(message):
     if not is_ajay(message): return unauthorized_response(message)
@@ -782,12 +731,114 @@ def handle_text(message, override_text=None):
         )
 
 
+# ─── Health Tracking Commands ─────────────────────────────────────────────────
+
+@bot.message_handler(commands=["water"])
+def cmd_water(message):
+    if not is_ajay(message): return unauthorized_response(message)
+    text = message.text.replace("/water", "").strip()
+    try:
+        glasses = int(text) if text else 1
+    except ValueError:
+        glasses = 1
+    from src.core.health_tracker import HealthTracker
+    tracker = HealthTracker(aisha.supabase)
+    if tracker.log_water(glasses):
+        bot.send_message(message.chat.id, f"Logged {glasses} glass(es) of water! Stay hydrated, Ajay! 💧")
+    else:
+        bot.send_message(message.chat.id, "Couldn't log water right now — try again!")
+
+
+@bot.message_handler(commands=["sleep"])
+def cmd_sleep(message):
+    if not is_ajay(message): return unauthorized_response(message)
+    text = message.text.replace("/sleep", "").strip()
+    parts = text.split() if text else []
+    try:
+        hours = float(parts[0]) if parts else 7.0
+        quality = parts[1].lower() if len(parts) > 1 else "okay"
+    except (ValueError, IndexError):
+        hours, quality = 7.0, "okay"
+    from src.core.health_tracker import HealthTracker
+    tracker = HealthTracker(aisha.supabase)
+    if tracker.log_sleep(hours, quality):
+        bot.send_message(message.chat.id, f"Logged {hours}h sleep ({quality}). Rest well! 😴")
+    else:
+        bot.send_message(message.chat.id, "Couldn't log sleep right now — try again!")
+
+
+@bot.message_handler(commands=["workout"])
+def cmd_workout(message):
+    if not is_ajay(message): return unauthorized_response(message)
+    text = message.text.replace("/workout", "").strip()
+    parts = text.split(maxsplit=1) if text else []
+    workout_type = parts[0] if parts else "workout"
+    details = parts[1] if len(parts) > 1 else ""
+    from src.core.health_tracker import HealthTracker
+    tracker = HealthTracker(aisha.supabase)
+    if tracker.log_workout(workout_type, details):
+        bot.send_message(message.chat.id, f"Workout logged: {workout_type} {details}. Crushing it! 💪")
+    else:
+        bot.send_message(message.chat.id, "Couldn't log workout — try again!")
+
+
+@bot.message_handler(commands=["health"])
+def cmd_health(message):
+    if not is_ajay(message): return unauthorized_response(message)
+    from src.core.health_tracker import HealthTracker
+    tracker = HealthTracker(aisha.supabase)
+    text = tracker.format_summary_text()
+    bot.send_message(message.chat.id, text, parse_mode="Markdown")
+
+
+# ─── Digest Command ──────────────────────────────────────────────────────────
+
+@bot.message_handler(commands=["digest"])
+def cmd_digest(message):
+    if not is_ajay(message): return unauthorized_response(message)
+    bot.send_chat_action(message.chat.id, "typing")
+    from src.core.digest_engine import DigestEngine
+    digest = DigestEngine(aisha.memory, aisha.ai)
+    text = digest.generate_daily_digest()
+    bot.send_message(message.chat.id, text)
+
+
+# ─── Retry Failed Message ─────────────────────────────────────────────────────
+
+@bot.message_handler(commands=["retry"])
+def cmd_retry(message):
+    if not is_ajay(message): return unauthorized_response(message)
+    try:
+        rows = (
+            aisha.supabase.table("aisha_message_queue")
+            .select("*")
+            .eq("status", "failed")
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        ).data
+        if not rows:
+            bot.send_message(message.chat.id, "No failed messages to retry! All clear. 💜")
+            return
+        failed = rows[0]
+        bot.send_message(message.chat.id, f"Retrying: _{failed['user_message'][:80]}..._", parse_mode="Markdown")
+        response = aisha.think(failed["user_message"], platform=failed.get("platform", "telegram"))
+        # Mark as retried
+        aisha.supabase.table("aisha_message_queue").update({
+            "status": "retried",
+            "retry_count": (failed.get("retry_count") or 0) + 1,
+        }).eq("id", failed["id"]).execute()
+        bot.send_message(message.chat.id, response)
+    except Exception as e:
+        bot.send_message(message.chat.id, f"Retry failed too: {e}")
+
+
 # ─── Run ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     log.info("💜 Aisha Telegram Bot starting...")
     log.info(f"Authorized user ID: {AUTHORIZED_ID or 'ALL (dev mode)'}")
-    
+
     bot.set_my_commands([
         telebot.types.BotCommand("/start",   "Start / Greet Aisha"),
         telebot.types.BotCommand("/today",   "Today's summary"),
@@ -797,6 +848,12 @@ if __name__ == "__main__":
         telebot.types.BotCommand("/journal", "Write a journal entry"),
         telebot.types.BotCommand("/memory",  "What Aisha remembers"),
         telebot.types.BotCommand("/voice",   "Toggle voice on/off"),
+        telebot.types.BotCommand("/health",  "Today's health summary"),
+        telebot.types.BotCommand("/water",   "Log water intake (/water 3)"),
+        telebot.types.BotCommand("/sleep",   "Log sleep (/sleep 7.5 good)"),
+        telebot.types.BotCommand("/workout", "Log workout (/workout run 30min)"),
+        telebot.types.BotCommand("/digest",  "Today's AI digest"),
+        telebot.types.BotCommand("/retry",   "Retry last failed message"),
         telebot.types.BotCommand("/help",    "Help & commands"),
         telebot.types.BotCommand("/reset",   "Reset conversation"),
     ])

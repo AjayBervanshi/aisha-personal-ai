@@ -43,3 +43,9 @@ google-auth-httplib2>=0.2.0     # HTTP transport for Google auth
 # Development
 pytest>=7.0.0                   # Testing
 python-json-logger>=2.0.0       # Structured logging
+
+# API Security & Rate Limiting
+slowapi>=0.1.9                  # Rate limiting middleware for FastAPI
+
+# News Aggregation
+newsapi-python>=2.6.1           # NewsAPI client (free tier: 100 req/day)
