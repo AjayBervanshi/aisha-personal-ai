@@ -350,3 +350,148 @@ COMMENT ON TABLE aisha_schedule IS 'Tasks, reminders, events, and habits';
 COMMENT ON TABLE aisha_conversations IS 'Recent conversation history (30 day rolling)';
 COMMENT ON TABLE aisha_mood_tracker IS 'Daily emotional wellbeing tracking';
 COMMENT ON TABLE aisha_goals IS 'Short and long-term goals with progress tracking';
+
+-- ============================================================
+-- MIGRATION: Add session tracking to conversations
+-- Needed for per-platform context isolation (web vs telegram)
+-- and conversation compression (is_summary flag)
+-- ============================================================
+
+ALTER TABLE aisha_conversations
+  ADD COLUMN IF NOT EXISTS session_id TEXT,
+  ADD COLUMN IF NOT EXISTS is_summary  BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS token_estimate INT;
+
+CREATE INDEX IF NOT EXISTS idx_conversations_session
+  ON aisha_conversations(session_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_conversations_summary
+  ON aisha_conversations(is_summary)
+  WHERE is_summary = TRUE;
+
+-- ============================================================
+-- TABLE: aisha_health
+-- Physical wellbeing tracking (water, sleep, workouts)
+-- Populated via /water, /sleep, /workout Telegram commands
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS aisha_health (
+  id                    UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  date                  DATE DEFAULT CURRENT_DATE,
+  water_glasses         INT DEFAULT 0,
+  sleep_hours           NUMERIC(3, 1),
+  sleep_quality         TEXT CHECK (sleep_quality IN ('poor', 'okay', 'good', 'great')),
+  workout_type          TEXT,
+  workout_duration_mins INT,
+  weight_kg             NUMERIC(5, 2),
+  steps                 INT,
+  notes                 TEXT,
+  created_at            TIMESTAMPTZ DEFAULT NOW(),
+  updated_at            TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (date)         -- one record per day, upserted
+);
+
+CREATE TRIGGER update_health_updated_at
+  BEFORE UPDATE ON aisha_health
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+ALTER TABLE aisha_health ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Service role full access" ON aisha_health
+  USING (TRUE) WITH CHECK (TRUE);
+
+CREATE INDEX idx_health_date ON aisha_health(date DESC);
+
+COMMENT ON TABLE aisha_health IS 'Daily physical wellbeing log for Ajay';
+
+-- ============================================================
+-- TABLE: aisha_system_log
+-- Structured error/event log for observability
+-- Written by src/core/logger.py SupabaseSinkHandler
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS aisha_system_log (
+  id          UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  level       TEXT NOT NULL CHECK (level IN ('info', 'warning', 'error', 'critical')),
+  module      TEXT NOT NULL,
+  event       TEXT NOT NULL,
+  context     JSONB DEFAULT '{}',
+  error_trace TEXT,
+  session_id  TEXT,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE aisha_system_log ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Service role full access" ON aisha_system_log
+  USING (TRUE) WITH CHECK (TRUE);
+
+CREATE INDEX idx_syslog_level   ON aisha_system_log(level, created_at DESC);
+CREATE INDEX idx_syslog_module  ON aisha_system_log(module, created_at DESC);
+CREATE INDEX idx_syslog_created ON aisha_system_log(created_at DESC);
+
+COMMENT ON TABLE aisha_system_log IS 'Structured observability log — errors written by logger.py';
+
+-- ============================================================
+-- TABLE: aisha_message_queue
+-- Failed messages saved for retry via /retry Telegram command
+-- Written by AishaBrain.think() on exception
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS aisha_message_queue (
+  id           UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  platform     TEXT NOT NULL,
+  user_message TEXT NOT NULL,
+  error_reason TEXT,
+  retry_count  INT DEFAULT 0,
+  status       TEXT DEFAULT 'failed' CHECK (status IN ('failed', 'retried', 'resolved')),
+  created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE aisha_message_queue ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Service role full access" ON aisha_message_queue
+  USING (TRUE) WITH CHECK (TRUE);
+
+CREATE INDEX idx_msgqueue_status ON aisha_message_queue(status, created_at DESC);
+
+COMMENT ON TABLE aisha_message_queue IS 'Failed messages pending retry — written on brain exceptions';
+
+-- ============================================================
+-- VIEW: aisha_daily_summary
+-- Used by DigestEngine and NotificationEngine morning briefing
+-- ============================================================
+
+CREATE OR REPLACE VIEW aisha_daily_summary AS
+SELECT
+  CURRENT_DATE                                                             AS date,
+  (SELECT COUNT(*) FROM aisha_schedule
+   WHERE due_date = CURRENT_DATE AND status = 'done')                      AS tasks_done,
+  (SELECT COUNT(*) FROM aisha_schedule
+   WHERE due_date = CURRENT_DATE AND status = 'pending')                   AS tasks_pending,
+  (SELECT COUNT(*) FROM aisha_schedule
+   WHERE due_date = CURRENT_DATE AND status = 'missed')                    AS tasks_missed,
+  (SELECT COALESCE(SUM(amount), 0) FROM aisha_finance
+   WHERE date = CURRENT_DATE AND type = 'expense')                         AS today_spending,
+  (SELECT mood FROM aisha_mood_tracker
+   ORDER BY created_at DESC LIMIT 1)                                       AS last_mood,
+  (SELECT mood_score FROM aisha_mood_tracker
+   ORDER BY created_at DESC LIMIT 1)                                       AS last_mood_score,
+  (SELECT water_glasses FROM aisha_health
+   WHERE date = CURRENT_DATE LIMIT 1)                                      AS water_glasses,
+  (SELECT sleep_hours FROM aisha_health
+   WHERE date = CURRENT_DATE LIMIT 1)                                      AS sleep_hours,
+  (SELECT COUNT(*) FROM aisha_goals WHERE status = 'active')               AS active_goals;
+
+-- ============================================================
+-- AUTO-CLEANUP: Also purge old system logs (keep 7 days)
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION cleanup_old_system_logs()
+RETURNS void AS $$
+BEGIN
+  DELETE FROM aisha_system_log
+  WHERE created_at < NOW() - INTERVAL '7 days'
+    AND level IN ('info', 'warning');
+  -- Keep errors for 30 days for debugging
+  DELETE FROM aisha_system_log
+  WHERE created_at < NOW() - INTERVAL '30 days';
+END;
+$$ LANGUAGE plpgsql;

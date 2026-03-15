@@ -42,13 +42,26 @@ class AishaBrain:
     def __init__(self):
         # Initialize AI Router (handles Gemini, OpenAI, Groq, Mistral, Ollama)
         self.ai = AIRouter()
-        
+
         # Initialize Supabase
         self.supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
         self.memory   = MemoryManager(self.supabase)
-        
-        # Conversation history (per session)
-        self.history  = []
+
+        # Conversation history — warm-started from Supabase on every init
+        # so Railway restarts and redeploys don't wipe the thread
+        self.history  = self._load_history_from_db()
+
+        # Counter for throttling auto-extract (only every 5th message)
+        self._message_count = 0
+
+    def _load_history_from_db(self) -> list:
+        """Restore recent conversation history from Supabase on startup."""
+        try:
+            recent = self.memory.get_recent_conversation(limit=AI_HISTORY_LIMIT)
+            return [{"role": c["role"], "content": c["message"]} for c in recent]
+        except Exception as e:
+            print(f"[Brain] Could not warm-start history from DB: {e}")
+            return []
 
     def think(self, user_message: str, platform: str = "telegram", image_bytes: bytes = None) -> str:
         """
@@ -111,14 +124,33 @@ class AishaBrain:
             self.memory.save_conversation("assistant", response_text, platform, language, mood)
             self.memory.update_mood(mood, mood_res.score)
 
-            # 8. Auto-extract long-term memories
-            self._auto_extract_memory(user_message, response_text)
+            # 8. Auto-extract long-term memories (every 5th message to reduce cost/latency)
+            self._message_count += 1
+            _memory_triggers = ["my goal", "i want", "i spend", "remind me", "i earn",
+                                 "save", "budget", "dream", "plan", "habit", "afraid", "fear"]
+            _should_extract = (
+                self._message_count % 5 == 0
+                or any(t in user_message.lower() for t in _memory_triggers)
+            )
+            if _should_extract:
+                self._auto_extract_memory(user_message, response_text)
 
             return response_text
 
         except Exception as e:
-            print(f"[Brain] Error during think: {str(e).encode('utf-8', errors='replace').decode('utf-8')}")
-            return "Arre Ajay, my brain is a bit fuzzy right now... 😅 Technical glitch!"
+            err_str = str(e).encode("utf-8", errors="replace").decode("utf-8")
+            print(f"[Brain] Error during think: {err_str}")
+            # Save failed message for potential retry
+            try:
+                self.supabase.table("aisha_message_queue").insert({
+                    "platform": platform,
+                    "user_message": user_message[:2000],
+                    "error_reason": err_str[:500],
+                    "status": "failed"
+                }).execute()
+            except Exception:
+                pass
+            return "Arre Ajay, my brain hit a snag right now... give me a sec and try again? 😅"
 
     def _trigger_jules_research(self, failed_task: str):
         """
