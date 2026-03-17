@@ -55,7 +55,7 @@ class YouTubeCrew:
         self.ai = AIRouter()
         self.results = {}
 
-    def _generate(self, prompt: str, preferred_provider: str = None) -> str:
+    def _generate(self, prompt: str, preferred_provider: str = None, nvidia_task_type: str = "writing") -> str:
         if preferred_provider:
             try:
                 result = self.ai._call_provider(
@@ -64,6 +64,7 @@ class YouTubeCrew:
                     prompt,
                     [],
                     None,
+                    nvidia_task_type=nvidia_task_type,
                 )
                 return result.strip()
             except Exception:
@@ -72,6 +73,7 @@ class YouTubeCrew:
         result = self.ai.generate(
             system_prompt="You are an expert content creator for YouTube and Instagram storytelling channels.",
             user_message=prompt,
+            nvidia_task_type=nvidia_task_type,
         )
         return result.text.strip()
 
@@ -83,9 +85,10 @@ class YouTubeCrew:
 
         identity = CHANNEL_IDENTITY.get(channel, CHANNEL_IDENTITY["Story With Aisha"])
 
-        from src.core.config import CHANNEL_AI_PROVIDER
+        from src.core.config import CHANNEL_AI_PROVIDER, CHANNEL_AI_TASK_TYPE
 
         preferred_ai = CHANNEL_AI_PROVIDER.get(channel, "gemini")
+        nvidia_task = CHANNEL_AI_TASK_TYPE.get(channel, "writing")
 
         # Fetch real-time trends first — then use as topic if none given
         print("[TrendEngine] Fetching real-time trends...")
@@ -148,6 +151,7 @@ STEP 2 — STORY BRIEF (using the top trending angle):
 
 Output: 300 words max. Be specific and concrete.""",
             preferred_provider=preferred_ai,
+                nvidia_task_type=nvidia_task,
         )
 
         print("[Lexi] Writing full script...")
@@ -168,6 +172,7 @@ Write the complete script. Include:
 Length: {'30-60 second reel script with punchy dialogue' if fmt == 'Short/Reel' else 'Full story script (8-15 minutes of narration)'}
 Make every line count.""",
             preferred_provider=preferred_ai,
+                nvidia_task_type=nvidia_task,
         )
 
         print("[Mia] Designing visuals...")
@@ -184,6 +189,7 @@ Create:
 2. 5 scene prompts for AI image generation
 3. Background music mood""",
             preferred_provider=preferred_ai,
+                nvidia_task_type=nvidia_task,
         )
 
         print("[Cappy] Building SEO package...")
@@ -200,6 +206,7 @@ Create:
 4. 30 hashtags
 5. Thumbnail text (3-5 words)""",
             preferred_provider=preferred_ai,
+                nvidia_task_type=nvidia_task,
         )
 
         print("[Aria+Mia] Generating voice + thumbnail assets...")

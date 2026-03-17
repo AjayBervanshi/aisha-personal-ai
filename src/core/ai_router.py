@@ -194,7 +194,8 @@ class AIRouter:
         user_message: str,
         history: list = None,
         image_bytes: bytes = None,
-        preferred_provider: str = None
+        preferred_provider: str = None,
+        nvidia_task_type: str = "writing"
     ) -> AIResult:
         """
         Try each provider in order. Return first successful response.
@@ -226,7 +227,7 @@ class AIRouter:
 
             try:
                 start = time.time()
-                result = self._call_provider(provider, system_prompt, user_message, history, image_bytes)
+                result = self._call_provider(provider, system_prompt, user_message, history, image_bytes, nvidia_task_type=nvidia_task_type)
                 latency = int((time.time() - start) * 1000)
                 stats.mark_success()
                 log.info(f"[{provider}] ✅ Response in {latency}ms")
@@ -273,7 +274,8 @@ class AIRouter:
         system_prompt: str,
         user_message: str,
         history: list,
-        image_bytes: bytes = None
+        image_bytes: bytes = None,
+        nvidia_task_type: str = "writing"
     ) -> str:
         """Call a specific provider and return text."""
 
@@ -290,7 +292,7 @@ class AIRouter:
         elif provider == "mistral":
             return self._call_mistral(system_prompt, user_message, history)
         elif provider == "nvidia":
-            return self._call_nvidia(system_prompt, user_message, history)
+            return self._call_nvidia(system_prompt, user_message, history, task_type=nvidia_task_type)
         elif provider == "ollama":
             return self._call_ollama(system_prompt, user_message, history)
         else:

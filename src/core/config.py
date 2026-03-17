@@ -129,14 +129,26 @@ AI_HISTORY_LIMIT = 20     # More context = smarter Aisha
 
 # ══════════════════════════════════════════════════════════════
 # CHANNEL → AI MODEL ROUTING
-# Riya's channels use Grok (xAI) — dark, edgy, bold writing
-# Aisha's channels use Gemini — warm, emotional, cinematic
+# Riya channels: Mistral-Large-3 via NVIDIA NIM (writing pool)
+#   - 675B parameter model, minimal content filtering
+#   - Handles explicit adult/18+ Hindi romance content
+#   - 2 keys (KEY_02 + KEY_17) = 2,000 free credits/month for writing
+#   - Fallback: Groq LLaMA-3.3 (also handles mature content)
+# Aisha channels: Gemini — warm, emotional, cinematic
 # ══════════════════════════════════════════════════════════════
 CHANNEL_AI_PROVIDER = {
     "Story With Aisha":           "gemini",   # Warm, emotional
-    "Riya's Dark Whisper":        "xai",      # Grok — dark, seductive
-    "Riya's Dark Romance Library":"xai",      # Grok — intense, bold
+    "Riya's Dark Whisper":        "nvidia",   # Mistral-Large-3 — explicit, dark
+    "Riya's Dark Romance Library":"nvidia",   # Mistral-Large-3 — intense, bold
     "Aisha & Him":                "gemini",   # Light, relatable
+}
+
+# Task type for NVIDIA NIM pool — ensures Riya uses the WRITING pool (Mistral-Large-3)
+CHANNEL_AI_TASK_TYPE = {
+    "Story With Aisha":           "writing",
+    "Riya's Dark Whisper":        "writing",  # Routes to Mistral-Large-3 (675B)
+    "Riya's Dark Romance Library":"writing",  # Routes to Mistral-Large-3 (675B)
+    "Aisha & Him":                "writing",
 }
 
 # ══════════════════════════════════════════════════════════════
