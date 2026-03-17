@@ -40,7 +40,52 @@ class AutonomousLoop:
         self.digest = DigestEngine(self.brain.memory, self.brain.ai)
         self.compressor = MemoryCompressor(self.brain.memory)
 
+        self._startup_recovery()
+        self._assert_no_telegram_webhook()
         log.info("event=autonomous_loop_init")
+
+    def _startup_recovery(self):
+        """Reset content_queue jobs stuck in 'processing' for >30 min back to 'pending'."""
+        try:
+            import os as _os
+            from supabase import create_client
+            sb = create_client(
+                _os.getenv("SUPABASE_URL", ""),
+                _os.getenv("SUPABASE_SERVICE_KEY") or _os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""),
+            )
+            from datetime import datetime, timezone, timedelta
+            cutoff = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+            stuck = sb.table("content_queue").select("id").eq("status", "processing").lt("updated_at", cutoff).execute()
+            if stuck.data:
+                for row in stuck.data:
+                    sb.table("content_queue").update({"status": "pending"}).eq("id", row["id"]).execute()
+                log.info(f"event=startup_recovery reset={len(stuck.data)}_stuck_jobs")
+        except Exception as e:
+            log.warning(f"event=startup_recovery_failed err={e}")
+
+    def _assert_no_telegram_webhook(self):
+        """Warn loudly if a Telegram webhook is set while we are in long-polling mode."""
+        try:
+            bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+            if not bot_token:
+                return
+            import requests as _req
+            resp = _req.get(f"https://api.telegram.org/bot{bot_token}/getWebhookInfo", timeout=5).json()
+            webhook_url = resp.get("result", {}).get("url", "")
+            if webhook_url:
+                msg = (
+                    f"⚠️ STARTUP WARNING: Telegram webhook is still set to '{webhook_url}'!\n"
+                    "Long-polling mode is active — webhook will intercept messages.\n"
+                    "Run: curl -X POST https://api.telegram.org/bot<TOKEN>/deleteWebhook"
+                )
+                log.warning(f"event=webhook_conflict webhook_url={webhook_url}")
+                if self.telegram and self.ajay_id:
+                    try:
+                        self.telegram.send_message(self.ajay_id, msg)
+                    except Exception:
+                        pass
+        except Exception as e:
+            log.warning(f"event=webhook_check_failed err={e}")
 
     def run_evening_wrapup(self):
         """Send evening summary at 9 PM IST."""
@@ -259,14 +304,26 @@ class AutonomousLoop:
         if days_left <= 30:
             warnings.append(f"⚠️ NVIDIA NIM keys expire in {days_left} days (2026-09-17)! Renew at build.nvidia.com")
 
-        # YouTube OAuth token — check expiry field
+        # YouTube OAuth token — check expiry field from DB (fallback to file)
         try:
-            yt_path = PROJECT_ROOT / "tokens" / "youtube_token.json"
-            if yt_path.exists():
-                yt = json.loads(yt_path.read_text())
-                expiry_str = yt.get("expiry", "")
+            yt_data = None
+            # Try DB first
+            try:
+                from src.core.social_media_engine import _load_db_secret
+                raw = _load_db_secret("YOUTUBE_OAUTH_TOKEN")
+                if raw:
+                    yt_data = json.loads(raw)
+            except Exception:
+                pass
+            # File fallback
+            if not yt_data:
+                yt_path = PROJECT_ROOT / "tokens" / "youtube_token.json"
+                if yt_path.exists():
+                    yt_data = json.loads(yt_path.read_text())
+            if yt_data:
+                expiry_str = yt_data.get("expiry", "") or yt_data.get("token_expiry", "")
                 if expiry_str:
-                    exp = datetime.fromisoformat(expiry_str.replace("Z", "+00:00"))
+                    exp = datetime.fromisoformat(str(expiry_str).replace("Z", "+00:00"))
                     d = (exp - now).days
                     if d <= 7:
                         warnings.append(f"⚠️ YouTube OAuth access token expires in {d} days — will auto-refresh on next upload.")
