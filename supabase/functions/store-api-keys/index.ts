@@ -114,7 +114,7 @@ Deno.serve(async (req) => {
             Prefer: "return=representation",
           },
           body: JSON.stringify({
-            key: env[name],
+            secret: env[name],
           }),
         });
         if (!updateRes.ok) {
@@ -140,7 +140,7 @@ Deno.serve(async (req) => {
           body: JSON.stringify([
             {
               name,
-              key: env[name],
+              secret: env[name],
             },
           ]),
         });
