@@ -228,6 +228,61 @@ class AutonomousLoop:
             except Exception as ex:
                 log.error(f"[Studio] Failed to launch production fallback: {ex}")
 
+    def run_temp_cleanup(self):
+        """Delete temp voice/video files older than 24 hours to prevent disk exhaustion."""
+        import time as _time
+        cutoff = _time.time() - 86400  # 24 hours
+        deleted = 0
+        for folder in ["temp_voice", "temp_videos", "temp_assets"]:
+            folder_path = PROJECT_ROOT / folder
+            if not folder_path.exists():
+                continue
+            for f in folder_path.iterdir():
+                if f.is_file() and f.stat().st_mtime < cutoff:
+                    try:
+                        f.unlink()
+                        deleted += 1
+                    except Exception:
+                        pass
+        if deleted > 0:
+            log.info(f"event=temp_cleanup deleted={deleted}_files")
+
+    def run_key_expiry_check(self):
+        """Check API key expiry dates and alert Ajay via Telegram if any expire within 30 days."""
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        warnings = []
+
+        # NVIDIA keys — all expire 2026-09-17
+        nvidia_expiry = datetime(2026, 9, 17, tzinfo=timezone.utc)
+        days_left = (nvidia_expiry - now).days
+        if days_left <= 30:
+            warnings.append(f"⚠️ NVIDIA NIM keys expire in {days_left} days (2026-09-17)! Renew at build.nvidia.com")
+
+        # YouTube OAuth token — check expiry field
+        try:
+            yt_path = PROJECT_ROOT / "tokens" / "youtube_token.json"
+            if yt_path.exists():
+                yt = json.loads(yt_path.read_text())
+                expiry_str = yt.get("expiry", "")
+                if expiry_str:
+                    exp = datetime.fromisoformat(expiry_str.replace("Z", "+00:00"))
+                    d = (exp - now).days
+                    if d <= 7:
+                        warnings.append(f"⚠️ YouTube OAuth access token expires in {d} days — will auto-refresh on next upload.")
+        except Exception:
+            pass
+
+        if warnings and self.telegram and self.ajay_id:
+            msg = "🔑 Key Expiry Alert:\n\n" + "\n".join(warnings)
+            try:
+                self.telegram.send_message(self.ajay_id, msg)
+            except Exception as e:
+                log.warning(f"event=key_expiry_alert_failed err={e}")
+        elif not warnings:
+            log.info("event=key_expiry_check all_keys_ok")
+
+
 def run_self_improvement(loop: AutonomousLoop):
     """Aisha audits and improves her own code every night."""
     log.info("[SelfEditor] Starting nightly self-improvement session...")
@@ -272,6 +327,12 @@ def start_loop(once: bool = False):
 
     # ── Nightly Self-Improvement (2 AM) ───────────────────────────────
     schedule.every().day.at("02:00").do(run_self_improvement, bot)
+
+    # ── Maintenance Jobs ───────────────────────────────────────────────
+    # Temp file cleanup — daily at 4 AM (delete voice/video files >24h old)
+    schedule.every().day.at("04:00").do(bot.run_temp_cleanup)
+    # API key expiry monitor — daily at 9 AM
+    schedule.every().day.at("09:00").do(bot.run_key_expiry_check)
 
     # Run the first studio session instantly on startup
     bot.run_studio_session()
