@@ -133,7 +133,18 @@ class SocialMediaEngine:
 
         raise FileNotFoundError(f"No YouTube OAuth token found for channel '{channel}'. Run setup_youtube_oauth.py or insert into api_keys table.")
 
-    def post_instagram_reel(self, video_url: str, caption: str, hashtags: list | None = None, channel: str = "Story With Aisha") -> dict:
+    def post_instagram_reel(self, video_url: str, caption: str, hashtags: list | None = None, channel: str = "Story With Aisha", job_id: str | None = None) -> dict:
+        # Idempotency guard — skip if already posted
+        if job_id:
+            try:
+                sb = _get_supabase()
+                existing = sb.table("content_queue").select("instagram_post_id").eq("id", job_id).single().execute()
+                if existing.data and existing.data.get("instagram_post_id"):
+                    log.info(f"[Instagram] Job {job_id} already posted: {existing.data['instagram_post_id']}")
+                    return {"success": True, "post_id": existing.data["instagram_post_id"], "skipped": True}
+            except Exception:
+                pass
+
         token, biz_id = self._get_instagram_creds(channel)
         if not token or not biz_id:
             return {"success": False, "error": "No Instagram credentials configured"}
@@ -178,9 +189,26 @@ class SocialMediaEngine:
                 timeout=30,
             ).json()
 
-            return {"success": True, "post_id": publish_resp.get("id")}
+            post_id = publish_resp.get("id")
+
+            # Persist post ID for idempotency
+            if job_id and post_id:
+                try:
+                    _get_supabase().table("content_queue").update({
+                        "instagram_post_id": post_id,
+                        "instagram_status": "published",
+                    }).eq("id", job_id).execute()
+                except Exception as db_err:
+                    log.warning(f"[Instagram] Could not persist post_id to DB: {db_err}")
+
+            return {"success": True, "post_id": post_id}
         except Exception as e:
             log.error(f"[Instagram] Reel post failed: {e}")
+            if job_id:
+                try:
+                    _get_supabase().table("content_queue").update({"instagram_status": "failed"}).eq("id", job_id).execute()
+                except Exception:
+                    pass
             return {"success": False, "error": str(e)}
 
     def post_instagram_image(self, image_url: str, caption: str, hashtags: list | None = None, channel: str = "Story With Aisha") -> dict:
