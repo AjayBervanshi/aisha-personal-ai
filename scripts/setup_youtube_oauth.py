@@ -134,16 +134,15 @@ def run_oauth_flow():
         print_setup_guide()
         return False
 
-    print("\n🌐 Opening browser for YouTube authentication...")
-    print("   Log in with the YouTube account you want Aisha to use.")
-    print("   After logging in, the browser will show a success page.\n")
-
     try:
+        import secrets
         flow = InstalledAppFlow.from_client_secrets_file(
             str(CLIENT_SECRET_PATH), SCOPES
         )
+        # Use a random high port to avoid conflicts
+        port = 8765
         creds = flow.run_local_server(
-            port=8080,
+            port=port,
             success_message="Aisha is now connected to YouTube! You can close this tab.",
             open_browser=True,
         )
@@ -157,19 +156,13 @@ def run_oauth_flow():
         with open(TOKEN_PATH, "w") as f:
             json.dump(token_data, f, indent=2)
 
-        print(f"\n✅ SUCCESS! YouTube token saved to:\n   {TOKEN_PATH}")
-        print("\n📺 Aisha can now:")
-        print("   - Upload videos to YouTube automatically")
-        print("   - Pull YouTube Analytics data")
-        print("   - Manage video metadata (titles, descriptions, thumbnails)")
-        print("\n🔑 Add to your .env file:")
-        print(f"   YOUTUBE_CLIENT_ID=<from your client_secret.json>")
-        print(f"   YOUTUBE_CLIENT_SECRET=<from your client_secret.json>")
+        print(f"\nSUCCESS! YouTube token saved to:\n   {TOKEN_PATH}")
         return True
 
     except Exception as e:
-        print(f"\n❌ OAuth flow failed: {e}")
-        print("Make sure port 8080 is free and try again.")
+        print(f"\nOAuth flow failed: {e}")
+        import traceback; traceback.print_exc()
+        return False
         return False
 
 

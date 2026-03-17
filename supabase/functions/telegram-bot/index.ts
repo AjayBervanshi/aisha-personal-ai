@@ -377,12 +377,18 @@ Aaj kya karna hai? ✨`;
 /aisha — Wapis Aisha
 /status — System status
 
-Features:
-• "image banao [description]" → DALL-E 3 image
-• "Story With Aisha script" → YouTube script
-• "yaad hai?" → Memory search
-• "note kar: ..." → Memory save
-• Voice messages → Main transcribe + jawab deti hoon
+Content Pipeline:
+/create [topic] — Story With Aisha content
+/create riya | [topic] — Riya dark content
+/create story | [topic] — Aisha content
+/post youtube — Latest content YouTube pe
+/post instagram — Latest content IG pe
+/post both — Dono pe post karo
+/queue — Content queue dekho
+
+Examples:
+/create Ek Ladki Ki Intezaar
+/create riya | Dark Obsession Ka Khel
 
 Bol, kya chahiye? 🌟`;
   }
@@ -402,16 +408,73 @@ Riya ne mazaa diya? 😄 Chalo main hoon. Kya karna hai aaj?`;
   }
   if (cmd === "/status") {
     return `✅ Aisha Online
-🧠 Brain: Groq (Llama 3.3 70B) → Gemini (5 models) → OpenAI → xAI
-🎙 Voice In: Groq Whisper (active)
-🔊 Voice Out: ElevenLabs (Aisha/Riya)
-🎨 Images: OpenAI DALL-E 3 (active)
-📹 Video: Pipeline ready (OAuth needed for upload)
-🔥 Riya: Available (say "Riya" or /riya)
+
+🧠 AI: Gemini 2.5-flash → Groq → xAI
+🎙 Voice In: Groq Whisper
+🔊 Voice Out: ElevenLabs (Aisha + Riya)
+📹 YouTube: Connected (Story With Aisha)
+📸 Instagram: Connected (@story_with_aisha)
 ⚡ Memory: Active
-📧 Gmail: Connected`;
+📧 Gmail: Connected
+
+Content Pipeline:
+/create [topic] → Script + Voice + SEO
+/post youtube → Upload to YouTube
+/post instagram → Post to Instagram
+/queue → View content queue`;
   }
   return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// APPROVAL MESSAGE — sends content preview with inline buttons
+// ─────────────────────────────────────────────────────────────────────────────
+async function sendApprovalMessage(
+  token: string,
+  chatId: string,
+  jobId: string,
+  channel: string,
+  topic: string,
+  youtubeTitle: string,
+  scriptPreview: string,
+  hasVoice: boolean
+): Promise<void> {
+  const text = `📋 Content Ready — Approval Needed\n\n` +
+    `📺 Channel: ${channel}\n` +
+    `📝 Topic: ${topic}\n` +
+    `🎬 Title: ${youtubeTitle}\n` +
+    `🎙 Voice: ${hasVoice ? "Ready" : "Not generated"}\n\n` +
+    `Preview:\n${scriptPreview}\n\n` +
+    `Post karna hai?`;
+
+  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: text.slice(0, 4096),
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "✅ Post Both", callback_data: `approve_both_${jobId}` },
+            { text: "📺 YouTube", callback_data: `approve_yt_${jobId}` },
+          ],
+          [
+            { text: "📸 Instagram", callback_data: `approve_ig_${jobId}` },
+            { text: "❌ Skip", callback_data: `skip_${jobId}` },
+          ],
+        ],
+      },
+    }),
+  }).catch(e => console.error("sendApprovalMessage:", e));
+}
+
+async function answerCallback(token: string, callbackQueryId: string, text: string): Promise<void> {
+  await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ callback_query_id: callbackQueryId, text }),
+  }).catch(() => {});
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -422,22 +485,80 @@ Deno.serve(async (req) => {
 
   try {
     const update = await req.json();
+
+    const token       = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
+    const allowedId   = Deno.env.get("AJAY_TELEGRAM_ID");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_KEY")!;
+
+    if (!token) { console.error("Missing TELEGRAM_BOT_TOKEN"); return new Response("OK", { status: 200 }); }
+
+    // ── Handle button taps (callback_query) ───────────────────────────────────
+    if (update.callback_query) {
+      const cq = update.callback_query;
+      const cqChatId = String(cq.message?.chat?.id ?? "");
+      const data = cq.data ?? "";
+
+      if (allowedId && cqChatId !== allowedId) {
+        await answerCallback(token, cq.id, "Not authorized");
+        return new Response("OK", { status: 200 });
+      }
+
+      const supabase = createClient(supabaseUrl, supabaseKey);
+      const pipelineUrl = `${supabaseUrl}/functions/v1/content-pipeline`;
+
+      if (data.startsWith("skip_")) {
+        const jobId = data.replace("skip_", "");
+        await supabase.from("content_queue").update({ status: "skipped" }).eq("id", jobId);
+        await answerCallback(token, cq.id, "Skipped");
+        await sendMessage(token, cqChatId, "❌ Content skipped.");
+        return new Response("OK", { status: 200 });
+      }
+
+      const postYT = data.startsWith("approve_both_") || data.startsWith("approve_yt_");
+      const postIG = data.startsWith("approve_both_") || data.startsWith("approve_ig_");
+      const jobId = data.replace(/^approve_(both|yt|ig)_/, "");
+
+      await answerCallback(token, cq.id, "Posting...");
+      await sendMessage(token, cqChatId, `📤 Posting${postYT ? " YouTube" : ""}${postYT && postIG ? " +" : ""}${postIG ? " Instagram" : ""}...`);
+
+      const results: string[] = [];
+
+      if (postYT) {
+        const res = await fetch(pipelineUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${supabaseKey}` },
+          body: JSON.stringify({ action: "post_youtube", job_id: jobId }),
+        });
+        const d = await res.json();
+        results.push(`📺 YouTube: ${d.result ?? d.error ?? "Failed"}`);
+      }
+
+      if (postIG) {
+        const res = await fetch(pipelineUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${supabaseKey}` },
+          body: JSON.stringify({ action: "post_instagram", job_id: jobId }),
+        });
+        const d = await res.json();
+        results.push(`📸 Instagram: ${d.result ?? d.error ?? "Failed"}`);
+      }
+
+      await sendMessage(token, cqChatId, results.join("\n") || "Done!");
+      return new Response("OK", { status: 200 });
+    }
+
     const msg = update.message || update.edited_message;
     if (!msg) return new Response("OK", { status: 200 });
 
     const chatId = String(msg.chat.id);
 
-    const token         = Deno.env.get("TELEGRAM_BOT_TOKEN");
-    const allowedId     = Deno.env.get("AJAY_TELEGRAM_ID");
-    const supabaseUrl   = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey   = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_KEY")!;
     const groqKey       = Deno.env.get("GROQ_API_KEY");
     const geminiKey     = Deno.env.get("GEMINI_API_KEY");
     const openaiKey     = Deno.env.get("OPENAI_API_KEY");
     const xaiKey        = Deno.env.get("XAI_API_KEY");
     const elevenLabsKey = Deno.env.get("ELEVENLABS_API_KEY");
 
-    if (!token) { console.error("Missing TELEGRAM_BOT_TOKEN"); return new Response("OK", { status: 200 }); }
     if (allowedId && chatId !== allowedId) { console.log(`Blocked: ${chatId}`); return new Response("OK", { status: 200 }); }
 
     const supabase = createClient(supabaseUrl, supabaseKey);
@@ -455,6 +576,148 @@ Deno.serve(async (req) => {
         ? `🎙 Voice mode is now ON\nMain ab voice notes mein jawab dungi! 💜\nUse /voice to turn off.`
         : `🔇 Voice mode is now OFF\nText only mode. Say /voice again to hear me! 💜`;
       await sendMessage(token, chatId, reply);
+      return new Response("OK", { status: 200 });
+    }
+
+    // ── Handle /create command ────────────────────────────────────────────────
+    // Usage: /create [channel] | topic
+    // Examples:
+    //   /create Ek Ladki Ki Kahani
+    //   /create story | Ek Ladki Ki Kahani
+    //   /create riya | Dark Obsession
+    if (text.startsWith("/create ") || text === "/create") {
+      await sendMessage(token, chatId, "🎬 Content pipeline shuru ho rahi hai... (2-3 min lagenge)");
+      try {
+        const args = text.slice("/create".length).trim();
+        let channel = "Story With Aisha";
+        let topic = args;
+
+        // Parse "channel | topic" syntax
+        if (args.includes("|")) {
+          const [ch, tp] = args.split("|").map((s: string) => s.trim());
+          topic = tp;
+          const cl = ch.toLowerCase();
+          if (cl.includes("riya") && cl.includes("dark whisper")) channel = "Riya's Dark Whisper";
+          else if (cl.includes("riya") && cl.includes("romance")) channel = "Riya's Dark Romance Library";
+          else if (cl.includes("riya")) channel = "Riya's Dark Whisper";
+          else if (cl.includes("him") || cl.includes("couple")) channel = "Aisha & Him";
+          else channel = "Story With Aisha";
+        } else {
+          // Auto-detect from topic keywords
+          const tl = args.toLowerCase();
+          if (tl.includes("riya") || tl.includes("dark") || tl.includes("mafia")) channel = "Riya's Dark Whisper";
+          else if (tl.includes("couple") || tl.includes("him")) channel = "Aisha & Him";
+        }
+
+        if (!topic) {
+          await sendMessage(token, chatId, "Usage:\n/create [topic]\n/create riya | [topic]\n/create story | [topic]\n\nExample:\n/create Ek Ladki Ki Kahani");
+          return new Response("OK", { status: 200 });
+        }
+
+        const pipelineUrl = `${supabaseUrl}/functions/v1/content-pipeline`;
+        const res = await fetch(pipelineUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${supabaseKey}`,
+          },
+          body: JSON.stringify({ action: "create", channel, topic }),
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          // Send voice preview first if available
+          if (data.audio_url) {
+            await fetch(`https://api.telegram.org/bot${token}/sendAudio`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                chat_id: chatId,
+                audio: data.audio_url,
+                caption: `🎙 Voice preview: ${data.youtube_title ?? topic}`,
+              }),
+            }).catch(() => {});
+          }
+          // Send approval message with inline buttons
+          await sendApprovalMessage(
+            token, chatId,
+            data.job_id,
+            channel, topic,
+            data.youtube_title ?? topic,
+            data.script_preview ?? "",
+            !!data.audio_url
+          );
+        } else {
+          await sendMessage(token, chatId, `❌ Pipeline failed: ${data.error ?? "Unknown error"}`);
+        }
+      } catch (e) {
+        console.error("/create:", e);
+        await sendMessage(token, chatId, `❌ Error: ${e}`);
+      }
+      return new Response("OK", { status: 200 });
+    }
+
+    // ── Handle /post command ──────────────────────────────────────────────────
+    // Usage: /post youtube | /post instagram | /post both
+    if (text.startsWith("/post") && (text.includes("youtube") || text.includes("instagram") || text.includes("both"))) {
+      const postYT = text.includes("youtube") || text.includes("both");
+      const postIG = text.includes("instagram") || text.includes("both");
+      await sendMessage(token, chatId, `📤 Posting ${postYT ? "YouTube" : ""}${postYT && postIG ? " + " : ""}${postIG ? "Instagram" : ""}...`);
+
+      try {
+        const pipelineUrl = `${supabaseUrl}/functions/v1/content-pipeline`;
+
+        const results: string[] = [];
+
+        if (postYT) {
+          const res = await fetch(pipelineUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${supabaseKey}` },
+            body: JSON.stringify({ action: "post_youtube" }),
+          });
+          const d = await res.json();
+          results.push(`📺 YouTube: ${d.result ?? d.error ?? "Failed"}`);
+        }
+
+        if (postIG) {
+          const res = await fetch(pipelineUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${supabaseKey}` },
+            body: JSON.stringify({ action: "post_instagram" }),
+          });
+          const d = await res.json();
+          results.push(`📸 Instagram: ${d.result ?? d.error ?? "Failed"}`);
+        }
+
+        await sendMessage(token, chatId, results.join("\n"));
+      } catch (e) {
+        await sendMessage(token, chatId, `❌ Post failed: ${e}`);
+      }
+      return new Response("OK", { status: 200 });
+    }
+
+    // ── Handle /queue command ─────────────────────────────────────────────────
+    if (text === "/queue" || text.startsWith("/queue")) {
+      try {
+        const pipelineUrl = `${supabaseUrl}/functions/v1/content-pipeline`;
+        const res = await fetch(pipelineUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${supabaseKey}` },
+          body: JSON.stringify({ action: "status" }),
+        });
+        const d = await res.json();
+        const queue = d.queue ?? [];
+        if (queue.length === 0) {
+          await sendMessage(token, chatId, "📭 Queue empty. /create se content banao!");
+        } else {
+          const lines = queue.map((item: any, i: number) =>
+            `${i + 1}. [${item.status}] ${item.channel}\n   "${item.topic?.slice(0, 40)}"\n   ${item.audio_url ? "🎙 Voice ready" : "🔇 No audio"}`
+          );
+          await sendMessage(token, chatId, `📋 Content Queue (latest 10):\n\n${lines.join("\n\n")}`);
+        }
+      } catch (e) {
+        await sendMessage(token, chatId, `❌ Queue fetch failed: ${e}`);
+      }
       return new Response("OK", { status: 200 });
     }
 

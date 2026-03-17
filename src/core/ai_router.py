@@ -77,6 +77,7 @@ class AIRouter:
             "xai":       ProviderStats("xAI-Grok"),
             "openai":    ProviderStats("OpenAI"),
             "mistral":   ProviderStats("Mistral"),
+            "nvidia":    ProviderStats("NVIDIA-NIM"),
             "ollama":    ProviderStats("Ollama"),
         }
         self._clients = {}
@@ -160,6 +161,21 @@ class AIRouter:
         except Exception:
             pass  # Optional — no warning
 
+        # NVIDIA NIM Pool (22 keys × 1,000 credits/month = 22,000 total)
+        try:
+            from core.nvidia_pool import NvidiaPool
+            self._nvidia_pool = NvidiaPool()
+            # Mark as available if at least one key loaded
+            pool_stats = self._nvidia_pool.get_stats()
+            total_available = sum(p["available"] for p in pool_stats.values())
+            if total_available > 0:
+                self._clients["nvidia"] = "pool"
+                log.info(f"NVIDIA NIM Pool initialized ({total_available} keys available)")
+            else:
+                log.warning("NVIDIA NIM Pool: no keys available")
+        except Exception as e:
+            log.warning(f"NVIDIA NIM Pool init failed: {e}")
+
         # Ollama (local — no key needed!)
         try:
             import requests
@@ -187,7 +203,7 @@ class AIRouter:
         if image_bytes:
             order = ["gemini", "anthropic", "openai"]  # Only providers with Vision
         else:
-            order = ["gemini", "anthropic", "groq", "xai", "openai", "mistral", "ollama"]
+            order = ["gemini", "groq", "nvidia", "anthropic", "xai", "openai", "mistral", "ollama"]
             
         if preferred_provider and preferred_provider in self._clients:
             # Move preferred to the front if it's not already there
@@ -273,6 +289,8 @@ class AIRouter:
             return self._call_xai(system_prompt, user_message, history)
         elif provider == "mistral":
             return self._call_mistral(system_prompt, user_message, history)
+        elif provider == "nvidia":
+            return self._call_nvidia(system_prompt, user_message, history)
         elif provider == "ollama":
             return self._call_ollama(system_prompt, user_message, history)
         else:
@@ -461,6 +479,15 @@ class AIRouter:
         )
         return response.choices[0].message.content
 
+    def _call_nvidia(self, system_prompt, user_message, history, task_type: str = "chat") -> str:
+        """NVIDIA NIM Pool — 22 keys × 1,000 credits/month = 22,000 total credits."""
+        return self._nvidia_pool.generate(
+            task_type=task_type,
+            system_prompt=system_prompt,
+            user_message=user_message,
+            history=history,
+        )
+
     def _call_mistral(self, system_prompt, user_message, history) -> str:
         from mistralai.models.chat_completion import ChatMessage
         client = self._clients["mistral"]
@@ -504,6 +531,7 @@ class AIRouter:
             "xai":       "grok-2-latest",
             "openai":    "gpt-4o",
             "mistral":   "mistral-large-latest",
+            "nvidia":    "qwen/qwen3.5-122b-a10b",
             "ollama":    "llama3-local",
         }
         return names.get(provider, "unknown")
