@@ -154,24 +154,54 @@ Write ONLY the Python code, nothing else."""
         log.info(f"[SelfEditor] New tool written: {output_path}")
         return str(output_path.relative_to(PROJECT_ROOT))
 
-    def apply_patch(self, filepath: str, old_code: str, new_code: str) -> bool:
+    def apply_patch(self, filepath: str, old_code: str, new_code: str,
+                    reason: str = "auto-improvement") -> bool:
         """
-        Apply a code change to one of Aisha's files.
-        Requires Ajay's approval via Telegram first (safety check).
+        Safety gate: creates a GitHub PR with the patch instead of writing directly.
+        Ajay reviews and clicks Deploy/Skip on Telegram before any file is touched.
+
+        Set ALLOW_DIRECT_PATCH=true in .env ONLY for emergency local debugging.
         """
-        full_path = PROJECT_ROOT / filepath
-        if not full_path.exists():
+        # Emergency escape hatch — local debug only, never set this in production
+        if os.getenv("ALLOW_DIRECT_PATCH", "").lower() == "true":
+            full_path = PROJECT_ROOT / filepath
+            if not full_path.exists():
+                return False
+            content = full_path.read_text(encoding="utf-8")
+            if old_code not in content:
+                log.warning(f"[SelfEditor] Patch target not found in {filepath}")
+                return False
+            new_content = content.replace(old_code, new_code, 1)
+            full_path.write_text(new_content, encoding="utf-8")
+            log.info(f"[SelfEditor] DIRECT patch applied to {filepath} (ALLOW_DIRECT_PATCH=true)")
+            return True
+
+        # Safe path: create GitHub PR → Ajay approves via Telegram
+        try:
+            from src.core.self_improvement import create_github_pr, notify_ajay_for_approval
+            import hashlib, time as _time
+            branch_name = f"aisha-patch-{hashlib.md5(filepath.encode()).hexdigest()[:6]}-{int(_time.time())}"
+            pr_url = create_github_pr(
+                title=reason,
+                body=f"Aisha self-improvement patch\n\nFile: `{filepath}`\n\nReason: {reason}\n\n```python\n{new_code[:1000]}\n```",
+                branch_name=branch_name,
+                file_path=filepath,
+                file_content=self._build_patched_content(filepath, old_code, new_code),
+            )
+            if "Failed" in pr_url or "No GitHub" in pr_url:
+                log.error(f"[SelfEditor] PR creation failed: {pr_url}")
+                return False
+            log.info(f"[SelfEditor] PR created: {pr_url} — waiting for Ajay's approval")
+            notify_ajay_for_approval(reason, pr_url)
+            return True
+        except Exception as e:
+            log.error(f"[SelfEditor] PR safety gate failed: {e}")
             return False
 
-        content = full_path.read_text(encoding="utf-8")
-        if old_code not in content:
-            log.warning(f"[SelfEditor] Patch target not found in {filepath}")
-            return False
-
-        new_content = content.replace(old_code, new_code, 1)
-        full_path.write_text(new_content, encoding="utf-8")
-        log.info(f"[SelfEditor] Patch applied to {filepath}")
-        return True
+    def _build_patched_content(self, filepath: str, old_code: str, new_code: str) -> str:
+        """Return the file content with old_code replaced by new_code."""
+        content = self.read_self(filepath)
+        return content.replace(old_code, new_code, 1)
 
     # ── TEST ──────────────────────────────────────────────────────────────────
 
