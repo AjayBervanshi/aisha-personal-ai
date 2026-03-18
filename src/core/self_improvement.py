@@ -149,30 +149,34 @@ def notify_ajay_for_approval(skill_name: str, pr_url: str):
     })
 
 
-def trigger_railway_redeploy() -> bool:
+def trigger_redeploy() -> bool:
     """
-    Triggers a Railway redeploy webhook after a PR is merged.
+    Triggers a Render redeploy webhook after a PR is merged.
     This is what makes Aisha's self-improvements go LIVE automatically.
 
-    Setup: Railway.app → Your Project → Settings → Webhooks → copy the deploy URL
-    Add to .env: RAILWAY_WEBHOOK_URL=https://railway.app/webhook/...
+    Setup: Render Dashboard → aisha-bot → Settings → Deploy Hook → copy the URL
+    Add to .env: RENDER_DEPLOY_HOOK_URL=https://api.render.com/deploy/srv-...
     """
-    webhook_url = os.getenv("RAILWAY_WEBHOOK_URL")
+    webhook_url = os.getenv("RENDER_DEPLOY_HOOK_URL") or os.getenv("RAILWAY_WEBHOOK_URL")
     if not webhook_url:
-        log.warning("RAILWAY_WEBHOOK_URL not set. Add it to .env to enable auto-deploy.")
+        log.warning("RENDER_DEPLOY_HOOK_URL not set. Add it to .env to enable auto-deploy.")
         return False
 
     try:
         response = requests.post(webhook_url, json={"trigger": "aisha-self-deploy"}, timeout=10)
         if response.status_code in [200, 201, 204]:
-            log.info("✅ Railway redeploy triggered successfully")
+            log.info("✅ Render redeploy triggered successfully")
             return True
         else:
-            log.error(f"Railway webhook failed: {response.status_code} {response.text}")
+            log.error(f"Render deploy hook failed: {response.status_code} {response.text}")
             return False
     except Exception as e:
-        log.error(f"Railway webhook error: {e}")
+        log.error(f"Render deploy hook error: {e}")
         return False
+
+
+# Backward-compatible alias
+trigger_railway_redeploy = trigger_redeploy
 
 
 def deploy_skill_from_pr(pr_url: str) -> bool:
@@ -195,14 +199,14 @@ def deploy_skill_from_pr(pr_url: str) -> bool:
 
     log.info(f"PR #{pr_number} merged ✅")
 
-    # Step 2: Trigger Railway redeploy
-    deployed = trigger_railway_redeploy()
+    # Step 2: Trigger Render redeploy
+    deployed = trigger_redeploy()
 
     # Step 3: Notify Ajay
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("AJAY_TELEGRAM_ID")
     if token and chat_id:
-        status_msg = "✅ Skill is now live! I've updated my brain." if deployed else "✅ PR merged! Railway will redeploy soon."
+        status_msg = "✅ Skill is now live! I've updated my brain." if deployed else "✅ PR merged! Render will redeploy soon."
         requests.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
             json={"chat_id": chat_id, "text": f"🧠 {status_msg}\nPR: {pr_url}"}
