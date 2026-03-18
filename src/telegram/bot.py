@@ -18,6 +18,10 @@ from pathlib import Path
 # Add project root to path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
+import threading
+import json as _json
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
 import telebot
 from telebot import types
 from supabase import create_client
@@ -1121,6 +1125,95 @@ def cmd_retry(message):
         bot.send_message(message.chat.id, f"Retry failed too: {e}")
 
 
+# ─── Render Health + Trigger Server ──────────────────────────────────────────
+
+# Global reference to the AutonomousLoop instance (set during startup)
+_autonomous_loop = None
+
+TRIGGER_SECRET = os.getenv("TRIGGER_SECRET", "")
+
+
+class _AishaHTTPHandler(BaseHTTPRequestHandler):
+    """Minimal HTTP server for Render /health keep-alive and pg_cron /api/trigger/<job>."""
+
+    def do_GET(self):
+        if self.path in ('/', '/health', '/ping'):
+            body = b'{"status":"ok","service":"aisha-bot"}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def do_POST(self):
+        secret = self.headers.get("X-Trigger-Secret", "")
+        if TRIGGER_SECRET and secret != TRIGGER_SECRET:
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(b'{"error":"forbidden"}')
+            return
+
+        parts = self.path.strip("/").split("/")
+        if len(parts) == 3 and parts[0] == "api" and parts[1] == "trigger":
+            job = parts[2]
+            _dispatch_trigger(job)
+            body = _json.dumps({"status": "accepted", "job": job}).encode()
+            self.send_response(202)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, format, *args):
+        pass  # Silence access logs
+
+
+def _dispatch_trigger(job: str):
+    """Fire an AutonomousLoop method in a background thread (non-blocking)."""
+    global _autonomous_loop
+    if _autonomous_loop is None:
+        log.warning(f"trigger_dispatch job={job} status=no_loop_yet")
+        return
+
+    job_map = {
+        "morning":        _autonomous_loop.run_morning_checkin,
+        "evening":        _autonomous_loop.run_evening_wrapup,
+        "digest":         _autonomous_loop.run_daily_digest,
+        "memory":         _autonomous_loop.run_memory_consolidation,
+        "weekly-digest":  _autonomous_loop.run_weekly_digest,
+        "memory-cleanup": _autonomous_loop.run_memory_cleanup,
+        "task-poll":      _autonomous_loop.run_task_reminder_poll,
+        "inactivity":     _autonomous_loop.run_inactivity_check,
+        "studio":         _autonomous_loop.run_studio_session,
+        "self-improve":   lambda: __import__("src.core.autonomous_loop", fromlist=["run_self_improvement"]).run_self_improvement(_autonomous_loop),
+        "temp-cleanup":   _autonomous_loop.run_temp_cleanup,
+        "key-expiry":     _autonomous_loop.run_key_expiry_check,
+    }
+
+    fn = job_map.get(job)
+    if fn is None:
+        log.warning(f"trigger_dispatch job={job} status=unknown_job")
+        return
+
+    log.info(f"trigger_dispatch job={job} status=firing")
+    t = threading.Thread(target=fn, daemon=True)
+    t.start()
+
+
+def start_health_server():
+    """Start the HTTP health/trigger server on $PORT (Render injects this)."""
+    port = int(os.getenv("PORT", "8000"))
+    server = HTTPServer(('0.0.0.0', port), _AishaHTTPHandler)
+    log.info(f"health_server port={port} status=starting")
+    server.serve_forever()
+
+
 # ─── Run ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -1154,6 +1247,43 @@ if __name__ == "__main__":
         telebot.types.BotCommand("/restart",  "Restart Aisha bot process"),
     ])
     
+    # ── Health + Trigger HTTP server (required by Render + pg_cron) ──────────
+    health_thread = threading.Thread(target=start_health_server, daemon=True)
+    health_thread.start()
+    log.info("health_server thread=started")
+
+    # ── AutonomousLoop background thread (fallback scheduler) ────────────────
+    def _start_autonomous_loop():
+        global _autonomous_loop
+        try:
+            import schedule as _schedule
+            import time as _time
+            from src.core.autonomous_loop import AutonomousLoop, run_self_improvement
+            _autonomous_loop = AutonomousLoop()
+            log.info("autonomous_loop status=initialized")
+            _schedule.every().day.at("08:00").do(_autonomous_loop.run_morning_checkin)
+            _schedule.every().day.at("21:00").do(_autonomous_loop.run_evening_wrapup)
+            _schedule.every().day.at("21:30").do(_autonomous_loop.run_daily_digest)
+            _schedule.every().day.at("03:00").do(_autonomous_loop.run_memory_consolidation)
+            _schedule.every().sunday.at("19:00").do(_autonomous_loop.run_weekly_digest)
+            _schedule.every().sunday.at("03:00").do(_autonomous_loop.run_memory_cleanup)
+            _schedule.every(5).minutes.do(_autonomous_loop.run_task_reminder_poll)
+            _schedule.every(3).hours.do(_autonomous_loop.run_inactivity_check)
+            _schedule.every(4).hours.do(_autonomous_loop.run_studio_session)
+            _schedule.every().day.at("02:00").do(run_self_improvement, _autonomous_loop)
+            _schedule.every().day.at("04:00").do(_autonomous_loop.run_temp_cleanup)
+            _schedule.every().day.at("09:00").do(_autonomous_loop.run_key_expiry_check)
+            log.info("autonomous_loop status=schedule_registered")
+            while True:
+                _schedule.run_pending()
+                _time.sleep(60)
+        except Exception as e:
+            log.error(f"autonomous_loop status=crashed err={e}")
+
+    loop_thread = threading.Thread(target=_start_autonomous_loop, daemon=True)
+    loop_thread.start()
+    log.info("autonomous_loop thread=started")
+
     print("✅ Aisha is live on Telegram! 💜")
     bot.infinity_polling(timeout=60, long_polling_timeout=60)
 
