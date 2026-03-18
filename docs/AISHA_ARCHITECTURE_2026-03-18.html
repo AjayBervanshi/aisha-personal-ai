@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aisha — Full System Architecture 2026-03-18</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #0f1117; color: #e2e8f0; max-width: 1400px; margin: 0 auto; padding: 24px; }
+    h1 { background: linear-gradient(135deg, #7928ca 0%, #ff0080 100%); color: white; padding: 36px 40px; border-radius: 16px; margin-bottom: 32px; }
+    h1 span { font-size: 0.55em; opacity: 0.8; display: block; margin-top: 8px; font-weight: 400; }
+    h2 { color: #a78bfa; font-size: 1.3em; margin: 32px 0 16px; border-left: 4px solid #7928ca; padding-left: 12px; }
+    h3 { color: #94a3b8; font-size: 1em; margin: 12px 0 8px; }
+    .section { background: #1a1d2e; border: 1px solid #2d3748; border-radius: 12px; padding: 24px; margin: 24px 0; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+    .grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; }
+    .card { background: #252840; border: 1px solid #3d4068; border-radius: 8px; padding: 16px; }
+    .card.green { border-color: #48bb78; }
+    .card.blue { border-color: #4299e1; }
+    .card.purple { border-color: #9f7aea; }
+    .card.orange { border-color: #ed8936; }
+    .card.pink { border-color: #ed64a6; }
+    .card.red { border-color: #fc8181; }
+    .card h4 { font-size: 0.85em; font-weight: 600; margin-bottom: 8px; }
+    .card.green h4 { color: #48bb78; }
+    .card.blue h4 { color: #4299e1; }
+    .card.purple h4 { color: #9f7aea; }
+    .card.orange h4 { color: #ed8936; }
+    .card.pink h4 { color: #ed64a6; }
+    .card.red h4 { color: #fc8181; }
+    .card p { font-size: 0.8em; color: #94a3b8; line-height: 1.5; }
+    .badge { display: inline-block; font-size: 0.7em; padding: 2px 8px; border-radius: 99px; margin: 2px; }
+    .badge.green { background: #1a4731; color: #48bb78; }
+    .badge.blue { background: #1a2f4a; color: #4299e1; }
+    .badge.purple { background: #2d1a4a; color: #9f7aea; }
+    .badge.orange { background: #4a2f1a; color: #ed8936; }
+    .badge.gray { background: #2d3748; color: #94a3b8; }
+    .badge.pink { background: #4a1a2f; color: #ed64a6; }
+    svg text { font-family: system-ui, sans-serif; }
+    .status-ok { color: #48bb78; }
+    .status-warn { color: #ed8936; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.82em; }
+    th { text-align: left; padding: 8px 12px; background: #252840; color: #a78bfa; font-weight: 600; }
+    td { padding: 8px 12px; border-top: 1px solid #2d3748; color: #cbd5e0; vertical-align: top; }
+    tr:hover td { background: #1e2235; }
+    .flow-step { display: flex; align-items: center; gap: 8px; font-size: 0.82em; padding: 6px 0; }
+    .flow-arrow { color: #4a5568; font-size: 1.2em; }
+    .tag { font-size: 0.72em; background: #2d3748; color: #94a3b8; padding: 1px 6px; border-radius: 4px; }
+    footer { text-align: center; padding: 24px; color: #4a5568; font-size: 0.8em; margin-top: 32px; }
+  </style>
+</head>
+<body>
+
+<h1>
+  Aisha — Full System Architecture
+  <span>AjayBervanshi/aisha-personal-ai · 2026-03-18 · Render + Supabase + Telegram</span>
+</h1>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 1: BUSINESS CONTEXT -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2>1. Business Context</h2>
+  <div class="grid-4">
+    <div class="card purple">
+      <h4>Mission</h4>
+      <p>Autonomous AI content factory that generates, publishes, and monetizes Hindi YouTube content 24/7 — targeting ₹10K/month within 12–18 months.</p>
+    </div>
+    <div class="card green">
+      <h4>Primary User</h4>
+      <p>Ajay (Telegram ID: 1002381172) — manages everything from Telegram. Zero laptop required after initial deploy.</p>
+    </div>
+    <div class="card orange">
+      <h4>4 YouTube Channels</h4>
+      <p>
+        <span class="badge purple">Story With Aisha</span> Hindi love stories, Gemini<br>
+        <span class="badge pink">Riya's Dark Whisper</span> Adult, Grok<br>
+        <span class="badge pink">Riya's Dark Romance Library</span> Mafia, Grok<br>
+        <span class="badge blue">Aisha &amp; Him</span> Couple shorts, Gemini
+      </p>
+    </div>
+    <div class="card blue">
+      <h4>Revenue Path</h4>
+      <p>
+        <span class="badge gray">Phase 1</span> First video published<br>
+        <span class="badge gray">Phase 2</span> 500+ subs, 3% CTR<br>
+        <span class="badge orange">Phase 3</span> 1K subs → YPP<br>
+        <span class="badge green">Phase 5</span> $10K/month
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 2: SYSTEM OVERVIEW — DATA FLOW SVG -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2>2. System Data Flow</h2>
+  <svg viewBox="0 0 1100 520" style="width:100%;background:#161929;border-radius:12px;padding:12px;">
+    <defs>
+      <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L8,3 z" fill="#4a5568"/>
+      </marker>
+      <marker id="arrow-blue" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L8,3 z" fill="#4299e1"/>
+      </marker>
+      <marker id="arrow-green" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L8,3 z" fill="#48bb78"/>
+      </marker>
+      <marker id="arrow-purple" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L8,3 z" fill="#9f7aea"/>
+      </marker>
+    </defs>
+
+    <!-- Layer labels -->
+    <text x="20" y="30" fill="#4a5568" font-size="11" font-weight="600">INPUT</text>
+    <text x="270" y="30" fill="#4a5568" font-size="11" font-weight="600">BRAIN</text>
+    <text x="490" y="30" fill="#4a5568" font-size="11" font-weight="600">AI PROVIDERS</text>
+    <text x="720" y="30" fill="#4a5568" font-size="11" font-weight="600">PIPELINE</text>
+    <text x="950" y="30" fill="#4a5568" font-size="11" font-weight="600">OUTPUT</text>
+
+    <!-- INPUT: Ajay Telegram -->
+    <rect x="20" y="50" width="130" height="50" rx="8" fill="#1a2f4a" stroke="#4299e1" stroke-width="1.5"/>
+    <text x="85" y="71" fill="#4299e1" font-size="11" font-weight="600" text-anchor="middle">Ajay</text>
+    <text x="85" y="87" fill="#7eb8e8" font-size="10" text-anchor="middle">Telegram Bot</text>
+
+    <!-- INPUT: pg_cron scheduler -->
+    <rect x="20" y="120" width="130" height="50" rx="8" fill="#2d1a4a" stroke="#9f7aea" stroke-width="1.5"/>
+    <text x="85" y="141" fill="#9f7aea" font-size="11" font-weight="600" text-anchor="middle">pg_cron</text>
+    <text x="85" y="157" fill="#b794f4" font-size="10" text-anchor="middle">Supabase Scheduler</text>
+
+    <!-- INPUT: Lovable Web App -->
+    <rect x="20" y="190" width="130" height="50" rx="8" fill="#1a4731" stroke="#48bb78" stroke-width="1.5"/>
+    <text x="85" y="211" fill="#48bb78" font-size="11" font-weight="600" text-anchor="middle">Lovable App</text>
+    <text x="85" y="227" fill="#9ae6b4" font-size="10" text-anchor="middle">Web Chat UI</text>
+
+    <!-- BRAIN: AishaBrain -->
+    <rect x="195" y="75" width="150" height="140" rx="10" fill="#252840" stroke="#7928ca" stroke-width="2"/>
+    <text x="270" y="100" fill="#c084fc" font-size="12" font-weight="700" text-anchor="middle">AishaBrain</text>
+    <text x="270" y="118" fill="#94a3b8" font-size="9.5" text-anchor="middle">aisha_brain.py</text>
+    <text x="270" y="138" fill="#cbd5e0" font-size="9" text-anchor="middle">• Memory Manager</text>
+    <text x="270" y="153" fill="#cbd5e0" font-size="9" text-anchor="middle">• Mood Detector</text>
+    <text x="270" y="168" fill="#cbd5e0" font-size="9" text-anchor="middle">• Context Manager</text>
+    <text x="270" y="183" fill="#cbd5e0" font-size="9" text-anchor="middle">• AI Router</text>
+    <text x="270" y="198" fill="#cbd5e0" font-size="9" text-anchor="middle">• Language Detector</text>
+
+    <!-- AI PROVIDERS column -->
+    <!-- Gemini -->
+    <rect x="390" y="50" width="125" height="38" rx="6" fill="#1a2f1a" stroke="#48bb78" stroke-width="1.5"/>
+    <text x="452" y="65" fill="#48bb78" font-size="10.5" font-weight="600" text-anchor="middle">Gemini 2.5-flash</text>
+    <text x="452" y="81" fill="#9ae6b4" font-size="9" text-anchor="middle">Google · REST · PRIMARY</text>
+
+    <!-- Groq -->
+    <rect x="390" y="100" width="125" height="38" rx="6" fill="#2f1a1a" stroke="#fc8181" stroke-width="1.5"/>
+    <text x="452" y="115" fill="#fc8181" font-size="10.5" font-weight="600" text-anchor="middle">Groq LLaMA-3.3</text>
+    <text x="452" y="131" fill="#feb2b2" font-size="9" text-anchor="middle">70B · Fast fallback</text>
+
+    <!-- NVIDIA Pool -->
+    <rect x="390" y="150" width="125" height="38" rx="6" fill="#2f2a1a" stroke="#ed8936" stroke-width="1.5"/>
+    <text x="452" y="165" fill="#ed8936" font-size="10.5" font-weight="600" text-anchor="middle">NVIDIA NIM Pool</text>
+    <text x="452" y="181" fill="#fbd38d" font-size="9" text-anchor="middle">22 keys · 22K credits/mo</text>
+
+    <!-- xAI Grok -->
+    <rect x="390" y="200" width="125" height="38" rx="6" fill="#2d1a2d" stroke="#ed64a6" stroke-width="1.5"/>
+    <text x="452" y="215" fill="#ed64a6" font-size="10.5" font-weight="600" text-anchor="middle">xAI Grok</text>
+    <text x="452" y="231" fill="#f9a8d4" font-size="9" text-anchor="middle">Riya channels · Uncensored</text>
+
+    <!-- ElevenLabs -->
+    <rect x="390" y="250" width="125" height="38" rx="6" fill="#1a1a2f" stroke="#4299e1" stroke-width="1.5"/>
+    <text x="452" y="265" fill="#4299e1" font-size="10.5" font-weight="600" text-anchor="middle">ElevenLabs TTS</text>
+    <text x="452" y="281" fill="#90cdf4" font-size="9" text-anchor="middle">Aisha + Riya voices</text>
+
+    <!-- Supabase -->
+    <rect x="390" y="300" width="125" height="38" rx="6" fill="#1a3330" stroke="#38b2ac" stroke-width="1.5"/>
+    <text x="452" y="315" fill="#38b2ac" font-size="10.5" font-weight="600" text-anchor="middle">Supabase</text>
+    <text x="452" y="331" fill="#81e6d9" font-size="9" text-anchor="middle">DB · pgvector · pg_cron</text>
+
+    <!-- PIPELINE: YouTube Crew -->
+    <rect x="570" y="55" width="145" height="210" rx="10" fill="#252840" stroke="#ed8936" stroke-width="2"/>
+    <text x="642" y="78" fill="#ed8936" font-size="11.5" font-weight="700" text-anchor="middle">YouTube Crew</text>
+    <text x="642" y="94" fill="#94a3b8" font-size="9" text-anchor="middle">youtube_crew.py</text>
+    <rect x="585" y="103" width="115" height="24" rx="4" fill="#1a2f4a" stroke="#4299e1" stroke-width="1"/>
+    <text x="642" y="119" fill="#4299e1" font-size="9.5" text-anchor="middle">① Research Agent</text>
+    <rect x="585" y="133" width="115" height="24" rx="4" fill="#2d1a4a" stroke="#9f7aea" stroke-width="1"/>
+    <text x="642" y="149" fill="#9f7aea" font-size="9.5" text-anchor="middle">② Script Agent (Lexi)</text>
+    <rect x="585" y="163" width="115" height="24" rx="4" fill="#1a3330" stroke="#38b2ac" stroke-width="1"/>
+    <text x="642" y="179" fill="#38b2ac" font-size="9.5" text-anchor="middle">③ Visuals Agent (Mia)</text>
+    <rect x="585" y="193" width="115" height="24" rx="4" fill="#2f1a1a" stroke="#fc8181" stroke-width="1"/>
+    <text x="642" y="209" fill="#fc8181" font-size="9.5" text-anchor="middle">④ SEO Agent (Cappy)</text>
+    <rect x="585" y="223" width="115" height="24" rx="4" fill="#4a1a2f" stroke="#ed64a6" stroke-width="1"/>
+    <text x="642" y="239" fill="#ed64a6" font-size="9.5" text-anchor="middle">⑤ Voice Agent (Aria)</text>
+
+    <!-- OUTPUT column -->
+    <!-- YouTube -->
+    <rect x="770" y="55" width="130" height="45" rx="8" fill="#2f1a1a" stroke="#fc8181" stroke-width="1.5"/>
+    <text x="835" y="74" fill="#fc8181" font-size="11" font-weight="600" text-anchor="middle">YouTube</text>
+    <text x="835" y="90" fill="#feb2b2" font-size="9.5" text-anchor="middle">4 channels · OAuth upload</text>
+
+    <!-- Instagram -->
+    <rect x="770" y="115" width="130" height="45" rx="8" fill="#4a1a2f" stroke="#ed64a6" stroke-width="1.5"/>
+    <text x="835" y="134" fill="#ed64a6" font-size="11" font-weight="600" text-anchor="middle">Instagram</text>
+    <text x="835" y="150" fill="#f9a8d4" font-size="9.5" text-anchor="middle">Reels · Posts</text>
+
+    <!-- Gmail -->
+    <rect x="770" y="175" width="130" height="45" rx="8" fill="#2f2f1a" stroke="#ecc94b" stroke-width="1.5"/>
+    <text x="835" y="194" fill="#ecc94b" font-size="11" font-weight="600" text-anchor="middle">Gmail</text>
+    <text x="835" y="210" fill="#faf089" font-size="9.5" text-anchor="middle">aishaa1662001@gmail.com</text>
+
+    <!-- Telegram Response -->
+    <rect x="770" y="235" width="130" height="45" rx="8" fill="#1a2f4a" stroke="#4299e1" stroke-width="1.5"/>
+    <text x="835" y="254" fill="#4299e1" font-size="11" font-weight="600" text-anchor="middle">Telegram Reply</text>
+    <text x="835" y="270" fill="#90cdf4" font-size="9.5" text-anchor="middle">Voice + Text + Media</text>
+
+    <!-- DEPLOYMENT ROW -->
+    <rect x="20" y="380" width="195" height="100" rx="10" fill="#1e2235" stroke="#4a5568" stroke-width="1.5"/>
+    <text x="117" y="400" fill="#718096" font-size="11" font-weight="600" text-anchor="middle">RENDER.COM (Free)</text>
+    <text x="117" y="418" fill="#94a3b8" font-size="9.5" text-anchor="middle">Web Service · 512MB RAM</text>
+    <text x="117" y="434" fill="#68d391" font-size="9" text-anchor="middle">src/telegram/bot.py</text>
+    <text x="117" y="450" fill="#68d391" font-size="9" text-anchor="middle">+ AutonomousLoop thread</text>
+    <text x="117" y="466" fill="#68d391" font-size="9" text-anchor="middle">+ /health endpoint (UptimeRobot)</text>
+
+    <rect x="235" y="380" width="180" height="100" rx="10" fill="#1e2235" stroke="#4a5568" stroke-width="1.5"/>
+    <text x="325" y="400" fill="#718096" font-size="11" font-weight="600" text-anchor="middle">SUPABASE (Free)</text>
+    <text x="325" y="418" fill="#94a3b8" font-size="9.5" text-anchor="middle">fwfzqphqbeicgfaziuox</text>
+    <text x="325" y="434" fill="#38b2ac" font-size="9" text-anchor="middle">pg_cron — 12 scheduled jobs</text>
+    <text x="325" y="450" fill="#38b2ac" font-size="9" text-anchor="middle">Edge Functions (TypeScript)</text>
+    <text x="325" y="466" fill="#38b2ac" font-size="9" text-anchor="middle">pgvector memory · 15 tables</text>
+
+    <rect x="435" y="380" width="160" height="100" rx="10" fill="#1e2235" stroke="#4a5568" stroke-width="1.5"/>
+    <text x="515" y="400" fill="#718096" font-size="11" font-weight="600" text-anchor="middle">UPTIMEROBOT (Free)</text>
+    <text x="515" y="418" fill="#94a3b8" font-size="9.5" text-anchor="middle">Ping /health every 5 min</text>
+    <text x="515" y="434" fill="#f6ad55" font-size="9" text-anchor="middle">Prevents Render sleep</text>
+    <text x="515" y="450" fill="#f6ad55" font-size="9" text-anchor="middle">99.9% uptime alert</text>
+    <text x="515" y="466" fill="#f6ad55" font-size="9" text-anchor="middle">Email on downtime</text>
+
+    <rect x="615" y="380" width="160" height="100" rx="10" fill="#1e2235" stroke="#4a5568" stroke-width="1.5"/>
+    <text x="695" y="400" fill="#718096" font-size="11" font-weight="600" text-anchor="middle">GITHUB (Free)</text>
+    <text x="695" y="418" fill="#94a3b8" font-size="9.5" text-anchor="middle">AjayBervanshi/aisha-personal-ai</text>
+    <text x="695" y="434" fill="#9f7aea" font-size="9" text-anchor="middle">Auto-deploy on push</text>
+    <text x="695" y="450" fill="#9f7aea" font-size="9" text-anchor="middle">Render → GitHub webhook</text>
+    <text x="695" y="466" fill="#9f7aea" font-size="9" text-anchor="middle">Branch: main</text>
+
+    <!-- ARROWS: Input → Brain -->
+    <path d="M150,75 L195,120" stroke="#4299e1" stroke-width="1.5" fill="none" marker-end="url(#arrow-blue)"/>
+    <path d="M150,145 L195,150" stroke="#9f7aea" stroke-width="1.5" fill="none" marker-end="url(#arrow-purple)"/>
+    <path d="M150,215 L195,175" stroke="#48bb78" stroke-width="1.5" fill="none" marker-end="url(#arrow-green)"/>
+
+    <!-- ARROWS: Brain → AI Providers -->
+    <path d="M345,100 L390,69" stroke="#4a5568" stroke-width="1" fill="none" marker-end="url(#arrow)"/>
+    <path d="M345,120 L390,119" stroke="#4a5568" stroke-width="1" fill="none" marker-end="url(#arrow)"/>
+    <path d="M345,140 L390,169" stroke="#4a5568" stroke-width="1" fill="none" marker-end="url(#arrow)"/>
+    <path d="M345,155 L390,219" stroke="#4a5568" stroke-width="1" fill="none" marker-end="url(#arrow)"/>
+    <path d="M345,175 L390,269" stroke="#4a5568" stroke-width="1" fill="none" marker-end="url(#arrow)"/>
+    <path d="M345,185 L390,319" stroke="#4a5568" stroke-width="1" fill="none" marker-end="url(#arrow)"/>
+
+    <!-- ARROWS: Brain → Pipeline -->
+    <path d="M345,145 L570,160" stroke="#ed8936" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+
+    <!-- ARROWS: Pipeline → Outputs -->
+    <path d="M715,80 L770,77" stroke="#fc8181" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+    <path d="M715,130 L770,137" stroke="#ed64a6" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+    <path d="M715,200 L770,197" stroke="#ecc94b" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+
+    <!-- AI Providers → Outputs (direct for chat) -->
+    <path d="M515,69 L770,257" stroke="#4299e1" stroke-width="1" stroke-dasharray="4,3" fill="none" marker-end="url(#arrow-blue)"/>
+  </svg>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 3: AI ROUTER — FALLBACK CHAIN -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2>3. Never-Down AI Router — Fallback Chain</h2>
+  <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:8px 0;">
+    <div class="card green" style="flex:1;min-width:100px;text-align:center;padding:12px 8px;">
+      <h4>1. Gemini</h4>
+      <p>2.5-flash REST<br>1500 req/day</p>
+    </div>
+    <span class="flow-arrow" style="font-size:1.5em;">→</span>
+    <div class="card orange" style="flex:1;min-width:100px;text-align:center;padding:12px 8px;">
+      <h4>2. Groq</h4>
+      <p>LLaMA-3.3-70B<br>Ultra-fast</p>
+    </div>
+    <span class="flow-arrow" style="font-size:1.5em;">→</span>
+    <div class="card orange" style="flex:1;min-width:100px;text-align:center;padding:12px 8px;">
+      <h4>3. NVIDIA NIM</h4>
+      <p>22 keys pool<br>22K credits/mo</p>
+    </div>
+    <span class="flow-arrow" style="font-size:1.5em;">→</span>
+    <div class="card blue" style="flex:1;min-width:100px;text-align:center;padding:12px 8px;">
+      <h4>4. Anthropic</h4>
+      <p>Claude Opus<br>(401 currently)</p>
+    </div>
+    <span class="flow-arrow" style="font-size:1.5em;">→</span>
+    <div class="card pink" style="flex:1;min-width:100px;text-align:center;padding:12px 8px;">
+      <h4>5. xAI Grok</h4>
+      <p>Riya channels<br>(403 currently)</p>
+    </div>
+    <span class="flow-arrow" style="font-size:1.5em;">→</span>
+    <div class="card blue" style="flex:1;min-width:100px;text-align:center;padding:12px 8px;">
+      <h4>6. OpenAI</h4>
+      <p>GPT-4<br>(401 currently)</p>
+    </div>
+    <span class="flow-arrow" style="font-size:1.5em;">→</span>
+    <div class="card purple" style="flex:1;min-width:100px;text-align:center;padding:12px 8px;">
+      <h4>7. Mistral</h4>
+      <p>Mixtral-8x7B<br>EU backup</p>
+    </div>
+    <span class="flow-arrow" style="font-size:1.5em;">→</span>
+    <div class="card orange" style="flex:1;min-width:100px;text-align:center;padding:12px 8px;">
+      <h4>8. NVIDIA Fallback</h4>
+      <p>3-tier cascade<br>Always available</p>
+    </div>
+  </div>
+  <p style="font-size:0.8em;color:#4a5568;margin-top:12px;">Email alert fires on: 401 (expired key), 429 (quota), all-providers-down · 6-hour cooldown per event</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 4: CONTENT PIPELINE FLOW -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2>4. YouTube Content Pipeline (5-Agent)</h2>
+  <svg viewBox="0 0 1000 160" style="width:100%;background:#161929;border-radius:10px;">
+    <!-- Boxes -->
+    <rect x="20" y="40" width="140" height="80" rx="8" fill="#1a2f4a" stroke="#4299e1" stroke-width="1.5"/>
+    <text x="90" y="70" fill="#4299e1" font-size="11" font-weight="700" text-anchor="middle">① Research</text>
+    <text x="90" y="86" fill="#90cdf4" font-size="9" text-anchor="middle">Trend analysis</text>
+    <text x="90" y="100" fill="#90cdf4" font-size="9" text-anchor="middle">Viral topic selection</text>
+    <text x="90" y="114" fill="#718096" font-size="8.5" text-anchor="middle">Gemini/Grok</text>
+
+    <path d="M160,80 L195,80" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+    <rect x="195" y="40" width="140" height="80" rx="8" fill="#2d1a4a" stroke="#9f7aea" stroke-width="1.5"/>
+    <text x="265" y="70" fill="#9f7aea" font-size="11" font-weight="700" text-anchor="middle">② Script (Lexi)</text>
+    <text x="265" y="86" fill="#d6bcfa" font-size="9" text-anchor="middle">Hindi Devanagari</text>
+    <text x="265" y="100" fill="#d6bcfa" font-size="9" text-anchor="middle">350–1400 words/part</text>
+    <text x="265" y="114" fill="#718096" font-size="8.5" text-anchor="middle">Mistral-Large-3 675B</text>
+
+    <path d="M335,80 L370,80" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+    <rect x="370" y="40" width="140" height="80" rx="8" fill="#1a3330" stroke="#38b2ac" stroke-width="1.5"/>
+    <text x="440" y="70" fill="#38b2ac" font-size="11" font-weight="700" text-anchor="middle">③ Visuals (Mia)</text>
+    <text x="440" y="86" fill="#81e6d9" font-size="9" text-anchor="middle">Thumbnail prompt</text>
+    <text x="440" y="100" fill="#81e6d9" font-size="9" text-anchor="middle">Gemini image gen</text>
+    <text x="440" y="114" fill="#718096" font-size="8.5" text-anchor="middle">Phi-4 Vision</text>
+
+    <path d="M510,80 L545,80" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+    <rect x="545" y="40" width="140" height="80" rx="8" fill="#2f1a1a" stroke="#fc8181" stroke-width="1.5"/>
+    <text x="615" y="70" fill="#fc8181" font-size="11" font-weight="700" text-anchor="middle">④ SEO (Cappy)</text>
+    <text x="615" y="86" fill="#feb2b2" font-size="9" text-anchor="middle">Title · Tags</text>
+    <text x="615" y="100" fill="#feb2b2" font-size="9" text-anchor="middle">Description · Chapters</text>
+    <text x="615" y="114" fill="#718096" font-size="8.5" text-anchor="middle">Gemini</text>
+
+    <path d="M685,80 L720,80" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+    <rect x="720" y="40" width="140" height="80" rx="8" fill="#4a1a2f" stroke="#ed64a6" stroke-width="1.5"/>
+    <text x="790" y="70" fill="#ed64a6" font-size="11" font-weight="700" text-anchor="middle">⑤ Voice (Aria)</text>
+    <text x="790" y="86" fill="#f9a8d4" font-size="9" text-anchor="middle">ElevenLabs TTS</text>
+    <text x="790" y="100" fill="#f9a8d4" font-size="9" text-anchor="middle">Aisha / Riya voice</text>
+    <text x="790" y="114" fill="#718096" font-size="8.5" text-anchor="middle">→ MP3 + Thumbnail</text>
+
+    <path d="M860,80 L895,80" stroke="#48bb78" stroke-width="2" marker-end="url(#arrow-green)"/>
+
+    <rect x="895" y="50" width="90" height="60" rx="8" fill="#1a4731" stroke="#48bb78" stroke-width="2"/>
+    <text x="940" y="76" fill="#48bb78" font-size="11" font-weight="700" text-anchor="middle">YouTube</text>
+    <text x="940" y="92" fill="#9ae6b4" font-size="9" text-anchor="middle">Upload API</text>
+    <text x="940" y="106" fill="#9ae6b4" font-size="9" text-anchor="middle">OAuth v3</text>
+  </svg>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 5: DEPLOYMENT ARCHITECTURE -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2>5. Deployment Architecture (Render + Supabase)</h2>
+  <svg viewBox="0 0 1000 340" style="width:100%;background:#161929;border-radius:10px;">
+
+    <!-- GitHub -->
+    <rect x="20" y="130" width="130" height="80" rx="8" fill="#252840" stroke="#9f7aea" stroke-width="1.5"/>
+    <text x="85" y="160" fill="#9f7aea" font-size="11" font-weight="700" text-anchor="middle">GitHub</text>
+    <text x="85" y="176" fill="#d6bcfa" font-size="9" text-anchor="middle">AjayBervanshi/</text>
+    <text x="85" y="190" fill="#d6bcfa" font-size="9" text-anchor="middle">aisha-personal-ai</text>
+    <text x="85" y="206" fill="#718096" font-size="9" text-anchor="middle">git push → auto-deploy</text>
+
+    <!-- Arrow GitHub → Render -->
+    <path d="M150,170 L210,170" stroke="#9f7aea" stroke-width="1.5" fill="none" marker-end="url(#arrow-purple)"/>
+
+    <!-- Render.com -->
+    <rect x="210" y="80" width="200" height="185" rx="10" fill="#1e2235" stroke="#4299e1" stroke-width="2"/>
+    <text x="310" y="106" fill="#4299e1" font-size="12" font-weight="700" text-anchor="middle">Render.com</text>
+    <text x="310" y="122" fill="#718096" font-size="9.5" text-anchor="middle">Free Web Service · 512MB</text>
+    <rect x="225" y="132" width="170" height="24" rx="4" fill="#1a2f4a" stroke="#4299e1" stroke-width="1"/>
+    <text x="310" y="148" fill="#90cdf4" font-size="9.5" text-anchor="middle">Telegram Bot (polling)</text>
+    <rect x="225" y="162" width="170" height="24" rx="4" fill="#252840" stroke="#4a5568" stroke-width="1"/>
+    <text x="310" y="178" fill="#94a3b8" font-size="9.5" text-anchor="middle">AutonomousLoop (thread)</text>
+    <rect x="225" y="192" width="170" height="24" rx="4" fill="#1a4731" stroke="#48bb78" stroke-width="1"/>
+    <text x="310" y="208" fill="#68d391" font-size="9.5" text-anchor="middle">HTTP /health (port $PORT)</text>
+    <rect x="225" y="222" width="170" height="24" rx="4" fill="#2f2a1a" stroke="#ed8936" stroke-width="1"/>
+    <text x="310" y="238" fill="#fbd38d" font-size="9.5" text-anchor="middle">HTTP /api/trigger/* (pg_cron)</text>
+
+    <!-- UptimeRobot -->
+    <rect x="450" y="180" width="140" height="70" rx="8" fill="#2f2a1a" stroke="#ecc94b" stroke-width="1.5"/>
+    <text x="520" y="204" fill="#ecc94b" font-size="11" font-weight="700" text-anchor="middle">UptimeRobot</text>
+    <text x="520" y="220" fill="#faf089" font-size="9.5" text-anchor="middle">Free monitor</text>
+    <text x="520" y="234" fill="#faf089" font-size="9" text-anchor="middle">Ping every 5 min</text>
+    <path d="M450,215 L410,215" stroke="#ecc94b" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+    <text x="428" y="210" fill="#ecc94b" font-size="8" text-anchor="middle">GET /health</text>
+
+    <!-- Supabase -->
+    <rect x="450" y="50" width="200" height="115" rx="10" fill="#1e2235" stroke="#38b2ac" stroke-width="2"/>
+    <text x="550" y="74" fill="#38b2ac" font-size="12" font-weight="700" text-anchor="middle">Supabase</text>
+    <text x="550" y="90" fill="#718096" font-size="9.5" text-anchor="middle">fwfzqphqbeicgfaziuox</text>
+    <rect x="465" y="100" width="170" height="20" rx="3" fill="#1a3330" stroke="#38b2ac" stroke-width="1"/>
+    <text x="550" y="114" fill="#81e6d9" font-size="9" text-anchor="middle">pg_cron: 12 scheduled jobs</text>
+    <rect x="465" y="126" width="170" height="20" rx="3" fill="#1a3330" stroke="#38b2ac" stroke-width="1"/>
+    <text x="550" y="140" fill="#81e6d9" font-size="9" text-anchor="middle">Edge Functions (TypeScript/Deno)</text>
+    <rect x="465" y="152" width="170" height="8" rx="3" fill="#1a3330" stroke="#38b2ac" stroke-width="1"/>
+    <text x="550" y="159" fill="#81e6d9" font-size="8" text-anchor="middle">15 tables · pgvector memory</text>
+
+    <!-- Arrow Supabase → Render (pg_cron trigger) -->
+    <path d="M450,155 L410,245" stroke="#38b2ac" stroke-width="1.5" stroke-dasharray="5,3" fill="none" marker-end="url(#arrow)"/>
+    <text x="420" y="198" fill="#38b2ac" font-size="8.5" text-anchor="middle">POST /api/trigger/*</text>
+
+    <!-- Edge Functions -->
+    <rect x="680" y="50" width="160" height="90" rx="10" fill="#1e2235" stroke="#9f7aea" stroke-width="1.5"/>
+    <text x="760" y="74" fill="#9f7aea" font-size="11" font-weight="700" text-anchor="middle">Edge Functions</text>
+    <text x="760" y="90" fill="#d6bcfa" font-size="9" text-anchor="middle">chat/index.ts</text>
+    <text x="760" y="105" fill="#d6bcfa" font-size="9" text-anchor="middle">content-pipeline</text>
+    <text x="760" y="120" fill="#d6bcfa" font-size="9" text-anchor="middle">telegram-bot</text>
+    <text x="760" y="133" fill="#718096" font-size="8.5" text-anchor="middle">memory_search · store-api-keys</text>
+
+    <!-- Arrow Edge → Supabase -->
+    <path d="M680,107 L650,107" stroke="#9f7aea" stroke-width="1" fill="none" marker-end="url(#arrow-purple)"/>
+
+    <!-- Content Queue -->
+    <rect x="680" y="175" width="160" height="80" rx="10" fill="#1e2235" stroke="#ed8936" stroke-width="1.5"/>
+    <text x="760" y="198" fill="#ed8936" font-size="11" font-weight="700" text-anchor="middle">content_queue</text>
+    <text x="760" y="214" fill="#fbd38d" font-size="9" text-anchor="middle">Supabase table</text>
+    <text x="760" y="230" fill="#fbd38d" font-size="9" text-anchor="middle">pending → processing</text>
+    <text x="760" y="246" fill="#fbd38d" font-size="9" text-anchor="middle">→ completed → uploaded</text>
+
+    <!-- Arrow Render ↔ content_queue -->
+    <path d="M410,200 L680,215" stroke="#ed8936" stroke-width="1" stroke-dasharray="4,3" fill="none" marker-end="url(#arrow)"/>
+
+    <!-- Telegram -->
+    <rect x="20" y="40" width="130" height="60" rx="8" fill="#1a2f4a" stroke="#4299e1" stroke-width="1.5"/>
+    <text x="85" y="64" fill="#4299e1" font-size="11" font-weight="700" text-anchor="middle">Telegram API</text>
+    <text x="85" y="80" fill="#90cdf4" font-size="9.5" text-anchor="middle">bot8793119880</text>
+    <text x="85" y="94" fill="#718096" font-size="8.5" text-anchor="middle">infinity_polling</text>
+    <path d="M150,70 L210,130" stroke="#4299e1" stroke-width="1.5" fill="none" marker-end="url(#arrow-blue)"/>
+
+    <!-- Ajay -->
+    <rect x="20" y="260" width="130" height="60" rx="8" fill="#1a4731" stroke="#48bb78" stroke-width="1.5"/>
+    <text x="85" y="284" fill="#48bb78" font-size="11" font-weight="700" text-anchor="middle">Ajay</text>
+    <text x="85" y="300" fill="#9ae6b4" font-size="9.5" text-anchor="middle">Telegram ID: 1002381172</text>
+    <text x="85" y="314" fill="#718096" font-size="8.5" text-anchor="middle">All commands → bot</text>
+    <path d="M150,280 L210,250" stroke="#48bb78" stroke-width="1.5" fill="none" marker-end="url(#arrow-green)"/>
+  </svg>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 6: AUTONOMOUS LOOP — 12 SCHEDULED JOBS -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2>6. Autonomous Loop — 12 Scheduled Jobs</h2>
+  <table>
+    <tr>
+      <th>Job</th><th>Schedule</th><th>Function</th><th>Runner</th><th>Weight</th>
+    </tr>
+    <tr><td>Morning Checkin</td><td>Daily 08:00</td><td>run_morning_checkin()</td><td>pg_cron → /api/trigger</td><td><span class="badge green">Light</span></td></tr>
+    <tr><td>Task Reminder Poll</td><td>Every 5 min</td><td>run_task_reminder_poll()</td><td>Render thread</td><td><span class="badge green">Light</span></td></tr>
+    <tr><td>Inactivity Check</td><td>Every 3 hours</td><td>run_inactivity_check()</td><td>Render thread</td><td><span class="badge green">Light</span></td></tr>
+    <tr><td>Studio Session</td><td>Every 4 hours</td><td>run_studio_session()</td><td>pg_cron → /api/trigger</td><td><span class="badge orange">Heavy</span></td></tr>
+    <tr><td>Self Improvement</td><td>Daily 02:00</td><td>run_self_improvement()</td><td>pg_cron → /api/trigger</td><td><span class="badge orange">Heavy</span></td></tr>
+    <tr><td>Memory Consolidation</td><td>Daily 03:00</td><td>run_memory_consolidation()</td><td>pg_cron → /api/trigger</td><td><span class="badge blue">Medium</span></td></tr>
+    <tr><td>Temp Cleanup</td><td>Daily 04:00</td><td>run_temp_cleanup()</td><td>pg_cron → /api/trigger</td><td><span class="badge green">Light</span></td></tr>
+    <tr><td>Key Expiry Check</td><td>Daily 09:00</td><td>run_key_expiry_check()</td><td>pg_cron → /api/trigger</td><td><span class="badge green">Light</span></td></tr>
+    <tr><td>Evening Wrapup</td><td>Daily 21:00</td><td>run_evening_wrapup()</td><td>pg_cron → /api/trigger</td><td><span class="badge blue">Medium</span></td></tr>
+    <tr><td>Daily Digest</td><td>Daily 21:30</td><td>run_daily_digest()</td><td>pg_cron → /api/trigger</td><td><span class="badge blue">Medium</span></td></tr>
+    <tr><td>Weekly Digest</td><td>Sunday 19:00</td><td>run_weekly_digest()</td><td>pg_cron → /api/trigger</td><td><span class="badge blue">Medium</span></td></tr>
+    <tr><td>Memory Cleanup</td><td>Sunday 03:00</td><td>run_memory_cleanup()</td><td>pg_cron → /api/trigger</td><td><span class="badge blue">Medium</span></td></tr>
+  </table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 7: SUPABASE TABLES -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2>7. Supabase Database (15 Tables)</h2>
+  <div class="grid-3">
+    <div class="card blue">
+      <h4>Memory</h4>
+      <p>
+        <span class="badge blue">memories</span>
+        <span class="badge blue">emotional_memory</span>
+        <span class="badge blue">skill_memory</span>
+        <span class="badge blue">episodic_memory</span><br>
+        768-dim pgvector embeddings · semantic search
+      </p>
+    </div>
+    <div class="card orange">
+      <h4>Content Pipeline</h4>
+      <p>
+        <span class="badge orange">content_queue</span>
+        <span class="badge orange">channel_prompts</span><br>
+        job_id idempotency · youtube_status · instagram_status · job lifecycle tracking
+      </p>
+    </div>
+    <div class="card green">
+      <h4>System</h4>
+      <p>
+        <span class="badge green">api_keys</span>
+        <span class="badge green">conversations</span>
+        <span class="badge green">tasks</span>
+        <span class="badge green">goals</span>
+        <span class="badge green">expenses</span>
+        <span class="badge green">journal</span>
+        <span class="badge green">health_logs</span>
+        <span class="badge green">digest_items</span>
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 8: CLAUDE CODE ENVIRONMENT -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2>8. Claude Code Dev Environment</h2>
+  <div class="grid-2">
+    <div>
+      <h3 style="color:#a78bfa;margin-bottom:12px;">Active MCP Servers</h3>
+      <table>
+        <tr><th>MCP</th><th>Status</th><th>Use For</th></tr>
+        <tr><td>render</td><td class="status-ok">✓ Connected</td><td>Deploy, service status, scaling</td></tr>
+        <tr><td>supabase</td><td class="status-ok">✓ Connected</td><td>DB queries, migrations, Edge Fn</td></tr>
+        <tr><td>claude.ai Notion</td><td class="status-ok">✓ Connected</td><td>Notes, docs, planning</td></tr>
+        <tr><td>claude.ai Context7</td><td class="status-ok">✓ Connected</td><td>Library documentation</td></tr>
+        <tr><td>claude.ai Google Calendar</td><td class="status-ok">✓ Connected</td><td>Ajay's schedule</td></tr>
+        <tr><td>claude.ai Gmail</td><td class="status-warn">⚠ Needs auth</td><td>Aisha email inbox</td></tr>
+        <tr><td>plugin:github</td><td class="status-warn">⚠ Failed</td><td>PRs, issues, repos</td></tr>
+      </table>
+    </div>
+    <div>
+      <h3 style="color:#a78bfa;margin-bottom:12px;">Installed Skills (25+)</h3>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;">
+        <span class="badge purple">brainstorming</span>
+        <span class="badge purple">writing-plans</span>
+        <span class="badge purple">executing-plans</span>
+        <span class="badge purple">TDD</span>
+        <span class="badge purple">systematic-debugging</span>
+        <span class="badge purple">verification</span>
+        <span class="badge purple">dispatching-parallel-agents</span>
+        <span class="badge blue">pdf</span>
+        <span class="badge blue">docx</span>
+        <span class="badge blue">xlsx</span>
+        <span class="badge blue">pptx</span>
+        <span class="badge orange">elevenlabs</span>
+        <span class="badge orange">imagen</span>
+        <span class="badge orange">youtube-transcript</span>
+        <span class="badge orange">avoid-ai-writing</span>
+        <span class="badge orange">architecture-diagram-creator</span>
+        <span class="badge green">feature-planning</span>
+        <span class="badge green">git-pushing</span>
+        <span class="badge green">code-auditor</span>
+        <span class="badge green">webapp-testing</span>
+        <span class="badge green">owasp-security</span>
+        <span class="badge green">skill-creator</span>
+        <span class="badge gray">ln-200-scope-decomposer</span>
+        <span class="badge gray">ln-400-story-executor</span>
+        <span class="badge gray">ln-500-story-quality-gate</span>
+        <span class="badge gray">ln-700-project-bootstrap</span>
+        <span class="badge gray">ln-1000-pipeline-orchestrator</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 9: PHASE ROADMAP -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2>9. Revenue Roadmap</h2>
+  <div class="grid-4">
+    <div class="card green">
+      <h4>Phase 1 — NOW</h4>
+      <p>Deploy to Render · First YouTube upload · Gmail configured · All systems green</p>
+      <p style="margin-top:8px;"><strong style="color:#48bb78;">Gate:</strong> 1 video published</p>
+    </div>
+    <div class="card blue">
+      <h4>Phase 2 — Apr–May 2026</h4>
+      <p>30–50 videos · Engagement feedback loop · Multi-language factory · Instagram Reels</p>
+      <p style="margin-top:8px;"><strong style="color:#4299e1;">Gate:</strong> 500+ subs, 3%+ CTR</p>
+    </div>
+    <div class="card orange">
+      <h4>Phase 3 — Jun–Aug 2026</h4>
+      <p>1K subs target · YPP eligibility · Analytics loop · 3 language channels</p>
+      <p style="margin-top:8px;"><strong style="color:#ed8936;">Gate:</strong> 4K watch hours</p>
+    </div>
+    <div class="card pink">
+      <h4>Phase 5 — Sept 2026+</h4>
+      <p>AdSense active · Merchandise · Patreon · 10+ channels · $10K/month</p>
+      <p style="margin-top:8px;"><strong style="color:#ed64a6;">Goal:</strong> $100K/month</p>
+    </div>
+  </div>
+</div>
+
+<footer>
+  Aisha Architecture · Generated 2026-03-18 · For Ajay, all future Claude sessions, and agents<br>
+  Save path: E:\VSCode\Aisha\docs\AISHA_ARCHITECTURE_2026-03-18.html
+</footer>
+
+</body>
+</html>
