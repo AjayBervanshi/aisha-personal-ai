@@ -31,6 +31,9 @@ load_dotenv()
 # ─── Voice Mode State ─────────────────────────────────────────────────────────
 VOICE_MODE_ENABLED = True   # Start with voice ON — Aisha speaks by default!
 
+# ─── Pending shell commands (for confirmation) ────────────────────────────────
+_pending_shell: dict = {}  # message_id → command string
+
 # ─── Configuration ─────────────────────────────────────────────────────────────
 
 BOT_TOKEN      = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -169,7 +172,16 @@ def cmd_help(message):
         "🧠 *Aisha Self-Improvement:*\n"
         "/selfaudit — Aisha audits her own code\n"
         "/addtool [description] — Aisha builds a new tool\n"
-        "/skills — See all skills Aisha has learned\n"
+        "/skills — See all skills Aisha has learned\n\n"
+        "⚡ *Power Commands (Claude Code Level):*\n"
+        "/upload [channel] — Upload latest content to YouTube\n"
+        "/queue — See content pipeline jobs\n"
+        "/logs [n] — View last N lines of aisha.log\n"
+        "/syscheck — Run full system test\n"
+        "/shell <cmd> — Run shell command (with confirmation)\n"
+        "/read <file> — Read any file\n"
+        "/gitpull — Pull latest code from GitHub\n"
+        "/restart — Restart Aisha bot\n"
     )
     bot.send_message(message.chat.id, help_text, parse_mode="Markdown")
 
@@ -338,6 +350,282 @@ def cmd_produce(message):
     project_root = str(Path(__file__).parent.parent.parent)
     fmt = "Short/Reel" if channel == "Aisha & Him" else "Long Form"
     subprocess.Popen(["python", "-m", "src.agents.run_youtube", "--channel", channel, "--format", fmt], cwd=project_root)
+
+
+@bot.message_handler(commands=["upload"])
+def cmd_upload(message):
+    """Upload the latest produced content to YouTube."""
+    if not is_ajay(message): return unauthorized_response(message)
+    channel = message.text.replace("/upload", "").strip()
+    bot.send_message(message.chat.id, "🎬 Checking for latest produced content...", parse_mode="Markdown")
+    try:
+        query = db.table("content_queue") \
+                  .select("*") \
+                  .eq("status", "completed") \
+                  .is_("youtube_status", "null") \
+                  .order("created_at", desc=True) \
+                  .limit(1)
+        if channel:
+            query = db.table("content_queue") \
+                      .select("*") \
+                      .eq("status", "completed") \
+                      .eq("channel", channel) \
+                      .is_("youtube_status", "null") \
+                      .order("created_at", desc=True) \
+                      .limit(1)
+        rows = query.execute().data
+        if not rows:
+            bot.send_message(message.chat.id,
+                "No completed content found pending upload.\n"
+                "Run `/produce <channel>` first to generate content.",
+                parse_mode="Markdown")
+            return
+        job = rows[0]
+        job_id = job["id"]
+        ch = job.get("channel", "Unknown")
+        bot.send_message(message.chat.id,
+            f"📤 Uploading to YouTube...\n"
+            f"Channel: *{ch}*\n"
+            f"Job ID: `{job_id}`\n"
+            "_This may take 1-3 minutes..._",
+            parse_mode="Markdown")
+        import subprocess
+        project_root = str(Path(__file__).parent.parent.parent)
+        result = subprocess.run(
+            ["python", "-c",
+             f"import sys; sys.path.insert(0,'{project_root}'); "
+             f"from src.core.social_media_engine import SocialMediaEngine; "
+             f"sm = SocialMediaEngine(); "
+             f"r = sm.upload_youtube_video('{job_id}'); "
+             f"print('SUCCESS:' + str(r))"],
+            cwd=project_root, capture_output=True, text=True, timeout=300
+        )
+        if "SUCCESS:" in result.stdout:
+            bot.send_message(message.chat.id,
+                f"✅ *Uploaded to YouTube!*\n"
+                f"Channel: *{ch}*\n"
+                f"Check YouTube Studio for the video. 🎉",
+                parse_mode="Markdown")
+        else:
+            err = (result.stderr or result.stdout)[:500]
+            bot.send_message(message.chat.id,
+                f"❌ Upload failed:\n```{err}```",
+                parse_mode="Markdown")
+    except Exception as e:
+        bot.send_message(message.chat.id, f"❌ Upload error: {e}")
+
+
+@bot.message_handler(commands=["queue"])
+def cmd_queue(message):
+    """Show content pipeline queue status."""
+    if not is_ajay(message): return unauthorized_response(message)
+    try:
+        rows = db.table("content_queue") \
+                 .select("id, channel, status, created_at, youtube_status") \
+                 .order("created_at", desc=True) \
+                 .limit(8) \
+                 .execute().data or []
+        if not rows:
+            bot.send_message(message.chat.id, "📭 Content queue is empty. Use `/produce <channel>` to start!", parse_mode="Markdown")
+            return
+        status_emoji = {
+            "pending": "⏳", "processing": "🔄", "completed": "✅",
+            "failed": "❌", "uploaded": "🎬"
+        }
+        text = "📋 *Content Queue (last 8):*\n\n"
+        for r in rows:
+            s = r.get("status", "?")
+            yt = r.get("youtube_status") or ""
+            icon = status_emoji.get(s, "❓")
+            yt_icon = " 📺" if yt == "uploaded" else (" ⬆️" if yt == "uploading" else "")
+            ch = (r.get("channel") or "Unknown")[:25]
+            ts = (r.get("created_at") or "")[:10]
+            text += f"{icon}{yt_icon} `{r['id'][:8]}` {ch}\n   _{s}_ · {ts}\n\n"
+        bot.send_message(message.chat.id, text, parse_mode="Markdown")
+    except Exception as e:
+        bot.send_message(message.chat.id, f"❌ Queue error: {e}")
+
+
+@bot.message_handler(commands=["logs"])
+def cmd_logs(message):
+    """Show last N lines from aisha.log."""
+    if not is_ajay(message): return unauthorized_response(message)
+    text = message.text.replace("/logs", "").strip()
+    try:
+        n = int(text) if text and text.isdigit() else 30
+        n = min(n, 100)
+    except ValueError:
+        n = 30
+    try:
+        import subprocess
+        project_root = str(Path(__file__).parent.parent.parent)
+        result = subprocess.run(
+            ["tail", f"-{n}", "aisha.log"],
+            cwd=project_root, capture_output=True, text=True, timeout=10
+        )
+        log_text = result.stdout or "No log output."
+        if len(log_text) > 3800:
+            log_text = "...(truncated)\n" + log_text[-3800:]
+        bot.send_message(message.chat.id,
+            f"📋 *Last {n} lines of aisha.log:*\n```\n{log_text}\n```",
+            parse_mode="Markdown")
+    except Exception as e:
+        bot.send_message(message.chat.id, f"❌ Logs error: {e}")
+
+
+@bot.message_handler(commands=["syscheck"])
+def cmd_syscheck(message):
+    """Run full system test and report results."""
+    if not is_ajay(message): return unauthorized_response(message)
+    bot.send_message(message.chat.id, "🔬 Running system tests... (30-60 seconds)")
+    try:
+        import subprocess
+        project_root = str(Path(__file__).parent.parent.parent)
+        result = subprocess.run(
+            ["python", "scripts/test_all_systems.py"],
+            cwd=project_root, capture_output=True, text=True, timeout=180
+        )
+        output = result.stdout[-3000:] if len(result.stdout) > 3000 else result.stdout
+        passed = output.count("✅")
+        failed = output.count("❌")
+        total = passed + failed
+        status = "✅ ALL PASSING" if failed == 0 else f"⚠️ {failed} FAILING"
+        bot.send_message(message.chat.id,
+            f"🔬 *System Check: {status}*\n"
+            f"Results: {passed}/{total} passed\n\n"
+            f"```\n{output[-2000:]}\n```",
+            parse_mode="Markdown")
+    except Exception as e:
+        bot.send_message(message.chat.id, f"❌ System check error: {e}")
+
+
+@bot.message_handler(commands=["shell", "run"])
+def cmd_shell(message):
+    """Run a shell command with confirmation before execution."""
+    if not is_ajay(message): return unauthorized_response(message)
+    cmd = message.text.replace("/shell", "").replace("/run", "").strip()
+    if not cmd:
+        bot.send_message(message.chat.id,
+            "Usage: `/shell <command>`\n"
+            "Examples:\n"
+            "`/shell ls -la`\n"
+            "`/shell pip list`\n"
+            "`/shell git status`",
+            parse_mode="Markdown")
+        return
+    keyboard = types.InlineKeyboardMarkup()
+    keyboard.add(
+        types.InlineKeyboardButton("✅ Run", callback_data=f"shell_confirm_{message.message_id}"),
+        types.InlineKeyboardButton("❌ Cancel", callback_data=f"shell_cancel_{message.message_id}")
+    )
+    bot.send_message(message.chat.id,
+        f"⚡ *Run this command?*\n```\n{cmd}\n```",
+        parse_mode="Markdown",
+        reply_markup=keyboard)
+    _pending_shell[message.message_id] = cmd
+
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("shell_confirm_") or c.data.startswith("shell_cancel_"))
+def handle_shell_callback(call):
+    if not is_ajay(call.message): return
+    parts = call.data.split("_", 2)
+    action = parts[1]   # "confirm" or "cancel"
+    msg_id = int(parts[2])
+    cmd = _pending_shell.pop(msg_id, None)
+    if action == "cancel" or cmd is None:
+        bot.answer_callback_query(call.id, "Cancelled.")
+        bot.edit_message_text("❌ Command cancelled.", call.message.chat.id, call.message.message_id)
+        return
+    bot.answer_callback_query(call.id, "Running...")
+    bot.edit_message_text(f"⚡ Running: `{cmd}`...", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+    try:
+        import subprocess
+        project_root = str(Path(__file__).parent.parent.parent)
+        result = subprocess.run(
+            cmd, shell=True, cwd=project_root,
+            capture_output=True, text=True, timeout=120
+        )
+        output = (result.stdout + result.stderr).strip()
+        if not output:
+            output = "(no output)"
+        if len(output) > 3500:
+            output = output[-3500:] + "\n...(truncated)"
+        icon = "✅" if result.returncode == 0 else "⚠️"
+        bot.send_message(call.message.chat.id,
+            f"{icon} *Exit code: {result.returncode}*\n```\n{output}\n```",
+            parse_mode="Markdown")
+    except subprocess.TimeoutExpired:
+        bot.send_message(call.message.chat.id, "⏰ Command timed out after 120 seconds.")
+    except Exception as e:
+        bot.send_message(call.message.chat.id, f"❌ Error: {e}")
+
+
+@bot.message_handler(commands=["read"])
+def cmd_read(message):
+    """Read a file and send its contents."""
+    if not is_ajay(message): return unauthorized_response(message)
+    filepath = message.text.replace("/read", "").strip()
+    if not filepath:
+        bot.send_message(message.chat.id,
+            "Usage: `/read <filepath>`\n"
+            "Examples:\n"
+            "`/read src/core/ai_router.py`\n"
+            "`/read .env`\n"
+            "`/read docs/AISHA_STATE_HANDOFF_2026-03-18.md`",
+            parse_mode="Markdown")
+        return
+    try:
+        project_root = Path(__file__).parent.parent.parent
+        full_path = project_root / filepath
+        if not full_path.exists():
+            bot.send_message(message.chat.id, f"❌ File not found: `{filepath}`", parse_mode="Markdown")
+            return
+        content = full_path.read_text(encoding="utf-8", errors="replace")
+        lines = len(content.splitlines())
+        if len(content) > 3500:
+            content = content[:3500] + f"\n\n...(truncated — {lines} total lines, showing first ~70)"
+        ext = filepath.split(".")[-1] if "." in filepath else ""
+        bot.send_message(message.chat.id,
+            f"📄 `{filepath}` ({lines} lines)\n```{ext}\n{content}\n```",
+            parse_mode="Markdown")
+    except Exception as e:
+        bot.send_message(message.chat.id, f"❌ Read error: {e}")
+
+
+@bot.message_handler(commands=["gitpull"])
+def cmd_gitpull(message):
+    """Pull latest code from GitHub."""
+    if not is_ajay(message): return unauthorized_response(message)
+    bot.send_message(message.chat.id, "🔄 Pulling latest code from GitHub...")
+    try:
+        import subprocess
+        project_root = str(Path(__file__).parent.parent.parent)
+        result = subprocess.run(
+            ["git", "pull", "origin", "main"],
+            cwd=project_root, capture_output=True, text=True, timeout=60
+        )
+        output = (result.stdout + result.stderr).strip()
+        icon = "✅" if result.returncode == 0 else "❌"
+        bot.send_message(message.chat.id,
+            f"{icon} *Git Pull Result:*\n```\n{output}\n```",
+            parse_mode="Markdown")
+    except Exception as e:
+        bot.send_message(message.chat.id, f"❌ Git pull failed: {e}")
+
+
+@bot.message_handler(commands=["restart"])
+def cmd_restart(message):
+    """Restart the Aisha bot process (self-restart)."""
+    if not is_ajay(message): return unauthorized_response(message)
+    bot.send_message(message.chat.id, "🔄 Restarting Aisha... I'll be back in 10 seconds! 💜")
+    import subprocess, sys, time
+    time.sleep(2)
+    project_root = str(Path(__file__).parent.parent.parent)
+    subprocess.Popen(
+        [sys.executable, "-m", "src.telegram.bot"],
+        cwd=project_root
+    )
+    os._exit(0)
 
 
 @bot.message_handler(commands=["studio"])
@@ -854,8 +1142,16 @@ if __name__ == "__main__":
         telebot.types.BotCommand("/workout", "Log workout (/workout run 30min)"),
         telebot.types.BotCommand("/digest",  "Today's AI digest"),
         telebot.types.BotCommand("/retry",   "Retry last failed message"),
-        telebot.types.BotCommand("/help",    "Help & commands"),
-        telebot.types.BotCommand("/reset",   "Reset conversation"),
+        telebot.types.BotCommand("/help",     "Help & commands"),
+        telebot.types.BotCommand("/reset",    "Reset conversation"),
+        telebot.types.BotCommand("/upload",   "Upload latest content to YouTube"),
+        telebot.types.BotCommand("/queue",    "View content pipeline queue"),
+        telebot.types.BotCommand("/logs",     "View last 30 log lines (/logs 50)"),
+        telebot.types.BotCommand("/syscheck", "Run full system test"),
+        telebot.types.BotCommand("/shell",    "Run shell command with confirmation"),
+        telebot.types.BotCommand("/read",     "Read any file (/read src/core/ai_router.py)"),
+        telebot.types.BotCommand("/gitpull",  "Pull latest code from GitHub"),
+        telebot.types.BotCommand("/restart",  "Restart Aisha bot process"),
     ])
     
     print("✅ Aisha is live on Telegram! 💜")
