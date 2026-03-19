@@ -228,10 +228,9 @@ def use_jules_to_write_skill(task_description: str, file_path: str) -> str | Non
         return None
 
     try:
-        # Jules uses Gemini under the hood — it's a coding-specialized model
-        import google.generativeai as genai
-        genai.configure(api_key=jules_key)
-        model = genai.GenerativeModel("gemini-2.5-pro")
+        # Jules uses Gemini REST (avoid SDK DNS issues on Render)
+        import requests as _req
+        _gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key={jules_key}"
 
         prompt = f"""You are Jules, an expert Python coding agent for Aisha AI.
 
@@ -249,12 +248,13 @@ Requirements:
 
 Return ONLY the Python code. No markdown, no explanation, no backticks."""
 
-        response = model.generate_content(
-            prompt,
-            generation_config={"temperature": 0.3, "max_output_tokens": 8192}
+        _resp = _req.post(
+            _gemini_url,
+            json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.3, "maxOutputTokens": 8192}},
+            timeout=120
         )
-
-        code = response.text.strip()
+        _resp.raise_for_status()
+        code = _resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
         # Remove any accidental markdown
         if code.startswith("```"):
             lines = code.split("\n")

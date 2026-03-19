@@ -47,13 +47,10 @@ def extract_scene_descriptions(script: str, channel: str, num_scenes: int = 7) -
     Returns a list of image generation prompts.
     """
     try:
-        import google.generativeai as genai
+        import requests as _req
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             return _fallback_scenes(channel, num_scenes)
-
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-2.5-flash")
 
         # Channel-specific visual style
         style_map = {
@@ -78,8 +75,10 @@ Return ONLY a valid JSON array of {num_scenes} strings. Example:
 
 No explanation, no extra text. Just the JSON array."""
 
-        response = model.generate_content(prompt)
-        text = response.text.strip()
+        _url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+        _resp = _req.post(_url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=60)
+        _resp.raise_for_status()
+        text = _resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
 
         # Clean and parse
         import re

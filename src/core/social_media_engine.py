@@ -1,4 +1,4 @@
-﻿"""
+"""
 social_media_engine.py
 ======================
 Aisha's Social Media Command Center.
@@ -122,8 +122,9 @@ class SocialMediaEngine:
             )
 
         # File-based fallback (tokens/ directory)
+        channel_safe = channel.replace(' ', '_').replace("'", '')
         candidates = [
-            f"tokens/youtube_token_{channel.replace(' ', '_').replace(\"'\", '')}.json",
+            f"tokens/youtube_token_{channel_safe}.json",
             "tokens/youtube_token.json",
         ]
         for path in candidates:

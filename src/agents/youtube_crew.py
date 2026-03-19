@@ -1,4 +1,4 @@
-﻿"""
+"""
 youtube_crew.py
 ==============
 Aisha's YouTube Content Production Engine.

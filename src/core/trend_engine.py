@@ -205,15 +205,8 @@ def synthesize_trends_with_ai(
         if not api_key:
             return _fallback_trend_report(channel)
 
-        try:
-            import google.genai as genai
-            _gemini_client = genai.Client(api_key=api_key)
-            _use_new_sdk = True
-        except ImportError:
-            import google.generativeai as genai_old
-            genai_old.configure(api_key=api_key)
-            model = genai_old.GenerativeModel("gemini-2.5-flash")
-            _use_new_sdk = False
+        import requests as _req
+        _gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
 
         # Build context from trend data
         google_summary = ", ".join([t["query"] for t in google_data[:5]]) if google_data else "Not available"
@@ -248,11 +241,10 @@ Based on this data, generate a content strategy report. Return ONLY valid JSON:
 }}"""
 
         import re
-        if _use_new_sdk:
-            response = _gemini_client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-        else:
-            response = model.generate_content(prompt)
-        match = re.search(r'\{[\s\S]*\}', response.text)
+        _resp = _req.post(_gemini_url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=60)
+        _resp.raise_for_status()
+        _text = _resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+        match = re.search(r'\{[\s\S]*\}', _text)
         if match:
             return json.loads(match.group(0))
 

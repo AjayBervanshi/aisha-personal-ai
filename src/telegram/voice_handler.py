@@ -19,8 +19,7 @@ def transcribe_voice_message(bot, message) -> str | None:
     Returns: transcribed text string, or None on failure.
     """
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+        import groq
 
         # Download the voice file from Telegram
         file_info = bot.get_file(message.voice.file_id)
@@ -32,32 +31,22 @@ def transcribe_voice_message(bot, message) -> str | None:
             voice_path = f.name
 
         try:
-            # Upload to Gemini and transcribe
-            audio_file = genai.upload_file(voice_path)
-            model = genai.GenerativeModel("gemini-1.5-flash")
-            result = model.generate_content([
-                (
-                    "Please transcribe this voice message exactly as spoken. "
-                    "It may be in English, Hindi (Devanagari or Roman), or Marathi. "
-                    "Return ONLY the transcription — no extra text, no translation."
-                ),
-                audio_file
-            ])
-            transcription = result.text.strip()
+            # Transcribe via Groq Whisper (no DNS issues, works on Render)
+            client = groq.Groq(api_key=os.getenv("GROQ_API_KEY"))
+            with open(voice_path, "rb") as audio_f:
+                result = client.audio.transcriptions.create(
+                    file=(Path(voice_path).name, audio_f.read()),
+                    model="whisper-large-v3",
+                    prompt="Hindi, English, or Marathi voice message",
+                    response_format="text",
+                )
+            transcription = result.strip() if isinstance(result, str) else result.text.strip()
             log.info(f"Transcribed voice: {transcription[:80]}")
             return transcription
 
         finally:
-            # Clean up temp file
             Path(voice_path).unlink(missing_ok=True)
-            try:
-                genai.delete_file(audio_file.name)
-            except Exception:
-                pass
 
-    except ImportError:
-        log.error("google-generativeai not installed. Run: pip install google-generativeai")
-        return None
     except Exception as e:
         log.error(f"Voice transcription failed: {e}")
         return None
