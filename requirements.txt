@@ -48,4 +48,4 @@ python-json-logger>=2.0.0       # Structured logging
 slowapi>=0.1.9                  # Rate limiting middleware for FastAPI
 
 # News Aggregation
-newsapi-python>=2.6.1           # NewsAPI client (free tier: 100 req/day)
+newsapi-python>=0.2.6           # NewsAPI client (free tier: 100 req/day)
