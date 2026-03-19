@@ -1252,6 +1252,22 @@ if __name__ == "__main__":
     health_thread.start()
     log.info("health_server thread=started")
 
+    # ── Self-ping every 30s to prevent Render free-tier spin-down ────────────
+    def _self_ping():
+        import time as _t
+        import urllib.request as _ur
+        port = int(os.getenv("PORT", "8000"))
+        url = f"http://127.0.0.1:{port}/health"
+        while True:
+            _t.sleep(30)
+            try:
+                _ur.urlopen(url, timeout=5)
+            except Exception:
+                pass  # silence — server may still be starting
+
+    threading.Thread(target=_self_ping, daemon=True).start()
+    log.info("self_ping thread=started interval=30s")
+
     # ── AutonomousLoop background thread (fallback scheduler) ────────────────
     def _start_autonomous_loop():
         global _autonomous_loop
