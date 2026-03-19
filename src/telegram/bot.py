@@ -792,10 +792,10 @@ def cmd_voice(message):
     global VOICE_MODE_ENABLED
     VOICE_MODE_ENABLED = not VOICE_MODE_ENABLED
     status = "ON 🎙️" if VOICE_MODE_ENABLED else "OFF 🔇"
+    voice_msg = "I'll speak to you with voice notes now! 💜" if VOICE_MODE_ENABLED else "Text only mode. Say /voice again to hear me! 💜"
     bot.send_message(
         message.chat.id,
-        f"Voice mode is now *{status}*\n"
-        f"{'I\'ll speak to you with voice notes now! 💜' if VOICE_MODE_ENABLED else 'Text only mode. Say /voice again to hear me! 💜'}",
+        f"Voice mode is now *{status}*\n{voice_msg}",
         parse_mode="Markdown"
     )
 
