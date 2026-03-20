@@ -9,7 +9,7 @@ SELECT cron.unschedule(jobname)
 FROM cron.job
 WHERE jobname LIKE 'aisha-%';
 
--- Edge Function base URL: https://fwfzqphqbeicgfaziuox.supabase.co/functions/v1/<name>
+-- Edge Function base URL: https://tgqerhkcbobtxqkgihps.supabase.co/functions/v1/<name>
 -- Functions deployed with --no-verify-jwt, no Authorization header needed.
 
 -- ── Daily Jobs ─────────────────────────────────────────────────────────────
@@ -20,7 +20,7 @@ SELECT cron.schedule(
   '30 2 * * *',
   $$
   SELECT net.http_post(
-    url     := 'https://fwfzqphqbeicgfaziuox.supabase.co/functions/v1/trigger-maintenance?job=morning',
+    url     := 'https://tgqerhkcbobtxqkgihps.supabase.co/functions/v1/trigger-maintenance?job=morning',
     headers := '{"Content-Type":"application/json"}'::jsonb,
     body    := '{}'::jsonb
   );
@@ -33,7 +33,7 @@ SELECT cron.schedule(
   '30 15 * * *',
   $$
   SELECT net.http_post(
-    url     := 'https://fwfzqphqbeicgfaziuox.supabase.co/functions/v1/trigger-maintenance?job=evening',
+    url     := 'https://tgqerhkcbobtxqkgihps.supabase.co/functions/v1/trigger-maintenance?job=evening',
     headers := '{"Content-Type":"application/json"}'::jsonb,
     body    := '{}'::jsonb
   );
@@ -46,7 +46,7 @@ SELECT cron.schedule(
   '0 16 * * *',
   $$
   SELECT net.http_post(
-    url     := 'https://fwfzqphqbeicgfaziuox.supabase.co/functions/v1/trigger-maintenance?job=digest',
+    url     := 'https://tgqerhkcbobtxqkgihps.supabase.co/functions/v1/trigger-maintenance?job=digest',
     headers := '{"Content-Type":"application/json"}'::jsonb,
     body    := '{}'::jsonb
   );
@@ -59,7 +59,7 @@ SELECT cron.schedule(
   '30 21 * * *',
   $$
   SELECT net.http_post(
-    url     := 'https://fwfzqphqbeicgfaziuox.supabase.co/functions/v1/trigger-maintenance?job=memory',
+    url     := 'https://tgqerhkcbobtxqkgihps.supabase.co/functions/v1/trigger-maintenance?job=memory',
     headers := '{"Content-Type":"application/json"}'::jsonb,
     body    := '{}'::jsonb
   );
@@ -72,7 +72,7 @@ SELECT cron.schedule(
   '30 20 * * *',
   $$
   SELECT net.http_post(
-    url     := 'https://fwfzqphqbeicgfaziuox.supabase.co/functions/v1/trigger-maintenance?job=self-improve',
+    url     := 'https://tgqerhkcbobtxqkgihps.supabase.co/functions/v1/trigger-maintenance?job=self-improve',
     headers := '{"Content-Type":"application/json"}'::jsonb,
     body    := '{}'::jsonb
   );
@@ -85,7 +85,7 @@ SELECT cron.schedule(
   '30 22 * * *',
   $$
   SELECT net.http_post(
-    url     := 'https://fwfzqphqbeicgfaziuox.supabase.co/functions/v1/trigger-maintenance?job=temp-cleanup',
+    url     := 'https://tgqerhkcbobtxqkgihps.supabase.co/functions/v1/trigger-maintenance?job=temp-cleanup',
     headers := '{"Content-Type":"application/json"}'::jsonb,
     body    := '{}'::jsonb
   );
@@ -98,7 +98,7 @@ SELECT cron.schedule(
   '30 3 * * *',
   $$
   SELECT net.http_post(
-    url     := 'https://fwfzqphqbeicgfaziuox.supabase.co/functions/v1/trigger-maintenance?job=key-expiry',
+    url     := 'https://tgqerhkcbobtxqkgihps.supabase.co/functions/v1/trigger-maintenance?job=key-expiry',
     headers := '{"Content-Type":"application/json"}'::jsonb,
     body    := '{}'::jsonb
   );
@@ -113,7 +113,7 @@ SELECT cron.schedule(
   '30 13 * * 0',
   $$
   SELECT net.http_post(
-    url     := 'https://fwfzqphqbeicgfaziuox.supabase.co/functions/v1/trigger-maintenance?job=weekly-digest',
+    url     := 'https://tgqerhkcbobtxqkgihps.supabase.co/functions/v1/trigger-maintenance?job=weekly-digest',
     headers := '{"Content-Type":"application/json"}'::jsonb,
     body    := '{}'::jsonb
   );
@@ -126,7 +126,7 @@ SELECT cron.schedule(
   '30 21 * * 6',
   $$
   SELECT net.http_post(
-    url     := 'https://fwfzqphqbeicgfaziuox.supabase.co/functions/v1/trigger-maintenance?job=memory-cleanup',
+    url     := 'https://tgqerhkcbobtxqkgihps.supabase.co/functions/v1/trigger-maintenance?job=memory-cleanup',
     headers := '{"Content-Type":"application/json"}'::jsonb,
     body    := '{}'::jsonb
   );
@@ -141,7 +141,7 @@ SELECT cron.schedule(
   '*/5 * * * *',
   $$
   SELECT net.http_post(
-    url     := 'https://fwfzqphqbeicgfaziuox.supabase.co/functions/v1/trigger-maintenance?job=task-poll',
+    url     := 'https://tgqerhkcbobtxqkgihps.supabase.co/functions/v1/trigger-maintenance?job=task-poll',
     headers := '{"Content-Type":"application/json"}'::jsonb,
     body    := '{}'::jsonb
   );
@@ -154,7 +154,7 @@ SELECT cron.schedule(
   '0 */3 * * *',
   $$
   SELECT net.http_post(
-    url     := 'https://fwfzqphqbeicgfaziuox.supabase.co/functions/v1/trigger-maintenance?job=inactivity',
+    url     := 'https://tgqerhkcbobtxqkgihps.supabase.co/functions/v1/trigger-maintenance?job=inactivity',
     headers := '{"Content-Type":"application/json"}'::jsonb,
     body    := '{}'::jsonb
   );
@@ -169,7 +169,7 @@ SELECT cron.schedule(
   '0 */4 * * *',
   $$
   SELECT net.http_post(
-    url     := 'https://fwfzqphqbeicgfaziuox.supabase.co/functions/v1/trigger-studio',
+    url     := 'https://tgqerhkcbobtxqkgihps.supabase.co/functions/v1/trigger-studio',
     headers := '{"Content-Type":"application/json"}'::jsonb,
     body    := '{}'::jsonb
   );

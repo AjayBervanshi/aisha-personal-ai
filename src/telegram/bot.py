@@ -492,28 +492,16 @@ def cmd_logs(message):
 
 @bot.message_handler(commands=["syscheck"])
 def cmd_syscheck(message):
-    """Run full system test and report results."""
+    """Run full system health check and report results."""
     if not is_ajay(message): return unauthorized_response(message)
-    bot.send_message(message.chat.id, "🔬 Running system tests... (30-60 seconds)")
+    loading_msg = bot.send_message(message.chat.id, "Running system checks... ⏳")
     try:
-        import subprocess
-        project_root = str(Path(__file__).parent.parent.parent)
-        result = subprocess.run(
-            ["python", "scripts/test_all_systems.py"],
-            cwd=project_root, capture_output=True, text=True, timeout=180
-        )
-        output = result.stdout[-3000:] if len(result.stdout) > 3000 else result.stdout
-        passed = output.count("✅")
-        failed = output.count("❌")
-        total = passed + failed
-        status = "✅ ALL PASSING" if failed == 0 else f"⚠️ {failed} FAILING"
-        bot.send_message(message.chat.id,
-            f"🔬 *System Check: {status}*\n"
-            f"Results: {passed}/{total} passed\n\n"
-            f"```\n{output[-2000:]}\n```",
-            parse_mode="Markdown")
+        from src.core.monitoring_engine import full_health_report
+        report = full_health_report()
+        bot.delete_message(message.chat.id, loading_msg.message_id)
+        bot.send_message(message.chat.id, report, parse_mode="Markdown")
     except Exception as e:
-        bot.send_message(message.chat.id, f"❌ System check error: {e}")
+        bot.edit_message_text(f"❌ System check error: {e}", message.chat.id, loading_msg.message_id)
 
 
 @bot.message_handler(commands=["shell", "run"])

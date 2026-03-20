@@ -85,6 +85,16 @@ CREATE TABLE IF NOT EXISTS api_keys (
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Ensure secret column exists (in case table was created with 'key' column)
+ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS secret TEXT NOT NULL DEFAULT '';
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='api_keys' AND column_name='key') THEN
+    UPDATE api_keys SET secret = key WHERE secret = '';
+    ALTER TABLE api_keys DROP COLUMN IF EXISTS key;
+  END IF;
+END $$;
+
 ALTER TABLE api_keys ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "service_role_only_api_keys" ON api_keys;
 CREATE POLICY "service_role_only_api_keys" ON api_keys

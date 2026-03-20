@@ -218,8 +218,34 @@ class AntigravityAgent:
         except Exception as e:
             err_text = f"{type(e).__name__}: {e}"
             log.exception(f"[Antigravity] Job failed {job_id}")
-            self._set_status(job_id, "failed", completed_at=_utc_now(), error_text=err_text)
-            return {"error": err_text}
+
+            # ── Retry logic: up to 3 attempts with exponential back-off ──────
+            retry_count = int(job.get("retry_count") or 0) + 1
+            RETRY_DELAYS = {1: 5, 2: 15, 3: 60}  # minutes per attempt
+
+            if retry_count <= 3:
+                delay_minutes = RETRY_DELAYS.get(retry_count, 60)
+                # Compute next scheduled_at using a raw ISO timestamp offset
+                from datetime import timedelta
+                next_run = datetime.now(timezone.utc) + timedelta(minutes=delay_minutes)
+                next_run_iso = next_run.isoformat()
+                log.warning(
+                    f"[Antigravity] Job {job_id} failed (attempt {retry_count}/3). "
+                    f"Retrying in {delay_minutes} min at {next_run_iso}. Error: {err_text}"
+                )
+                self.db.table("content_jobs").update({
+                    "status": "queued",
+                    "retry_count": retry_count,
+                    "scheduled_at": next_run_iso,
+                    "error_text": err_text,
+                }).eq("id", job_id).execute()
+                return {"status": "retrying", "retry_count": retry_count, "next_run": next_run_iso, "error": err_text}
+            else:
+                log.error(
+                    f"[Antigravity] Job {job_id} permanently failed after {retry_count - 1} retries. Error: {err_text}"
+                )
+                self._set_status(job_id, "failed", completed_at=_utc_now(), error_text=err_text)
+                return {"status": "failed", "error": err_text}
 
     def run_once(self) -> Dict[str, Any]:
         job = self.fetch_next_job()

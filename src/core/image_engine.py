@@ -135,6 +135,37 @@ def _generate_via_huggingface(prompt: str) -> bytes | None:
     return None
 
 
+def _generate_pollinations(prompt: str, width: int = 1280, height: int = 720) -> bytes:
+    """Pollinations.ai — completely free, no API key needed."""
+    import urllib.parse
+    clean_prompt = prompt[:500].replace('\n', ' ')
+    encoded = urllib.parse.quote(clean_prompt)
+    url = f"https://image.pollinations.ai/prompt/{encoded}?width={width}&height={height}&nologo=true&seed={hash(prompt) % 9999}"
+    try:
+        resp = requests.get(url, timeout=90)
+        if resp.status_code == 200 and len(resp.content) > 1000:
+            return resp.content
+        raise Exception(f"Pollinations returned {resp.status_code}, size={len(resp.content)}")
+    except Exception as e:
+        raise Exception(f"Pollinations failed: {e}")
+
+
+def _generate_unsplash_background(prompt: str, width: int = 1280, height: int = 720) -> bytes:
+    """Unsplash Source — free stock photos as scene backgrounds."""
+    # Extract key theme words for search
+    keywords = ' '.join(prompt.lower().split()[:5])
+    import urllib.parse
+    encoded = urllib.parse.quote(keywords)
+    url = f"https://source.unsplash.com/{width}x{height}/?{encoded}"
+    try:
+        resp = requests.get(url, timeout=30, allow_redirects=True)
+        if resp.status_code == 200 and len(resp.content) > 5000:
+            return resp.content
+        raise Exception(f"Unsplash returned {resp.status_code}")
+    except Exception as e:
+        raise Exception(f"Unsplash failed: {e}")
+
+
 def _generate_placeholder(prompt: str, width: int = 1280, height: int = 720) -> bytes:
     """Generate a styled gradient placeholder image via Pillow — always works."""
     try:
@@ -191,7 +222,7 @@ def _generate_placeholder(prompt: str, width: int = 1280, height: int = 720) -> 
 def generate_image(prompt: str, width: int = 1280, height: int = 720) -> bytes:
     """
     Generate an image for the given prompt.
-    Priority: Gemini Imagen → HuggingFace → Pillow placeholder.
+    Priority: Gemini Imagen → DALL-E → HuggingFace → Pollinations.ai → Pillow placeholder.
     Returns bytes (PNG/JPEG). Returns empty bytes only if everything fails.
     """
     # 1. Try Gemini Imagen (best quality, needs paid plan)
@@ -209,7 +240,16 @@ def generate_image(prompt: str, width: int = 1280, height: int = 720) -> bytes:
     if result:
         return result
 
-    # 4. Pillow placeholder — always works, keeps video pipeline alive
+    # 4. Try Pollinations.ai — completely free, no API key needed
+    try:
+        log.info("[Image] Using Pollinations.ai (free)")
+        result = _generate_pollinations(prompt, width, height)
+        if result:
+            return result
+    except Exception as e:
+        log.warning(f"Pollinations.ai failed: {e}")
+
+    # 5. Pillow placeholder — always works, keeps video pipeline alive
     log.warning("All image APIs failed — using placeholder")
     return _generate_placeholder(prompt, width, height)
 
