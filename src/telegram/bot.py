@@ -1149,6 +1149,25 @@ class _AishaHTTPHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
     def do_POST(self):
+        # ── Telegram webhook endpoint ──────────────────────────────────────────
+        if self.path == f"/{BOT_TOKEN}":
+            tg_secret = self.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+            if TRIGGER_SECRET and tg_secret != TRIGGER_SECRET:
+                self.send_response(403)
+                self.end_headers()
+                return
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_length)
+            try:
+                update = telebot.types.Update.de_json(_json.loads(body.decode("utf-8")))
+                threading.Thread(target=bot.process_new_updates, args=([update],), daemon=True).start()
+            except Exception as e:
+                log.error(f"webhook_parse err={e}")
+            self.send_response(200)
+            self.end_headers()
+            return
+
+        # ── pg_cron trigger endpoint ───────────────────────────────────────────
         secret = self.headers.get("X-Trigger-Secret", "")
         if TRIGGER_SECRET and secret != TRIGGER_SECRET:
             self.send_response(403)
@@ -1300,8 +1319,23 @@ if __name__ == "__main__":
     loop_thread.start()
     log.info("autonomous_loop thread=started")
 
-    print("✅ Aisha is live on Telegram! 💜")
-    bot.infinity_polling(timeout=60, long_polling_timeout=60)
+    RENDER_BOT_URL = os.getenv("RENDER_BOT_URL", "").rstrip("/")
+    if RENDER_BOT_URL:
+        # ── Webhook mode (Render production) ─────────────────────────────────
+        webhook_url = f"{RENDER_BOT_URL}/{BOT_TOKEN}"
+        bot.remove_webhook()
+        import time as _wt; _wt.sleep(1)
+        webhook_kwargs = {"url": webhook_url}
+        if TRIGGER_SECRET:
+            webhook_kwargs["secret_token"] = TRIGGER_SECRET
+        bot.set_webhook(**webhook_kwargs)
+        log.info(f"webhook mode=enabled url=https://aisha-bot-yudp.onrender.com/<token>")
+        print("✅ Aisha is live on Telegram (webhook mode)! 💜")
+        threading.Event().wait()  # Keep main thread alive forever
+    else:
+        # ── Polling mode (local dev — no RENDER_BOT_URL set) ─────────────────
+        print("✅ Aisha is live on Telegram (polling mode)! 💜")
+        bot.infinity_polling(timeout=60, long_polling_timeout=60)
 
 # ─── Self Improvement Callbacks ──────────────────────────────────────────
 
