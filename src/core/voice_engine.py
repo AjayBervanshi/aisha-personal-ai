@@ -98,11 +98,11 @@ def _get_next_el_key():
     if not _EL_KEYS:
         env_keys = os.getenv("ELEVENLABS_API_KEY", "")
         _EL_KEYS = [k.strip() for k in env_keys.split(",") if k.strip() and "your_" not in k]
-    
     if not _EL_KEYS:
         return None
-        
-    key = _EL_KEYS[_EL_INDEX]
+    key = _EL_KEYS[_EL_INDEX % len(_EL_KEYS)]
+    # Advance index on each successful fetch for round-robin distribution
+    _EL_INDEX = (_EL_INDEX + 1) % len(_EL_KEYS)
     return key
 
 def _mark_key_failed():

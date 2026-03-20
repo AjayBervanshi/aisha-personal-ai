@@ -163,9 +163,16 @@ def _generate_placeholder(prompt: str, width: int = 1280, height: int = 720) -> 
 
         # Text overlay
         text = prompt[:80] + ("…" if len(prompt) > 80 else "")
-        try:
-            font = ImageFont.truetype("arial.ttf", 32)
-        except Exception:
+        font = None
+        for _fp in ["arial.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+                    "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf"]:
+            try:
+                font = ImageFont.truetype(_fp, 32)
+                break
+            except Exception:
+                pass
+        if font is None:
             font = ImageFont.load_default()
 
         bbox = draw.textbbox((0, 0), text, font=font)

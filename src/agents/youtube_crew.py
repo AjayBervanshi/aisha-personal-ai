@@ -216,7 +216,8 @@ Create:
         mood_for_voice = "romantic" if ("Riya" in channel or "Aisha & Him" in channel) else "personal"
         # Both Aisha and Riya channels use Devanagari Hindi scripts
         voice_language = "Hindi" if channel in ("Story With Aisha", "Riya's Dark Whisper", "Riya's Dark Romance Library") else "English"
-        voice_text = self.results["script"][:3500]
+        # No hard truncation — generate_voice handles chunking internally for long scripts
+        voice_text = self.results["script"]
 
         try:
             voice_path = generate_voice(voice_text, language=voice_language, mood=mood_for_voice, channel=channel)

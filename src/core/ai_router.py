@@ -81,6 +81,9 @@ class AIRouter:
             "ollama":    ProviderStats("Ollama"),
         }
         self._clients = {}
+        # Alert tracking — keys are "provider:error_type", values are last notify timestamps
+        self._alert_notified: dict = {}
+        self._alert_cooldown_secs = 6 * 3600  # Re-alert max once per 6 hours per event
         self._init_clients()
 
     def _init_clients(self):
@@ -95,10 +98,10 @@ class AIRouter:
                 # Multi-model fallback chain — env var OR hardcoded safe list
                 fallback_env = os.getenv("AI_MODEL_GEMINI_FALLBACK", "")
                 self._gemini_fallback_models = [m.strip() for m in fallback_env.split(",") if m.strip()] or [
-                    "gemini-2.5-flash-lite",
-                    "gemini-flash-lite-latest",
-                    "gemini-3.1-flash-lite-preview",
-                    "gemini-flash-latest",
+                    "gemini-2.0-flash",           # 1500 req/day free — much higher quota
+                    "gemini-2.0-flash-lite",      # Fastest + highest quota free tier
+                    "gemini-1.5-flash",           # Stable fallback
+                    "gemini-1.5-flash-8b",        # Smallest, near-unlimited free
                 ]
                 # Quick connectivity check (200 = ok, 429 = quota but key valid)
                 test_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={key}"
@@ -163,7 +166,10 @@ class AIRouter:
 
         # NVIDIA NIM Pool (22 keys × 1,000 credits/month = 22,000 total)
         try:
-            from core.nvidia_pool import NvidiaPool
+            try:
+                from src.core.nvidia_pool import NvidiaPool
+            except ImportError:
+                from core.nvidia_pool import NvidiaPool
             self._nvidia_pool = NvidiaPool()
             # Mark as available if at least one key loaded
             pool_stats = self._nvidia_pool.get_stats()
@@ -195,7 +201,7 @@ class AIRouter:
         history: list = None,
         image_bytes: bytes = None,
         preferred_provider: str = None,
-        nvidia_task_type: str = "writing"
+        nvidia_task_type: str = "chat"
     ) -> AIResult:
         """
         Try each provider in order. Return first successful response.
@@ -241,7 +247,14 @@ class AIRouter:
             except Exception as e:
                 error_str = str(e)
                 is_rate_limit = "429" in error_str or "RATE_LIMIT" in error_str.upper() or "quota" in error_str.lower()
-                
+                is_key_expired = (
+                    "401" in error_str
+                    or "invalid_api_key" in error_str.lower()
+                    or "invalid x-api-key" in error_str.lower()
+                    or "Incorrect API key" in error_str
+                    or "unpaid invoice" in error_str.lower()
+                )
+
                 # Try to extract retry_delay from error
                 retry_after = 0
                 if is_rate_limit:
@@ -251,16 +264,40 @@ class AIRouter:
                         retry_after = int(delay_match.group(1))
                     else:
                         retry_after = 30  # Default 30s for rate limits
-                
+
                 log.warning(f"[{provider}] ❌ Failed: {type(e).__name__}: {error_str[:150]}")
                 stats.mark_failure(is_rate_limit=is_rate_limit, retry_after=retry_after)
-                
-                # We no longer wait and retry. Since we have 6 brains, just fall through 
-                # to the next provider instantly to avoid delaying the response.
-                
+
+                # Send alert email — key expired or quota hit (rate-limited to once per 6h)
+                if is_key_expired:
+                    # Determine next working provider for the email body
+                    remaining = [p for p in order if p != provider and p in self._clients and not self._stats[p].is_cooling_down()]
+                    next_provider = remaining[0] if remaining else "NVIDIA fallback pool"
+                    self._notify_provider_failure(provider, "key_expired", next_provider)
+                elif is_rate_limit and retry_after > 3600:
+                    # Only alert for long outages (quota exhausted for the day), not brief rate limits
+                    remaining = [p for p in order if p != provider and p in self._clients and not self._stats[p].is_cooling_down()]
+                    next_provider = remaining[0] if remaining else "NVIDIA fallback pool"
+                    self._notify_provider_failure(provider, "quota_exhausted", next_provider)
+
                 continue  # Try next provider
 
-        # All providers failed
+        # ── Last-resort NVIDIA fallback — try all pools before giving up ──────
+        # This runs when ALL named providers above failed. Uses NVIDIA general/fast
+        # pools which have models not in the normal rotation.
+        if "nvidia" in self._clients:
+            for last_resort_pool in ("general", "fast", "chat"):
+                try:
+                    start = time.time()
+                    result = self._call_nvidia(system_prompt, user_message, history or [], task_type=last_resort_pool)
+                    latency = int((time.time() - start) * 1000)
+                    log.info(f"[NVIDIA-LastResort] ✅ {last_resort_pool} pool responded in {latency}ms")
+                    return AIResult(text=result, provider="nvidia", model=f"nvidia-{last_resort_pool}", latency_ms=latency)
+                except Exception:
+                    continue
+
+        # Truly all providers exhausted — send critical alert and return fallback message
+        self._notify_provider_failure("all", "all_down", "none")
         return AIResult(
             text=self._fallback_message(),
             provider="fallback",
@@ -537,6 +574,88 @@ class AIRouter:
             "ollama":    "llama3-local",
         }
         return names.get(provider, "unknown")
+
+    # ── Alert system ──────────────────────────────────────────
+
+    def _should_alert(self, key: str) -> bool:
+        """True if enough time has passed since last alert for this event key."""
+        return (time.time() - self._alert_notified.get(key, 0)) > self._alert_cooldown_secs
+
+    def _notify_provider_failure(self, provider: str, error_type: str, current_fallback: str):
+        """
+        Send an email alert when a provider key expires, quota is hit, or all providers are down.
+        Rate-limited to once per 6 hours per event to avoid inbox spam.
+        """
+        alert_key = f"{provider}:{error_type}"
+        if not self._should_alert(alert_key):
+            log.debug(f"[Alert] Suppressed duplicate alert: {alert_key}")
+            return
+        self._alert_notified[alert_key] = time.time()
+
+        provider_upper = provider.upper()
+        subjects = {
+            "key_expired":      f"[Aisha] {provider_upper} API key expired — action needed",
+            "quota_exhausted":  f"[Aisha] {provider_upper} daily quota hit — using {current_fallback}",
+            "all_down":         "[Aisha] ⚠️ CRITICAL: All AI providers down",
+        }
+        bodies = {
+            "key_expired": (
+                f"Aisha here, Ajay.\n\n"
+                f"The {provider_upper} API key has expired or is invalid (401 error).\n\n"
+                f"Currently falling back to: {current_fallback.upper()}\n\n"
+                f"Action needed:\n"
+                f"  1. Go to the {provider_upper} dashboard and generate a new API key\n"
+                f"  2. Update your .env file: {provider_upper}_API_KEY=<new_key>\n"
+                f"  3. Restart Aisha\n\n"
+                f"Until fixed, I'll keep using {current_fallback} so content keeps flowing."
+            ),
+            "quota_exhausted": (
+                f"Aisha here, Ajay.\n\n"
+                f"{provider_upper} has hit its daily free-tier quota (429 / RESOURCE_EXHAUSTED).\n\n"
+                f"Currently falling back to: {current_fallback.upper()}\n\n"
+                f"Quota resets automatically at midnight UTC — no action needed.\n"
+                f"If this happens daily, consider upgrading {provider_upper} to a paid plan\n"
+                f"or set AI_MODEL_GEMINI=gemini-2.0-flash in .env (higher quota, same quality)."
+            ),
+            "all_down": (
+                f"Aisha here — CRITICAL ALERT, Ajay.\n\n"
+                f"ALL primary AI providers are currently failing.\n\n"
+                f"Provider status:\n{self._get_provider_status_text()}\n\n"
+                f"I am running on the NVIDIA last-resort fallback pool.\n"
+                f"Please check your API keys and internet connection."
+            ),
+        }
+
+        subject = subjects.get(error_type, f"[Aisha] {provider_upper} AI error")
+        body = bodies.get(error_type, f"Provider {provider_upper} failed: {error_type}")
+
+        try:
+            from src.core.gmail_engine import GmailEngine
+            from src.core.config import GMAIL_USER
+            if GMAIL_USER:
+                gmail = GmailEngine()
+                gmail.send_email(GMAIL_USER, subject, body)
+                log.info(f"[Alert] Email sent: {alert_key}")
+            else:
+                log.warning(f"[Alert] GMAIL_USER not set — cannot send: {subject}")
+        except Exception as e:
+            log.warning(f"[Alert] Failed to send alert email: {e}")
+
+    def _get_provider_status_text(self) -> str:
+        """Build a human-readable provider status summary for alert emails."""
+        lines = []
+        for name, stats in self._stats.items():
+            if name not in self._clients:
+                status = "NOT CONFIGURED"
+            elif stats.is_cooling_down():
+                remaining = int(stats.cooldown_until - time.time())
+                status = f"COOLING DOWN ({remaining}s)"
+            elif stats.failures > 0:
+                status = f"DEGRADED ({stats.failures} failures)"
+            else:
+                status = "OK"
+            lines.append(f"  {name.upper():<12} {status}")
+        return "\n".join(lines)
 
     def _fallback_message(self) -> str:
         return (

@@ -363,14 +363,14 @@ def cmd_upload(message):
     channel = message.text.replace("/upload", "").strip()
     bot.send_message(message.chat.id, "🎬 Checking for latest produced content...", parse_mode="Markdown")
     try:
-        query = db.table("content_queue") \
+        query = db.table("content_jobs") \
                   .select("*") \
                   .eq("status", "completed") \
                   .is_("youtube_status", "null") \
                   .order("created_at", desc=True) \
                   .limit(1)
         if channel:
-            query = db.table("content_queue") \
+            query = db.table("content_jobs") \
                       .select("*") \
                       .eq("status", "completed") \
                       .eq("channel", channel) \
@@ -393,28 +393,41 @@ def cmd_upload(message):
             f"Job ID: `{job_id}`\n"
             "_This may take 1-3 minutes..._",
             parse_mode="Markdown")
-        import subprocess
-        project_root = str(Path(__file__).parent.parent.parent)
-        result = subprocess.run(
-            ["python", "-c",
-             f"import sys; sys.path.insert(0,'{project_root}'); "
-             f"from src.core.social_media_engine import SocialMediaEngine; "
-             f"sm = SocialMediaEngine(); "
-             f"r = sm.upload_youtube_video('{job_id}'); "
-             f"print('SUCCESS:' + str(r))"],
-            cwd=project_root, capture_output=True, text=True, timeout=300
-        )
-        if "SUCCESS:" in result.stdout:
+        video_path = job.get("payload", {}).get("video_path") or job.get("video_path")
+        title = job.get("payload", {}).get("title") or job.get("topic", "New Video")
+        description = job.get("payload", {}).get("description", "")
+        tags = job.get("payload", {}).get("tags") or []
+        if not video_path:
             bot.send_message(message.chat.id,
-                f"✅ *Uploaded to YouTube!*\n"
-                f"Channel: *{ch}*\n"
-                f"Check YouTube Studio for the video. 🎉",
+                "❌ No video file found for this job.\n"
+                "The video may not have been rendered yet. Job must have `render_video=True`.",
                 parse_mode="Markdown")
-        else:
-            err = (result.stderr or result.stdout)[:500]
-            bot.send_message(message.chat.id,
-                f"❌ Upload failed:\n```{err}```",
-                parse_mode="Markdown")
+            return
+        try:
+            from src.core.social_media_engine import SocialMediaEngine
+            sm = SocialMediaEngine()
+            r = sm.upload_youtube_video(
+                video_path=video_path,
+                title=title,
+                description=description,
+                tags=tags,
+                channel_name=ch,
+            )
+            if r and r.get("success"):
+                db.table("content_jobs").update(
+                    {"youtube_status": "uploaded", "youtube_video_id": r.get("video_id")}
+                ).eq("id", job_id).execute()
+                bot.send_message(message.chat.id,
+                    f"✅ *Uploaded to YouTube!*\n"
+                    f"Channel: *{ch}*\n"
+                    f"Video ID: `{r.get('video_id')}`\n"
+                    f"Check YouTube Studio for the video. 🎉",
+                    parse_mode="Markdown")
+            else:
+                err = str(r)[:400] if r else "Unknown error"
+                bot.send_message(message.chat.id, f"❌ Upload failed:\n```{err}```", parse_mode="Markdown")
+        except Exception as upload_err:
+            bot.send_message(message.chat.id, f"❌ Upload error: {upload_err}")
     except Exception as e:
         bot.send_message(message.chat.id, f"❌ Upload error: {e}")
 
@@ -424,7 +437,7 @@ def cmd_queue(message):
     """Show content pipeline queue status."""
     if not is_ajay(message): return unauthorized_response(message)
     try:
-        rows = db.table("content_queue") \
+        rows = db.table("content_jobs") \
                  .select("id, channel, status, created_at, youtube_status") \
                  .order("created_at", desc=True) \
                  .limit(8) \
@@ -531,7 +544,7 @@ def cmd_shell(message):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("shell_confirm_") or c.data.startswith("shell_cancel_"))
 def handle_shell_callback(call):
-    if not is_ajay(call.message): return
+    if not is_ajay(call): return  # check call.from_user, not call.message
     parts = call.data.split("_", 2)
     action = parts[1]   # "confirm" or "cancel"
     msg_id = int(parts[2])
@@ -720,6 +733,37 @@ def cmd_today(message):
     
     bot.send_message(message.chat.id, today_msg, parse_mode="Markdown")
 
+@bot.message_handler(commands=["addtask"])
+def cmd_addtask(message):
+    if not is_ajay(message): return unauthorized_response(message)
+    task_text = message.text.replace("/addtask", "").strip()
+    if not task_text:
+        bot.send_message(message.chat.id,
+            "📝 Tell me the task!\nUsage: `/addtask Buy groceries`\nOr add priority: `/addtask Fix bug @urgent`",
+            parse_mode="Markdown")
+        return
+    # Parse optional priority tag
+    priority = "medium"
+    for tag in ["@urgent", "@high", "@low"]:
+        if tag in task_text:
+            priority = tag.lstrip("@")
+            task_text = task_text.replace(tag, "").strip()
+    try:
+        db.table("aisha_schedule").insert({
+            "title": task_text,
+            "priority": priority,
+            "status": "pending",
+            "due_date": datetime.now().date().isoformat(),
+            "created_by": "ajay",
+        }).execute()
+        bot.send_message(message.chat.id,
+            f"✅ Task added!\n*{task_text}* [{priority}]",
+            parse_mode="Markdown")
+    except Exception as e:
+        log.error(f"addtask error: {e}")
+        bot.send_message(message.chat.id, "Sorry Aju, couldn't save the task 😔 Try again?")
+
+
 @bot.message_handler(commands=["expense"])
 def cmd_expense(message):
     if not is_ajay(message): return unauthorized_response(message)
@@ -815,6 +859,9 @@ def cmd_journal(message):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("mood_"))
 def handle_mood_callback(call):
+    if not is_ajay(call):
+        bot.answer_callback_query(call.id, text="Unauthorized", show_alert=True)
+        return
     parts     = call.data.split("_")
     mood_name = parts[1]
     score     = int(parts[2])
@@ -899,8 +946,8 @@ def handle_voice(message):
         response = aisha.think(transcribed_text, platform="telegram")
         bot.send_message(message.chat.id, response)
 
-        # Send voice reply back (voice-in = voice-out)
-        if len(response) < 1000:
+        # Send voice reply back (voice-in = voice-out, respects VOICE_MODE_ENABLED)
+        if VOICE_MODE_ENABLED and len(response) < 1000:
             try:
                 bot.send_chat_action(message.chat.id, "record_voice")
                 mood_res = detect_mood(transcribed_text)
@@ -1275,12 +1322,18 @@ if __name__ == "__main__":
     def _self_ping():
         import time as _t
         import urllib.request as _ur
-        port = int(os.getenv("PORT", "8000"))
-        url = f"http://127.0.0.1:{port}/health"
+        # Use public URL on Render (external traffic prevents spin-down)
+        # Fall back to loopback for local dev
+        render_url = os.getenv("RENDER_BOT_URL", "").rstrip("/")
+        if render_url:
+            url = f"{render_url}/health"
+        else:
+            port = int(os.getenv("PORT", "8000"))
+            url = f"http://127.0.0.1:{port}/health"
         while True:
             _t.sleep(30)
             try:
-                _ur.urlopen(url, timeout=5)
+                _ur.urlopen(url, timeout=10)
             except Exception:
                 pass  # silence — server may still be starting
 
@@ -1360,7 +1413,7 @@ def handle_deploy_skill(call):
     
     if pr_number and merge_github_pr(pr_number):
         bot.edit_message_text(
-            f"✅ Successfully deployed: **{skill_name}**!\n"
+            f"✅ Successfully deployed: *{skill_name}*!\n"
             "The PR has been merged. My brain is now more powerful! 💜",
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
@@ -1368,7 +1421,7 @@ def handle_deploy_skill(call):
         )
     else:
         bot.edit_message_text(
-            f"⚠️ Approved **{skill_name}**, but failed to auto-merge PR #{pr_number}.\n"
+            f"⚠️ Approved *{skill_name}*, but failed to auto-merge PR #{pr_number}.\n"
             "Please check GitHub and merge it manually, Aju! 💜",
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
@@ -1380,7 +1433,7 @@ def handle_skip_skill(call):
     skill_name = call.data.replace("skip_skill_", "")
     bot.answer_callback_query(call.id, text=f"Skipping {skill_name}")
     bot.edit_message_text(
-        f"❌ Skipped the new skill: **{skill_name}**.\n"
+        f"❌ Skipped the new skill: *{skill_name}*.\n"
         "Let me know if you want me to write it differently later! 💜",
         chat_id=call.message.chat.id,
         message_id=call.message.message_id,

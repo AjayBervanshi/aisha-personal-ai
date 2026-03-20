@@ -67,6 +67,23 @@ class SocialMediaEngine:
         # Cache loaded tokens to avoid repeated DB round-trips
         self._token_cache: dict = {}
 
+    def _refresh_instagram_token(self, token: str) -> str:
+        """Refresh a long-lived Instagram token. Returns new token or original on failure."""
+        try:
+            import requests as _req
+            resp = _req.get(
+                "https://graph.instagram.com/refresh_access_token",
+                params={"grant_type": "ig_refresh_token", "access_token": token},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                new_token = resp.json().get("access_token", token)
+                log.info("[Instagram] Token refreshed successfully")
+                return new_token
+        except Exception as e:
+            log.warning(f"[Instagram] Token refresh failed: {e}")
+        return token
+
     def _get_instagram_creds(self, channel: str) -> tuple[str, str]:
         """Load Instagram credentials from DB, falling back to env vars."""
         cache_key = f"ig_{channel}"
@@ -90,6 +107,12 @@ class SocialMediaEngine:
             token = os.getenv("INSTAGRAM_ACCESS_TOKEN", "")
         if not biz_id:
             biz_id = os.getenv("INSTAGRAM_BUSINESS_ID", "")
+
+        # Proactively refresh the token to prevent expiry (60-day window)
+        if token:
+            token = self._refresh_instagram_token(token)
+            # Update cache with refreshed token
+            self._token_cache[cache_key] = (token, biz_id)
 
         return token, biz_id
 

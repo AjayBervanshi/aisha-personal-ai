@@ -147,6 +147,29 @@ class AntigravityAgent:
 
             post_results: Dict[str, Any] = {}
 
+            # Upload thumbnail to Supabase Storage → get public URL for Instagram
+            thumbnail_url = payload.get("thumbnail_url")
+            thumbnail_path = result.get("thumbnail_path")
+            if not thumbnail_url and thumbnail_path and os.path.exists(thumbnail_path):
+                try:
+                    import mimetypes
+                    mime = mimetypes.guess_type(thumbnail_path)[0] or "image/png"
+                    storage_path = f"thumbnails/{job_id}_{os.path.basename(thumbnail_path)}"
+                    with open(thumbnail_path, "rb") as f:
+                        self.db.storage.from_("content-media").upload(
+                            storage_path, f.read(),
+                            file_options={"content-type": mime, "upsert": "true"}
+                        )
+                    public_url = (
+                        f"{os.getenv('SUPABASE_URL', '').rstrip('/')}"
+                        f"/storage/v1/object/public/content-media/{storage_path}"
+                    )
+                    thumbnail_url = public_url
+                    result["thumbnail_url"] = public_url
+                    log.info(f"[Antigravity] Thumbnail uploaded to Supabase Storage: {public_url}")
+                except Exception as e:
+                    log.error(f"[Antigravity] Thumbnail upload to Storage failed: {e}")
+
             if auto_post:
                 if "youtube" in platform_targets and video_path:
                     yt = self.social.upload_youtube_video(
@@ -169,10 +192,10 @@ class AntigravityAgent:
                             }
                         ).execute()
 
-                # One-account-first image posting path
-                if "instagram" in platform_targets and payload.get("thumbnail_url"):
+                # Instagram: uses public Supabase Storage URL
+                if "instagram" in platform_targets and thumbnail_url:
                     ig = self.social.post_instagram_image(
-                        image_url=payload["thumbnail_url"],
+                        image_url=thumbnail_url,
                         caption=payload.get("caption", marketing["caption"]),
                         hashtags=payload.get("tags", marketing["hashtags"]),
                         channel=channel,

@@ -128,36 +128,26 @@ def _fallback_scenes(channel: str, num_scenes: int) -> list[str]:
 
 def generate_scene_image(prompt: str) -> bytes | None:
     """
-    Generate a single scene image via HuggingFace API.
-    Uses FLUX.1-schnell for speed (faster than dev model).
+    Generate a scene image using image_engine.py fallback chain:
+    Gemini Imagen → OpenAI DALL-E → Pillow placeholder.
+    HuggingFace endpoints are 410 Gone and skipped.
     """
-    api_key = os.getenv("HUGGINGFACE_API_KEY")
-    if not api_key or "your_" in api_key:
-        log.warning("HuggingFace API key not set.")
-        return None
-
-    # Try FLUX.1-schnell first (fastest), fall back to SDXL
-    models = [
-        "black-forest-labs/FLUX.1-schnell",
-        "stabilityai/stable-diffusion-xl-base-1.0",
-    ]
-
-    for model_url in models:
-        try:
-            api_url = f"https://api-inference.huggingface.co/models/{model_url}"
-            headers = {"Authorization": f"Bearer {api_key}"}
-            payload = {
-                "inputs": prompt,
-                "parameters": {"width": 1280, "height": 720}  # 16:9 YouTube resolution
-            }
-            response = requests.post(api_url, headers=headers, json=payload, timeout=60)
-            if response.status_code == 200:
-                return response.content
-            log.warning(f"HuggingFace {model_url} returned {response.status_code}")
-        except Exception as e:
-            log.error(f"Image gen failed for {model_url}: {e}")
-            continue
-
+    try:
+        from src.core.image_engine import ImageEngine
+        engine = ImageEngine()
+        result = engine.generate_image(
+            prompt=prompt,
+            width=1280,
+            height=720,
+            style="cinematic",
+        )
+        if result and result.get("image_bytes"):
+            return result["image_bytes"]
+        if result and result.get("image_path"):
+            with open(result["image_path"], "rb") as f:
+                return f.read()
+    except Exception as e:
+        log.error(f"[video_engine] generate_scene_image via image_engine failed: {e}")
     return None
 
 
@@ -332,8 +322,7 @@ def _make_ken_burns_clip(image_path: str, duration: float, index: int):
         pil_crop = PILImage.fromarray(cropped).resize((w, h), PILImage.LANCZOS)
         return np.array(pil_crop)
 
-    clip = ImageClip(img_array, duration=duration)
-    clip = clip.transform(lambda get_frame, t: make_frame(t), apply_to="mask")
+    clip = ImageClip(img_array, duration=duration).with_make_frame(make_frame)
 
     return clip
 

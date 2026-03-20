@@ -45,7 +45,7 @@ class AutonomousLoop:
         log.info("event=autonomous_loop_init")
 
     def _startup_recovery(self):
-        """Reset content_queue jobs stuck in 'processing' for >30 min back to 'pending'."""
+        """Reset content_jobs jobs stuck in 'processing' for >30 min back to 'pending'."""
         try:
             import os as _os
             from supabase import create_client
@@ -55,10 +55,10 @@ class AutonomousLoop:
             )
             from datetime import datetime, timezone, timedelta
             cutoff = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
-            stuck = sb.table("content_queue").select("id").eq("status", "processing").lt("updated_at", cutoff).execute()
+            stuck = sb.table("content_jobs").select("id").eq("status", "processing").lt("updated_at", cutoff).execute()
             if stuck.data:
                 for row in stuck.data:
-                    sb.table("content_queue").update({"status": "pending"}).eq("id", row["id"]).execute()
+                    sb.table("content_jobs").update({"status": "pending"}).eq("id", row["id"]).execute()
                 log.info(f"event=startup_recovery reset={len(stuck.data)}_stuck_jobs")
         except Exception as e:
             log.warning(f"event=startup_recovery_failed err={e}")
@@ -190,7 +190,9 @@ class AutonomousLoop:
         try:
             res = self.brain.ai.generate("You are Aisha. Return only valid JSON.", prompt).text
             # Strip any markdown code fences if present
-            res = res.strip().lstrip("```json").lstrip("```").rstrip("```").strip()
+            import re as _re
+            res = _re.sub(r'^```(?:json)?\s*', '', res.strip())
+            res = _re.sub(r'\s*```$', '', res).strip()
             data = json.loads(res)
             
             # 3. Save to deep memory tables
@@ -247,17 +249,28 @@ class AutonomousLoop:
             except Exception as e:
                 log.warning(f"[Telegram] Failed to notify: {e}")
 
-        # Primary path: enqueue job for Antigravity queue worker
+        # Primary path: enqueue job and immediately process it
         try:
             from src.agents.antigravity_agent import AntigravityAgent
-            job = AntigravityAgent().enqueue_job(
+            agent = AntigravityAgent()
+            job = agent.enqueue_job(
                 topic=topic,
                 channel=selected["name"],
                 fmt=selected["format"],
-                platform_targets=["instagram"],
+                platform_targets=["youtube", "instagram"],
                 auto_post=True,
+                payload={"render_video": True},
             )
             log.info(f"[Studio] Enqueued content job: {job.get('id')}")
+            # Process immediately in background thread — don't wait for a separate worker
+            import threading as _threading
+            _threading.Thread(
+                target=agent.process_job,
+                args=(job,),
+                daemon=True,
+                name=f"studio-job-{job.get('id','?')[:8]}"
+            ).start()
+            log.info(f"[Studio] Processing thread started for job {job.get('id')}")
         except Exception as e:
             log.error(f"[Studio] Queue enqueue failed, falling back to local process: {e}")
             # Fallback path: launch production script directly

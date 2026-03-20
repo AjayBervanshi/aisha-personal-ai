@@ -94,32 +94,34 @@ class MemoryManager:
 
     def _generate_embedding(self, text: str) -> Optional[List[float]]:
         """
-        Generate embeddings using Google Gemini's text-embedding-004 model.
-        Includes a retry loop with exponential backoff for rate limiting.
+        Generate embeddings using Gemini text-embedding-004 via REST API.
+        Produces 768-dim vectors matching the DB vector(768) column.
         """
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key or "your_" in api_key.lower():
             return None
 
         import time
+        import requests as _req
         max_retries = 3
         base_delay = 2
+        # gemini-embedding-001 is the available model via v1beta
+        # outputDimensionality=768 uses Matryoshka scaling to match DB vector(768)
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key={api_key}"
 
         for attempt in range(max_retries):
             try:
-                import google.generativeai as genai
-                genai.configure(api_key=api_key)
-                result = genai.embed_content(
-                    model="models/gemini-embedding-001",
-                    content=text,
-                    task_type="retrieval_document",
-                )
-                return result['embedding']
+                resp = _req.post(url, json={
+                    "content": {"parts": [{"text": text}]},
+                    "taskType": "RETRIEVAL_DOCUMENT",
+                    "outputDimensionality": 768,
+                }, timeout=30)
+                resp.raise_for_status()
+                return resp.json()["embedding"]["values"]
             except Exception as e:
-                # If rate limited (often 429) or other API error
                 print(f"[Memory] Embedding attempt {attempt+1} failed: {e}")
                 if attempt < max_retries - 1:
-                    time.sleep(base_delay * (2 ** attempt)) # 2, 4, 8s backoff
+                    time.sleep(base_delay * (2 ** attempt))
                 else:
                     print(f"[Memory] Fatal: Failed after {max_retries} attempts.")
                     return None

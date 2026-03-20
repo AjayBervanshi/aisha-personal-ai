@@ -63,7 +63,7 @@ CALLME_NGROK_AUTHTOKEN   = _get("CALLME_NGROK_AUTHTOKEN")
 # These are tried in order by AIRouter. First available wins.
 # Allow .env overrides so model routing can be tuned without code edits.
 GEMINI_MODEL    = _get("AI_MODEL_GEMINI", "gemini-2.5-pro")        # Most powerful Gemini
-GEMINI_FALLBACK = _get("AI_MODEL_GEMINI_FALLBACK", "gemini-2.5-flash")
+GEMINI_FALLBACK = _get("AI_MODEL_GEMINI_FALLBACK", "gemini-2.0-flash,gemini-2.0-flash-lite,gemini-1.5-flash")
 OPENAI_MODEL    = _get("AI_MODEL_OPENAI", "gpt-4o")
 GROQ_MODEL      = _get("AI_MODEL_GROQ", "llama-3.3-70b-versatile")
 ANTHROPIC_MODEL = _get("AI_MODEL_ANTHROPIC", "claude-opus-4-6")
