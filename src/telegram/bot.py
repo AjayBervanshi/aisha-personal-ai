@@ -171,6 +171,7 @@ def cmd_help(message):
         "/channels — Your 4 channel brands\n"
         "/produce [channel] — Start a production\n"
         "/studio — Aisha auto-picks topic & channel\n"
+        "/testpipeline [channel] — Dry-run pipeline test (no upload)\n"
         "/inbox — Check business email\n"
         "/aistatus — See active AI brains\n\n"
         "🧠 *Aisha Self-Improvement:*\n"
@@ -637,10 +638,68 @@ def cmd_restart(message):
 def cmd_studio(message):
     if not is_ajay(message): return unauthorized_response(message)
     bot.send_message(message.chat.id, "Starting my creative session! I'll pick the best channel and topic myself. Check your email in a few minutes! 💜🎬")
-    
+
     import subprocess
     project_root = str(Path(__file__).parent.parent.parent)
     subprocess.Popen(["python", "-m", "src.core.autonomous_loop", "--once"], cwd=project_root)
+
+
+@bot.message_handler(commands=["testpipeline"])
+def cmd_test_pipeline(message):
+    """Test the full content pipeline with a dry run."""
+    if not is_ajay(message): return unauthorized_response(message)
+    channel_arg = message.text.replace("/testpipeline", "").strip()
+
+    # Default to simplest channel for testing
+    test_channel = channel_arg if channel_arg else "Aisha & Him"
+    valid_channels = ["Story With Aisha", "Riya's Dark Whisper",
+                      "Riya's Dark Romance Library", "Aisha & Him"]
+    if test_channel not in valid_channels:
+        test_channel = "Aisha & Him"
+
+    bot.send_message(message.chat.id,
+        f"🧪 Testing pipeline for *{test_channel}*...\n"
+        f"This will generate a test script + voice (no upload). Takes 2-3 min. ⏳",
+        parse_mode="Markdown")
+
+    def run_test():
+        try:
+            from src.agents.antigravity_agent import AntigravityAgent
+            agent = AntigravityAgent()
+            job = agent.enqueue_job(
+                topic="A beautiful sunset story",
+                channel=test_channel,
+                fmt="short",
+                platform_targets=[],  # no actual posting
+                auto_post=False,
+                payload={"render_video": False, "test_mode": True}
+            )
+            job_id = job.get("id", "?")
+
+            # Process it
+            result = agent.process_job(job)
+
+            if result and result.get("status") == "completed":
+                output = result.get("output", {})
+                script_preview = str(output.get("script", ""))[:200]
+                bot.send_message(message.chat.id,
+                    f"✅ *Pipeline test PASSED!*\n\n"
+                    f"Channel: {test_channel}\n"
+                    f"Job ID: `{job_id[:8]}`\n\n"
+                    f"Script preview:\n_{script_preview}..._",
+                    parse_mode="Markdown")
+            else:
+                error = result.get("error_text", result.get("error", "Unknown error")) if result else "No result returned"
+                bot.send_message(message.chat.id,
+                    f"❌ *Pipeline test FAILED*\n\nError: {str(error)[:300]}",
+                    parse_mode="Markdown")
+        except Exception as e:
+            log.error(f"[testpipeline] Error: {e}")
+            bot.send_message(message.chat.id,
+                f"❌ *Pipeline test ERROR*\n\n`{str(e)[:300]}`",
+                parse_mode="Markdown")
+
+    threading.Thread(target=run_test, daemon=True, name="pipeline-test").start()
 
 
 @bot.message_handler(commands=["imagine"])
