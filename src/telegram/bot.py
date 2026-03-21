@@ -68,6 +68,26 @@ aisha = AishaBrain()
 db    = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
+# ─── Load approved users from Supabase on startup ─────────────────────────────
+
+def load_approved_users_from_db():
+    """Query aisha_approved_users and populate the in-memory _approved_users set."""
+    try:
+        rows = (
+            db.table("aisha_approved_users")
+            .select("telegram_user_id")
+            .eq("is_active", True)
+            .execute()
+        ).data or []
+        for row in rows:
+            _approved_users.add(row["telegram_user_id"])
+        log.info(f"load_approved_users count={len(rows)}")
+    except Exception as e:
+        log.error(f"load_approved_users error={e}")
+
+load_approved_users_from_db()
+
+
 # ─── Security: Only Ajay can use Aisha ────────────────────────────────────────
 
 def is_ajay(message) -> bool:
@@ -1054,7 +1074,22 @@ def handle_user_approval(call):
     if call.data.startswith("approve_user_"):
         _approved_users.add(user_id)
         _pending_approvals.pop(user_id, None)
-        name = pending["user"].first_name if pending else f"User {user_id}"
+        user_obj = pending["user"] if pending else None
+        name     = user_obj.first_name if user_obj else f"User {user_id}"
+        username = user_obj.username   if user_obj else None
+
+        # Persist approval to Supabase
+        try:
+            db.table("aisha_approved_users").upsert({
+                "telegram_user_id": user_id,
+                "telegram_username": username,
+                "first_name": name,
+                "approved_by": AUTHORIZED_ID,
+                "is_active": True,
+            }, on_conflict="telegram_user_id").execute()
+            log.info(f"approved_user user_id={user_id} persisted=True")
+        except Exception as e:
+            log.error(f"approved_user persist error user_id={user_id} err={e}")
 
         bot.answer_callback_query(call.id, "✅ Approved!")
         bot.send_message(AUTHORIZED_ID, f"✅ {name} ({user_id}) is now approved to chat with me.")
@@ -1071,7 +1106,31 @@ def handle_user_approval(call):
 
     else:  # deny
         _pending_approvals.pop(user_id, None)
-        name = pending["user"].first_name if pending else f"User {user_id}"
+        user_obj = pending["user"] if pending else None
+        name     = user_obj.first_name if user_obj else f"User {user_id}"
+        username = user_obj.username   if user_obj else None
+        last_msg = pending["text"]     if pending else None
+
+        # Persist denial to Supabase (upsert — increment rejection_count if already denied)
+        try:
+            existing = (
+                db.table("aisha_rejected_users")
+                .select("rejection_count")
+                .eq("telegram_user_id", user_id)
+                .execute()
+            ).data
+            count = (existing[0]["rejection_count"] + 1) if existing else 1
+            db.table("aisha_rejected_users").upsert({
+                "telegram_user_id": user_id,
+                "telegram_username": username,
+                "first_name": name,
+                "rejected_at": datetime.utcnow().isoformat(),
+                "rejection_count": count,
+                "last_message": last_msg[:500] if last_msg else None,
+            }, on_conflict="telegram_user_id").execute()
+            log.info(f"denied_user user_id={user_id} rejection_count={count} persisted=True")
+        except Exception as e:
+            log.error(f"denied_user persist error user_id={user_id} err={e}")
 
         bot.answer_callback_query(call.id, "❌ Denied.")
         bot.send_message(AUTHORIZED_ID, f"❌ {name} ({user_id}) has been denied access.")
