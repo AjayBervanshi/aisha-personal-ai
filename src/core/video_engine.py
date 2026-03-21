@@ -133,19 +133,10 @@ def generate_scene_image(prompt: str) -> bytes | None:
     HuggingFace endpoints are 410 Gone and skipped.
     """
     try:
-        from src.core.image_engine import ImageEngine
-        engine = ImageEngine()
-        result = engine.generate_image(
-            prompt=prompt,
-            width=1280,
-            height=720,
-            style="cinematic",
-        )
-        if result and result.get("image_bytes"):
-            return result["image_bytes"]
-        if result and result.get("image_path"):
-            with open(result["image_path"], "rb") as f:
-                return f.read()
+        from src.core.image_engine import generate_image
+        result = generate_image(prompt=prompt, width=1280, height=720)
+        if result:
+            return result
     except Exception as e:
         log.error(f"[video_engine] generate_scene_image via image_engine failed: {e}")
     return None
