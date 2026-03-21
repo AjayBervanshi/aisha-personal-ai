@@ -28,6 +28,46 @@ from typing import Dict, Any, Tuple
 
 log = logging.getLogger("Aisha.SelfImprovement")
 
+_github_creds_cache: dict = {}
+
+def _get_github_creds() -> tuple[str, str]:
+    """
+    Returns (GITHUB_TOKEN, GITHUB_REPO).
+    Checks env vars first; falls back to Supabase api_keys table.
+    Results are cached for the process lifetime.
+    """
+    global _github_creds_cache
+    if _github_creds_cache:
+        return _github_creds_cache.get("token", ""), _github_creds_cache.get("repo", "")
+
+    token = os.getenv("GITHUB_TOKEN", "")
+    repo  = os.getenv("GITHUB_REPO", "AjayBervanshi/aisha-personal-ai")
+
+    if not token:
+        try:
+            supabase_url = os.getenv("SUPABASE_URL", "")
+            supabase_key = os.getenv("SUPABASE_SERVICE_KEY", "") or os.getenv("SUPABASE_KEY", "")
+            if supabase_url and supabase_key:
+                resp = requests.get(
+                    f"{supabase_url}/rest/v1/api_keys",
+                    headers={
+                        "apikey": supabase_key,
+                        "Authorization": f"Bearer {supabase_key}",
+                    },
+                    params={"name": "eq.GITHUB_TOKEN", "select": "secret"},
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    rows = resp.json()
+                    if rows:
+                        token = rows[0].get("secret", "")
+                        log.info("Loaded GITHUB_TOKEN from Supabase api_keys")
+        except Exception as e:
+            log.warning(f"Could not load GITHUB_TOKEN from Supabase: {e}")
+
+    _github_creds_cache = {"token": token, "repo": repo}
+    return token, repo
+
 def create_github_pr(title: str, body: str, branch_name: str, file_path: str, file_content: str) -> str:
     """
     Creates a pull request on GitHub via API.
@@ -35,8 +75,7 @@ def create_github_pr(title: str, body: str, branch_name: str, file_path: str, fi
     Returns the PR URL, or an error string starting with "Failed"/"No GitHub".
     """
     import base64
-    token = os.getenv("GITHUB_TOKEN")
-    repo = os.getenv("GITHUB_REPO")
+    token, repo = _get_github_creds()
 
     if not token or not repo:
         log.warning("No GitHub credentials found. Can't create PR.")
@@ -130,8 +169,7 @@ def merge_github_pr(pr_number: int) -> bool:
     """
     Merges a PR on GitHub.
     """
-    token = os.getenv("GITHUB_TOKEN")
-    repo = os.getenv("GITHUB_REPO")
+    token, repo = _get_github_creds()
     if not token or not repo or not pr_number:
         return False
 
