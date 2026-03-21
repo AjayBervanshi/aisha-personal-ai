@@ -245,6 +245,7 @@ def cmd_help(message):
         "/read <file> — Read any file\n"
         "/gitpull — Pull latest code from GitHub\n"
         "/restart — Restart Aisha bot\n"
+        "/findapi <platform> — Search web for API key signup guide\n"
     )
     bot.send_message(message.chat.id, help_text, parse_mode="Markdown")
 
@@ -1461,6 +1462,138 @@ def cmd_retry(message):
         bot.send_message(message.chat.id, f"Retry failed too: {e}")
 
 
+# ─── API Key Update Flow ─────────────────────────────────────────────────────
+
+# Tracks pending key updates: {key_name: True} when Aisha is waiting for Ajay to send a new value
+_pending_key_updates: dict = {}
+
+
+@bot.message_handler(commands=["updatekey"])
+def cmd_updatekey(message):
+    """
+    /updatekey GROQ_API_KEY gsk_newkeyhere
+    Ajay sends the new key value, Aisha validates it and saves to DB.
+    """
+    if not is_ajay(message):
+        return unauthorized_response(message)
+    parts = message.text.strip().split(maxsplit=2)
+    if len(parts) < 3:
+        bot.send_message(
+            message.chat.id,
+            "Usage: `/updatekey KEY_NAME new_value`\nExample: `/updatekey GROQ_API_KEY gsk_abc123`",
+            parse_mode="Markdown",
+        )
+        return
+    key_name = parts[1].strip().upper()
+    new_value = parts[2].strip()
+    _apply_key_update(message.chat.id, key_name, new_value)
+
+
+@bot.message_handler(commands=["keyhealth"])
+def cmd_keyhealth(message):
+    """Run credential health check and report all API key statuses."""
+    if not is_ajay(message):
+        return unauthorized_response(message)
+    bot.send_message(message.chat.id, "Running key health check... this takes ~30 seconds.")
+
+    def _run():
+        try:
+            from src.core.credential_manager import CredentialManager
+            cm = CredentialManager()
+            summary = cm.run_daily_health_check()
+            bot.send_message(message.chat.id, summary, parse_mode="Markdown")
+        except Exception as e:
+            bot.send_message(message.chat.id, f"Key health check failed: {e}")
+
+    _fire_in_thread(_run)
+
+
+@bot.message_handler(commands=["findapi"])
+def cmd_findapi(message):
+    """Search web for how to get an API key for any platform and send Ajay a guide."""
+    if not is_ajay(message):
+        return unauthorized_response(message)
+    parts = message.text.strip().split(maxsplit=1)
+    if len(parts) < 2 or not parts[1].strip():
+        bot.send_message(
+            message.chat.id,
+            "🔍 *Find API Setup Guide*\n\n"
+            "Usage: `/findapi <platform>`\n\n"
+            "Examples:\n"
+            "`/findapi tiktok`\n"
+            "`/findapi huggingface`\n"
+            "`/findapi elevenlabs`\n"
+            "`/findapi openai`\n"
+            "`/findapi groq`",
+            parse_mode="Markdown",
+        )
+        return
+    platform = parts[1].strip()
+    bot.send_message(
+        message.chat.id,
+        f"🔍 Searching for *{platform}* API setup guide...\n_This takes 10-20 seconds_ ⏳",
+        parse_mode="Markdown",
+    )
+
+    def _run():
+        try:
+            from src.core.api_discovery import APIDiscoveryAgent
+            agent = APIDiscoveryAgent()
+            sent = agent.notify_ajay_api_setup(platform)
+            if not sent:
+                bot.send_message(
+                    message.chat.id,
+                    f"⚠️ Found guide for *{platform}* but Telegram send failed. Check logs.",
+                    parse_mode="Markdown",
+                )
+        except Exception as e:
+            log.error(f"[/findapi] Error for platform={platform}: {e}")
+            bot.send_message(message.chat.id, f"❌ Search failed for *{platform}*: `{str(e)[:200]}`", parse_mode="Markdown")
+
+    _fire_in_thread(_run)
+
+
+def _apply_key_update(chat_id: int, key_name: str, new_value: str):
+    """Validate a new API key value and save it to Supabase api_keys table."""
+    import requests as _req
+    try:
+        supabase_url = os.getenv("SUPABASE_URL", "")
+        supabase_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+        headers = {
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal",
+        }
+        # Check if key exists in DB
+        r = _req.get(
+            f"{supabase_url}/rest/v1/api_keys?name=eq.{key_name}&select=name",
+            headers=headers, timeout=10,
+        )
+        if not r.json():
+            bot.send_message(chat_id, f"Key `{key_name}` not found in DB. Please check the name and try again.", parse_mode="Markdown")
+            return
+        # Save to DB
+        patch = _req.patch(
+            f"{supabase_url}/rest/v1/api_keys?name=eq.{key_name}",
+            json={"secret": new_value, "active": True},
+            headers=headers, timeout=10,
+        )
+        if patch.status_code in (200, 204):
+            # Also update local env var for this session
+            os.environ[key_name] = new_value
+            bot.send_message(
+                chat_id,
+                f"Updated `{key_name}` in DB. Aisha will use the new key immediately.\n\nRun `/keyhealth` to verify it works!",
+                parse_mode="Markdown",
+            )
+            _pending_key_updates.pop(key_name, None)
+        else:
+            bot.send_message(chat_id, f"DB update failed ({patch.status_code}). Try again or update manually in Render.")
+    except Exception as e:
+        bot.send_message(chat_id, f"Key update error: {e}")
+
+
 # ─── Render Health + Trigger Server ──────────────────────────────────────────
 
 # Global reference to the AutonomousLoop instance (set during startup)
@@ -1603,6 +1736,9 @@ if __name__ == "__main__":
         telebot.types.BotCommand("/upgrade",  "Full self-upgrade: audit → PR → deploy"),
         telebot.types.BotCommand("/selfaudit","Audit code and propose improvements"),
         telebot.types.BotCommand("/feature",  "Build a new feature with 6-agent pipeline"),
+        telebot.types.BotCommand("/keyhealth","Check all API keys health"),
+        telebot.types.BotCommand("/updatekey","Update an API key (/updatekey KEY value)"),
+        telebot.types.BotCommand("/findapi",  "Search web for API setup guide (/findapi tiktok)"),
     ])
     
     # ── Health + Trigger HTTP server (required by Render + pg_cron) ──────────

@@ -374,6 +374,16 @@ def run_daily_audit_job():
     except Exception as e:
         log.error(f"[DailyAudit] Audit job failed: {e}")
 
+    # ── Self-Repair: integrity scan + auto-restore ─────────────────────────────
+    log.info("[SelfRepair] Starting file integrity scan...")
+    try:
+        from src.core.self_repair import SelfRepairEngine
+        repair_engine = SelfRepairEngine()
+        repair_summary = repair_engine.run_repair_cycle()
+        log.info(f"[SelfRepair] {repair_summary}")
+    except Exception as e:
+        log.error(f"[SelfRepair] Repair cycle failed: {e}")
+
 
 def run_scheduled_improvement():
     """Run self-improvement if the last session was more than 6 hours ago."""
