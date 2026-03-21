@@ -45,7 +45,7 @@ class AutonomousLoop:
         log.info("event=autonomous_loop_init")
 
     def _startup_recovery(self):
-        """Reset content_jobs jobs stuck in 'processing' for >30 min back to 'pending'."""
+        """Reset content_jobs jobs stuck in 'processing' for >30 min back to 'queued'."""
         try:
             import os as _os
             from supabase import create_client
@@ -58,7 +58,7 @@ class AutonomousLoop:
             stuck = sb.table("content_jobs").select("id").eq("status", "processing").lt("updated_at", cutoff).execute()
             if stuck.data:
                 for row in stuck.data:
-                    sb.table("content_jobs").update({"status": "pending"}).eq("id", row["id"]).execute()
+                    sb.table("content_jobs").update({"status": "queued"}).eq("id", row["id"]).execute()
                 log.info(f"event=startup_recovery reset={len(stuck.data)}_stuck_jobs")
         except Exception as e:
             log.warning(f"event=startup_recovery_failed err={e}")

@@ -35,8 +35,8 @@ MOOD_VOICE_SETTINGS = {
     "personal":      {"rate": "-10%", "pitch": "-3Hz"},   # Soft, gentle
     "late_night":    {"rate": "-15%", "pitch": "-5Hz"},   # Very slow, soulful
     "motivational":  {"rate": "+8%",  "pitch": "+3Hz"},   # Fast, energetic
-    "professional":  {"rate": "+3%",  "pitch": "0Hz"},    # Crisp, neutral
-    "finance":       {"rate": "+2%",  "pitch": "0Hz"},    # Clear, structured
+    "professional":  {"rate": "+3%",  "pitch": "+0Hz"},   # Crisp, neutral
+    "finance":       {"rate": "+2%",  "pitch": "+0Hz"},   # Clear, structured
     "angry":         {"rate": "+5%",  "pitch": "+2Hz"},   # Direct, punchy
     "casual":        {"rate": "-3%",  "pitch": "-1Hz"},   # Natural, relaxed
 }
