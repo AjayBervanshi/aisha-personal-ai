@@ -33,7 +33,7 @@ from src.core.voice_engine import generate_voice, cleanup_voice_file
 load_dotenv()
 
 # ─── Voice Mode State ─────────────────────────────────────────────────────────
-VOICE_MODE_ENABLED = True   # Start with voice ON — Aisha speaks by default!
+VOICE_MODE_ENABLED = True   # Voice ON — toggle with /voice command
 
 # ─── Pending shell commands (for confirmation) ────────────────────────────────
 _pending_shell: dict = {}  # message_id → command string

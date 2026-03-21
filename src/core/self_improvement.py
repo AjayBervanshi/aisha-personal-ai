@@ -465,7 +465,7 @@ def aisha_self_improve(task_description: str, skill_name: str = None) -> str | N
         skill_name = task_description[:30].replace(" ", "_").lower()
 
     file_path = f"src/skills/auto_{skill_name.replace(' ', '_')[:20]}.py"
-    branch_name = f"skill-{skill_name[:20].replace(' ', '-')}-{__import__('time').strftime('%m%d%H%M')}"
+    branch_name = f"skill-{skill_name[:20].replace(' ', '-')}-{__import__('datetime').datetime.now().strftime('%m%d%H%M')}"
 
     log.info(f"🚀 Aisha self-improvement: {task_description[:60]}")
 

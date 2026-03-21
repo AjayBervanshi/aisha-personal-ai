@@ -30,8 +30,8 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 
-GITHUB_TOKEN = "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"
-GITHUB_REPO = "AjayBervanshi/aisha-personal-ai"
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")  # loaded from Supabase api_keys at runtime via _get_github_creds()
+GITHUB_REPO = os.getenv("GITHUB_REPO", "AjayBervanshi/aisha-personal-ai")
 AJAY_TELEGRAM_ID = 1002381172
 
 PROTECTED_FILES = [
