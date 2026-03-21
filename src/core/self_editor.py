@@ -298,6 +298,31 @@ TASK: <detailed description of what to build — 2-3 sentences>
             elif line.startswith("TASK:"):
                 task_description = line.split(":", 1)[1].strip()
 
+        # ── Override: use real failure data when available ─────────────────
+        try:
+            from src.core.failure_detector import get_top_improvement_task
+            failure_task = get_top_improvement_task()
+            if failure_task:
+                task_description = failure_task
+                log.info(
+                    f"[SelfEditor] Failure-driven task selected: {task_description[:80]}"
+                )
+            else:
+                log.info(
+                    "[SelfEditor] No recent failures detected — using audit-derived task."
+                )
+        except Exception as _fd_err:
+            log.warning(
+                f"[SelfEditor] failure_detector unavailable ({_fd_err}) — "
+                "falling back to audit-derived task."
+            )
+
+        if not task_description:
+            task_description = (
+                "Add better error handling and logging to "
+                "src/telegram/bot.py for unknown command inputs"
+            )
+
         log.info(f"[SelfEditor] Improvement planned: {skill_name} — {task_description[:60]}")
 
         # Step 3: Create PR via Jules+Gemini
