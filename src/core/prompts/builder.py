@@ -5,8 +5,10 @@ Logic to assemble the dynamic system prompt for Aisha.
 """
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from src.core.prompts.personality import MOOD_INSTRUCTIONS, LANGUAGE_INSTRUCTIONS, CORE_IDENTITY, RULES
+
+IST = timezone(timedelta(hours=5, minutes=30))
 
 def build_system_prompt(context: dict) -> str:
     """Build Aisha's dynamic system prompt with adaptive personality modes.
@@ -23,7 +25,7 @@ def build_system_prompt(context: dict) -> str:
     profile      = context.get("profile", {})
     caller_name  = context.get("caller_name", "Ajay")
     is_owner     = context.get("is_owner", True)
-    now          = datetime.now()
+    now          = datetime.now(IST)
     current_time = now.strftime("%I:%M %p")
 
     # Late-night guardrail

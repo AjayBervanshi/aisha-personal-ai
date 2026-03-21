@@ -1027,10 +1027,62 @@ def cmd_reset(message):
     if not is_ajay(message): return unauthorized_response(message)
     aisha.reset_session()
     bot.send_message(
-        message.chat.id, 
+        message.chat.id,
         "🔄 Fresh start! I'm ready, Ajay 💜",
         reply_markup=main_keyboard()
     )
+
+
+@bot.message_handler(commands=["block"])
+def cmd_block(message):
+    """Block an approved user: /block <name_or_user_id>"""
+    if not is_ajay(message): return unauthorized_response(message)
+    query = message.text.replace("/block", "").strip().lower()
+    if not query:
+        bot.send_message(message.chat.id, "Usage: /block <name or user_id>")
+        return
+    _block_user_by_query(message.chat.id, query)
+
+
+def _block_user_by_query(chat_id: int, query: str):
+    """Find user by name or ID, remove from approved set and DB."""
+    try:
+        # Try to find in approved users table
+        rows = db.table("aisha_approved_users").select("*").eq("is_active", True).execute().data or []
+        target = None
+        for row in rows:
+            name  = (row.get("first_name") or "").lower()
+            uname = (row.get("telegram_username") or "").lower()
+            uid   = str(row.get("telegram_user_id", ""))
+            if query in name or query in uname or query == uid:
+                target = row
+                break
+
+        if not target:
+            bot.send_message(chat_id, f"No approved user found matching '{query}'.")
+            return
+
+        user_id   = target["telegram_user_id"]
+        user_name = target.get("first_name", f"User {user_id}")
+
+        # 1. Remove from in-memory approved set
+        _approved_users.discard(user_id)
+
+        # 2. Mark inactive in DB
+        db.table("aisha_approved_users").update({"is_active": False}).eq("telegram_user_id", user_id).execute()
+
+        # 3. Notify the blocked user (optional — silent block)
+        try:
+            bot.send_message(user_id, "You have been removed from this bot's access list.")
+        except Exception:
+            pass
+
+        bot.send_message(chat_id, f"✅ {user_name} ({user_id}) has been blocked and removed from approved users.")
+        log.info(f"block_user user_id={user_id} name={user_name}")
+
+    except Exception as e:
+        log.error(f"block_user failed query={query} err={e}")
+        bot.send_message(chat_id, f"Could not block user: {e}")
 
 @bot.message_handler(commands=["voice"])
 def cmd_voice(message):
@@ -1134,7 +1186,15 @@ def handle_user_approval(call):
         if pending:
             try:
                 bot.send_chat_action(pending["message"].chat.id, "typing")
-                response = aisha.think(pending["text"], platform="telegram")
+                pending_user   = pending.get("user")
+                pending_name   = pending_user.first_name if pending_user else "Guest"
+                response = aisha.think(
+                    pending["text"],
+                    platform="telegram",
+                    caller_name=pending_name,
+                    caller_id=user_id,
+                    is_owner=False,
+                )
                 bot.send_message(pending["message"].chat.id, response)
             except Exception as e:
                 log.error(f"Failed to process pending message for approved user {user_id}: {e}")
@@ -1233,7 +1293,16 @@ def handle_voice(message):
             parse_mode="Markdown")
 
         bot.send_chat_action(message.chat.id, "typing")
-        response = aisha.think(transcribed_text, platform="telegram")
+        voice_caller_id   = message.from_user.id
+        voice_caller_name = message.from_user.first_name or "Guest"
+        voice_is_owner    = (voice_caller_id == AUTHORIZED_ID)
+        response = aisha.think(
+            transcribed_text,
+            platform="telegram",
+            caller_name=voice_caller_name,
+            caller_id=voice_caller_id,
+            is_owner=voice_is_owner,
+        )
         bot.send_message(message.chat.id, response)
 
         # Send voice reply back (voice-in = voice-out, respects VOICE_MODE_ENABLED)
@@ -1280,7 +1349,17 @@ def handle_photo(message):
         user_text = message.caption if message.caption else "I sent you a photo. What do you see?"
         
         # Pass image to Aisha's brain
-        response = aisha.think(user_text, platform="telegram", image_bytes=downloaded_bytes)
+        photo_caller_id   = message.from_user.id
+        photo_caller_name = message.from_user.first_name or "Guest"
+        photo_is_owner    = (photo_caller_id == AUTHORIZED_ID)
+        response = aisha.think(
+            user_text,
+            platform="telegram",
+            image_bytes=downloaded_bytes,
+            caller_name=photo_caller_name,
+            caller_id=photo_caller_id,
+            is_owner=photo_is_owner,
+        )
         bot.reply_to(message, response)
         
         # Optional: Voice reply

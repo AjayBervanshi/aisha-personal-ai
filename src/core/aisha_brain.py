@@ -49,21 +49,67 @@ class AishaBrain:
         self.supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
         self.memory   = MemoryManager(self.supabase)
 
-        # Conversation history — warm-started from Supabase on every init
-        # so Railway restarts and redeploys don't wipe the thread
-        self.history  = self._load_history_from_db()
+        # Per-user conversation histories — keyed by Telegram user_id (int).
+        # Owner's history is warm-started from Supabase; guest histories start empty.
+        # Format: { user_id: [{"role": ..., "content": ...}, ...] }
+        self._histories: dict = {}
+
+        # Pre-warm owner history so the first owner message feels continuous.
+        owner_uid = self._get_owner_id()
+        if owner_uid is not None:
+            self._histories[owner_uid] = self._load_history_from_db(user_id=owner_uid)
+        # Also keep a legacy fallback under key 0 for unknown callers.
+        self._histories[0] = self._load_history_from_db(user_id=None)
 
         # Counter for throttling auto-extract (only every 5th message)
         self._message_count = 0
 
-    def _load_history_from_db(self) -> list:
-        """Restore recent conversation history from Supabase on startup."""
+    # ─── Backwards-compat shim ──────────────────────────────────────────────
+    @property
+    def history(self) -> list:
+        """Legacy read accessor — returns owner/default history. Used by reset_session()."""
+        return self._histories.get(0, [])
+
+    @history.setter
+    def history(self, value: list):
+        """Legacy write accessor (used by reset_session)."""
+        self._histories[0] = value
+
+    # ─── Internal helpers ────────────────────────────────────────────────────
+
+    def _get_owner_id(self) -> Optional[int]:
+        """Return the numeric owner Telegram ID from config, or None if unavailable."""
         try:
+            from src.core.config import AUTHORIZED_ID
+            return int(AUTHORIZED_ID)
+        except Exception:
+            return None
+
+    def _load_history_from_db(self, user_id: Optional[int] = None) -> list:
+        """Restore recent conversation history from Supabase on startup.
+
+        When user_id is None (or matches the owner), loads the owner's shared
+        conversation log for warm-start.  Guest user_ids always start empty
+        because their turns are saved with a guest tag and are not loaded back
+        into hot memory — we don't want guest context polluting the owner's
+        warm-start, and we don't persist guest warm-starts across restarts.
+        """
+        try:
+            owner_uid = self._get_owner_id()
+            # Only warm-start for the owner (or legacy fallback when user_id is None)
+            if user_id is not None and user_id != owner_uid:
+                return []
             recent = self.memory.get_recent_conversation(limit=AI_HISTORY_LIMIT)
             return [{"role": c["role"], "content": c["message"]} for c in recent]
         except Exception as e:
             print(f"[Brain] Could not warm-start history from DB: {e}")
             return []
+
+    def _get_user_history(self, uid: int, is_owner: bool) -> list:
+        """Return (and lazily initialise) the history list for *uid*."""
+        if uid not in self._histories:
+            self._histories[uid] = self._load_history_from_db(user_id=uid if not is_owner else None)
+        return self._histories[uid]
 
     # ─── NLP Intent Router ───────────────────────────────────────────────────
     # Maps natural language to tool actions — no commands needed.
@@ -116,6 +162,11 @@ class AishaBrain:
             r"(file|code).{0,20}(corrupt|broken|damaged|missing)",
             re.I,
         ), "file_repair"),
+        # Block user — natural language: "block Jash", "remove Jash", "ban Jash"
+        (re.compile(
+            r"(block|ban|remove|kick).{1,30}\b(\w+)\b",
+            re.I,
+        ), "block_user"),
     ]
 
     def _detect_and_route_intent(self, user_message: str) -> Optional[str]:
@@ -276,6 +327,37 @@ class AishaBrain:
                 "If anything is broken, I'll restore it from GitHub and let you know! 🔧"
             )
 
+        # ── Block user ────────────────────────────────────────────────────────
+        if intent == "block_user":
+            # Extract target name from message: "block Jash", "ban him", "remove John"
+            m = re.search(
+                r"(block|ban|remove|kick)\s+(\w+)", user_message, re.I
+            )
+            if m:
+                target_name = m.group(2).lower()
+                # Avoid blocking yourself or Aisha
+                if target_name in ("me", "myself", "aisha", "ajay", "you"):
+                    return None  # Let AI handle this naturally
+                try:
+                    rows = self.supabase.table("aisha_approved_users").select("*").eq("is_active", True).execute().data or []
+                    blocked = []
+                    for row in rows:
+                        name  = (row.get("first_name") or "").lower()
+                        uname = (row.get("telegram_username") or "").lower()
+                        if target_name in name or target_name in uname:
+                            uid = row["telegram_user_id"]
+                            self.supabase.table("aisha_approved_users").update({"is_active": False}).eq("telegram_user_id", uid).execute()
+                            blocked.append((uid, row.get("first_name", f"User {uid}")))
+                    if blocked:
+                        names = ", ".join(f"{n} ({uid})" for uid, n in blocked)
+                        return f"Done. {names} has been blocked and removed from my approved users list."
+                    else:
+                        return f"I couldn't find anyone named '{m.group(2)}' in my approved users list."
+                except Exception as e:
+                    print(f"[Brain] Block user failed: {e}")
+                    return f"Had trouble blocking '{m.group(2)}' — please use /block {m.group(2)} command instead."
+            return None
+
         return None
 
     def think(self, user_message: str, platform: str = "telegram",
@@ -295,6 +377,10 @@ class AishaBrain:
         mood_res = detect_mood(user_message)
         mood     = mood_res.mood
 
+        # Resolve the effective user id — fall back to 0 (owner legacy bucket)
+        # when caller_id is None so that old call-sites stay compatible.
+        uid = caller_id if caller_id is not None else 0
+
         # 2. Load context — only load Ajay's private data when Ajay is talking
         context = self.memory.load_context(user_message) if is_owner else {}
         context["language"]    = language
@@ -305,17 +391,19 @@ class AishaBrain:
         # 3. Build dynamic system prompt
         system_prompt = build_system_prompt(context)
 
-        # 4. Add user message to local history
-        self.history.append({"role": "user", "content": user_message})
+        # 4. Resolve per-user history and append the incoming message
+        history = self._get_user_history(uid, is_owner)
+        history.append({"role": "user", "content": user_message})
 
         # 4b. NLP Intent routing — fire tools from natural language before AI call
         intent_response = self._detect_and_route_intent(user_message)
         if intent_response:
             # Save to history so context stays coherent
-            self.history.append({"role": "user", "content": user_message})
-            self.history.append({"role": "assistant", "content": intent_response})
-            self.memory.save_conversation("user", user_message, platform, language, mood)
-            self.memory.save_conversation("assistant", intent_response, platform, language, mood)
+            history.append({"role": "assistant", "content": intent_response})
+            self.memory.save_conversation("user", user_message, platform, language, mood,
+                                          user_id=caller_id if not is_owner else None)
+            self.memory.save_conversation("assistant", intent_response, platform, language, mood,
+                                          user_id=caller_id if not is_owner else None)
             return intent_response
 
         # 5. Determine preferred provider (e.g. Riya loves Grok)
@@ -330,9 +418,9 @@ class AishaBrain:
         # 6. Generate Response via Router
         try:
             result = self.ai.generate(
-                system_prompt, 
-                user_message, 
-                self.history[:-1], 
+                system_prompt,
+                user_message,
+                history[:-1],
                 image_bytes=image_bytes,
                 preferred_provider=preferred_provider
             )
@@ -351,23 +439,30 @@ class AishaBrain:
             # 7. CAPABILITY GAP DETECTION (The "Jules" Research Loop)
 
             # 7. Update History & Save to Supabase
-            self.history.append({"role": "assistant", "content": response_text})
-            
-            # Persist to DB
-            self.memory.save_conversation("user", user_message, platform, language, mood)
-            self.memory.save_conversation("assistant", response_text, platform, language, mood)
-            self.memory.update_mood(mood, mood_res.score)
+            history.append({"role": "assistant", "content": response_text})
+
+            # Persist to DB — guest turns are tagged with their user_id so they
+            # stay isolated from the owner's conversation log.
+            self.memory.save_conversation("user", user_message, platform, language, mood,
+                                          user_id=caller_id if not is_owner else None)
+            self.memory.save_conversation("assistant", response_text, platform, language, mood,
+                                          user_id=caller_id if not is_owner else None)
+            # Only update Ajay's mood profile when Ajay is talking
+            if is_owner:
+                self.memory.update_mood(mood, mood_res.score)
 
             # 8. Auto-extract long-term memories (every 5th message to reduce cost/latency)
-            self._message_count += 1
-            _memory_triggers = ["my goal", "i want", "i spend", "remind me", "i earn",
-                                 "save", "budget", "dream", "plan", "habit", "afraid", "fear"]
-            _should_extract = (
-                self._message_count % 5 == 0
-                or any(t in user_message.lower() for t in _memory_triggers)
-            )
-            if _should_extract:
-                self._auto_extract_memory(user_message, response_text)
+            # Skip for guest users — we never store their data in Ajay's memory tables.
+            if is_owner:
+                self._message_count += 1
+                _memory_triggers = ["my goal", "i want", "i spend", "remind me", "i earn",
+                                     "save", "budget", "dream", "plan", "habit", "afraid", "fear"]
+                _should_extract = (
+                    self._message_count % 5 == 0
+                    or any(t in user_message.lower() for t in _memory_triggers)
+                )
+                if _should_extract:
+                    self._auto_extract_memory(user_message, response_text)
 
             return response_text
 
@@ -468,10 +563,19 @@ class AishaBrain:
         except Exception as e:
             print(f"[Memory Extraction LLM] Error: {e}")
 
-    def reset_session(self):
-        """Clear in-memory conversation history (for new session)."""
-        self.history = []
-        print("[Aisha] Session reset 💜")
+    def reset_session(self, caller_id: Optional[int] = None):
+        """Clear in-memory conversation history for a specific user (or all users).
+
+        When caller_id is provided, only that user's history is cleared.
+        When called with no argument (legacy), clears the owner/default bucket.
+        """
+        if caller_id is not None:
+            self._histories[caller_id] = []
+            print(f"[Aisha] Session reset for user {caller_id} 💜")
+        else:
+            # Legacy behaviour — clear the default (owner) bucket
+            self._histories[0] = []
+            print("[Aisha] Session reset 💜")
 
 
 # ─── Quick Test ────────────────────────────────────────────────────────────────
