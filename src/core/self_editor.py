@@ -234,47 +234,89 @@ Write ONLY the Python code, nothing else."""
     def run_improvement_session(self, target_file: str = None):
         """
         Aisha's autonomous self-improvement loop.
-        1. Pick a file to audit (or use target_file)
-        2. Find issues
-        3. Generate fixes
-        4. Apply safe (non-breaking) fixes automatically
-        5. Notify Ajay with what was changed
+        1. Pick a file to audit
+        2. Find the best improvement opportunity
+        3. Use Jules+Gemini to write the new code
+        4. Create GitHub PR
+        5. Auto-merge the PR
+        6. Trigger Render redeploy
+        7. Notify Ajay: "I upgraded myself!"
         """
         import random
+        from src.core.self_improvement import aisha_self_improve, merge_github_pr, get_pr_number_from_url, trigger_redeploy
 
         if not target_file:
-            # Pick a random important file to improve
             candidates = [
                 "src/core/aisha_brain.py",
                 "src/agents/youtube_crew.py",
                 "src/core/autonomous_loop.py",
-                "src/core/gmail_engine.py",
+                "src/core/voice_engine.py",
+                "src/core/image_engine.py",
             ]
             target_file = random.choice(candidates)
 
         log.info(f"[SelfEditor] Starting improvement session on: {target_file}")
 
-        # Step 1: Audit
+        # Step 1: Audit the file for improvements
         audit_result = self.audit_file(target_file)
+        log.info(f"[SelfEditor] Audit complete for {target_file}")
 
-        # Step 2: Ask AI which fixes are safe to auto-apply
-        plan_prompt = f"""You audited {target_file} and found these issues:
-{audit_result}
+        # Step 2: Ask AI to identify the BEST single improvement to make
+        improvement_prompt = f"""Based on this code audit of {target_file}:
 
-Which of these are SAFE to fix automatically (no logic changes, just bug fixes)?
-List only safe fixes. For each: provide the EXACT old code and new code as a patch.
+{audit_result[:1500]}
 
-Format:
-FIX 1:
-OLD: <exact lines to replace>
-NEW: <replacement lines>
-REASON: <one sentence>"""
+Choose the SINGLE BEST improvement that:
+1. Adds a genuinely useful new capability
+2. Can be implemented as a new standalone Python module
+3. Doesn't risk breaking existing functionality
 
-        plan = self.ai.generate("You are a careful Python developer.", plan_prompt)
-        fixes_text = plan.text
+Respond with EXACTLY:
+SKILL_NAME: <snake_case_name_under_30_chars>
+DESCRIPTION: <one sentence what this new module does>
+TASK: <detailed description of what to build — 2-3 sentences>
+"""
+        plan = self.ai.generate("You are a Python architect.", improvement_prompt)
+        plan_text = plan.text
 
-        summary = f"File: {target_file}\n\nAudit findings:\n{audit_result[:500]}\n\nFixes applied:\n{fixes_text[:500]}"
-        self.notify_ajay(summary)
+        # Parse the plan
+        skill_name = "auto_improvement"
+        task_description = f"Add a new utility module to enhance {target_file}"
 
-        log.info(f"[SelfEditor] Session complete. Ajay notified.")
-        return summary
+        for line in plan_text.split("\n"):
+            if line.startswith("SKILL_NAME:"):
+                skill_name = line.split(":", 1)[1].strip()[:30]
+            elif line.startswith("TASK:"):
+                task_description = line.split(":", 1)[1].strip()
+
+        log.info(f"[SelfEditor] Improvement planned: {skill_name} — {task_description[:60]}")
+
+        # Step 3: Create PR via Jules+Gemini
+        pr_url = aisha_self_improve(task_description, skill_name)
+
+        if not pr_url:
+            log.error("[SelfEditor] aisha_self_improve() failed — no PR created")
+            self.notify_ajay(f"I tried to improve myself but the code generation failed. I was working on: {task_description}")
+            return None
+
+        log.info(f"[SelfEditor] PR created: {pr_url}")
+
+        # Step 4: Auto-merge the PR immediately
+        pr_number = get_pr_number_from_url(pr_url)
+        merged = merge_github_pr(pr_number) if pr_number else False
+
+        # Step 5: Trigger Render redeploy
+        redeployed = trigger_redeploy() if merged else False
+
+        # Step 6: Notify Ajay with full details
+        status = "deployed and live" if redeployed else ("merged, redeploying soon" if merged else "created (needs review)")
+        self.notify_ajay(
+            f"I upgraded myself!\n\n"
+            f"What I improved: {skill_name}\n"
+            f"Description: {task_description}\n"
+            f"Status: PR {status}\n"
+            f"PR: {pr_url}"
+        )
+
+        log.info(f"[SelfEditor] Self-improvement complete: {skill_name}")
+        return pr_url

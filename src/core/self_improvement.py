@@ -230,7 +230,8 @@ def use_jules_to_write_skill(task_description: str, file_path: str) -> str | Non
     try:
         # Jules uses Gemini REST (avoid SDK DNS issues on Render)
         import requests as _req
-        _gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key={jules_key}"
+        gemini_key = os.getenv("GEMINI_API_KEY") or jules_key  # Jules key fallback
+        _gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
 
         prompt = f"""You are Jules, an expert Python coding agent for Aisha AI.
 
@@ -261,6 +262,16 @@ Return ONLY the Python code. No markdown, no explanation, no backticks."""
             code = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
 
         log.info(f"✅ Jules generated {len(code)} chars of code for: {task_description[:50]}")
+
+        # Validate syntax before returning
+        import ast as _ast
+        try:
+            _ast.parse(code)
+            log.info(f"Syntax validation passed for {file_path}")
+        except SyntaxError as e:
+            log.error(f"Generated code has syntax error: {e}")
+            return None
+
         return code
 
     except Exception as e:
