@@ -38,6 +38,10 @@ VOICE_MODE_ENABLED = True   # Start with voice ON — Aisha speaks by default!
 # ─── Pending shell commands (for confirmation) ────────────────────────────────
 _pending_shell: dict = {}  # message_id → command string
 
+# ─── User Approval System ─────────────────────────────────────────────────────
+_approved_users: set = set()    # user_ids Ajay has approved this session
+_pending_approvals: dict = {}   # user_id → {user, text, message}
+
 # ─── Configuration ─────────────────────────────────────────────────────────────
 
 BOT_TOKEN      = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -67,14 +71,47 @@ db    = create_client(SUPABASE_URL, SUPABASE_KEY)
 # ─── Security: Only Ajay can use Aisha ────────────────────────────────────────
 
 def is_ajay(message) -> bool:
-    """Only allow Ajay (by Telegram user ID) to access Aisha."""
+    """Allow Ajay or any user Ajay has approved this session."""
     if AUTHORIZED_ID == 0:
         return True  # Not configured — allow all (dev mode)
-    return message.from_user.id == AUTHORIZED_ID
+    uid = getattr(message.from_user, "id", None) or getattr(message, "id", None)
+    return uid == AUTHORIZED_ID or uid in _approved_users
 
 
 def unauthorized_response(message):
-    bot.reply_to(message, "🔒 Aisha is a private assistant. She belongs to Ajay only 💜")
+    """Forward unknown user to Ajay for approve/deny decision."""
+    user = message.from_user
+    user_id = user.id
+    name = user.first_name or "Unknown"
+    username = f"@{user.username}" if user.username else "no username"
+    text = getattr(message, "text", None) or "[media message]"
+
+    # Tell the user to wait
+    bot.reply_to(message, "🔒 Please wait, checking with the owner...")
+
+    # Store their pending message
+    _pending_approvals[user_id] = {"user": user, "text": text, "message": message}
+
+    # Alert Ajay with Approve / Deny buttons
+    keyboard = types.InlineKeyboardMarkup()
+    keyboard.add(
+        types.InlineKeyboardButton("✅ Approve", callback_data=f"approve_user_{user_id}"),
+        types.InlineKeyboardButton("❌ Deny",    callback_data=f"deny_user_{user_id}")
+    )
+    try:
+        bot.send_message(
+            AUTHORIZED_ID,
+            f"🔔 *New User Wants to Chat*\n\n"
+            f"👤 Name: {name}\n"
+            f"🆔 ID: `{user_id}`\n"
+            f"🔗 Username: {username}\n\n"
+            f"💬 Their message:\n_{text[:500]}_\n\n"
+            f"Allow them to talk to me?",
+            parse_mode="Markdown",
+            reply_markup=keyboard,
+        )
+    except Exception as e:
+        log.error(f"Could not alert Ajay about new user {user_id}: {e}")
 
 
 # ─── Keyboards ─────────────────────────────────────────────────────────────────
@@ -175,6 +212,7 @@ def cmd_help(message):
         "/inbox — Check business email\n"
         "/aistatus — See active AI brains\n\n"
         "🧠 *Aisha Self-Improvement:*\n"
+        "/upgrade — Full autonomous upgrade: audit → code → PR → deploy 🚀\n"
         "/selfaudit — Aisha audits her own code\n"
         "/addtool [description] — Aisha builds a new tool\n"
         "/skills — See all skills Aisha has learned\n\n"
@@ -201,6 +239,50 @@ def cmd_selfaudit(message):
     subprocess.Popen(["python", "-c",
         f"import sys; sys.path.insert(0,'{project_root}'); from src.core.self_editor import SelfEditor; e=SelfEditor(); e.run_improvement_session()"
     ], cwd=project_root)
+
+
+@bot.message_handler(commands=["upgrade"])
+def cmd_upgrade(message):
+    """
+    Trigger Aisha's full autonomous self-improvement pipeline:
+    Audit → Plan → Generate code → GitHub PR → Auto-merge → Render redeploy → Notify Ajay.
+    Optional: /upgrade <target_file> to audit a specific file.
+    """
+    if not is_ajay(message): return unauthorized_response(message)
+
+    args = message.text.replace("/upgrade", "").strip()
+    target_file = args if args else None
+
+    bot.send_message(
+        message.chat.id,
+        "🧠 Starting my full self-upgrade cycle, Ajay!\n\n"
+        "Steps:\n"
+        "1. Audit code for improvement opportunities\n"
+        "2. Plan the best new skill\n"
+        "3. Generate code with Gemini\n"
+        "4. Create GitHub PR\n"
+        "5. Auto-merge + Render redeploy\n"
+        "6. I'll message you when I'm live! 💜\n\n"
+        "This takes 2-5 minutes — I'll report back!"
+    )
+
+    def _run_upgrade():
+        try:
+            from src.core.self_editor import SelfEditor
+            editor = SelfEditor()
+            pr_url = editor.run_improvement_session(target_file=target_file)
+            if not pr_url:
+                bot.send_message(
+                    message.chat.id,
+                    "I tried to upgrade myself but the code generation failed this time. "
+                    "Check the logs for details. 💜"
+                )
+        except Exception as exc:
+            log.error(f"[/upgrade] Upgrade session crashed: {exc}")
+            bot.send_message(message.chat.id, f"Upgrade crashed: {exc}")
+
+    import threading
+    threading.Thread(target=_run_upgrade, daemon=True).start()
 
 
 @bot.message_handler(commands=["skills"])
@@ -600,14 +682,30 @@ def cmd_read(message):
 
 @bot.message_handler(commands=["gitpull"])
 def cmd_gitpull(message):
-    """Pull latest code from GitHub."""
+    """Pull latest code from GitHub (or trigger Render redeploy if git not available)."""
     if not is_ajay(message): return unauthorized_response(message)
     bot.send_message(message.chat.id, "🔄 Pulling latest code from GitHub...")
     try:
-        import subprocess
+        import subprocess, shutil
         project_root = str(Path(__file__).parent.parent.parent)
+
+        git_path = shutil.which("git") or "/usr/bin/git"
+        if not shutil.which("git") and not Path(git_path).exists():
+            # On Render, git may not be in PATH — trigger redeploy instead
+            import requests
+            deploy_hook = os.getenv("RENDER_DEPLOY_HOOK_URL") or os.getenv("RAILWAY_WEBHOOK_URL")
+            if deploy_hook:
+                r = requests.post(deploy_hook, timeout=15)
+                bot.send_message(message.chat.id,
+                    f"⚡ Git not found — triggered Render redeploy instead.\n"
+                    f"Status: {r.status_code}")
+            else:
+                bot.send_message(message.chat.id,
+                    "❌ Git not available on this host and no deploy hook configured.")
+            return
+
         result = subprocess.run(
-            ["git", "pull", "origin", "main"],
+            [git_path, "pull", "origin", "main"],
             cwd=project_root, capture_output=True, text=True, timeout=60
         )
         output = (result.stdout + result.stderr).strip()
@@ -930,6 +1028,54 @@ def handle_mood_callback(call):
     
     bot.answer_callback_query(call.id)
     bot.send_message(call.message.chat.id, response)
+
+
+# ─── User Approval Callbacks ───────────────────────────────────────────────────
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("approve_user_") or c.data.startswith("deny_user_"))
+def handle_user_approval(call):
+    if not is_ajay(call):
+        bot.answer_callback_query(call.id, "Unauthorized", show_alert=True)
+        return
+
+    parts   = call.data.split("_")
+    user_id = int(parts[-1])
+    pending = _pending_approvals.get(user_id)
+
+    # Remove inline buttons from Ajay's notification
+    try:
+        bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
+    except Exception:
+        pass
+
+    if call.data.startswith("approve_user_"):
+        _approved_users.add(user_id)
+        _pending_approvals.pop(user_id, None)
+        name = pending["user"].first_name if pending else f"User {user_id}"
+
+        bot.answer_callback_query(call.id, "✅ Approved!")
+        bot.send_message(AUTHORIZED_ID, f"✅ {name} ({user_id}) is now approved to chat with me.")
+        bot.send_message(user_id, "✅ You've been approved by the owner! You can now chat with me 💜")
+
+        # Process their waiting message through Aisha
+        if pending:
+            try:
+                bot.send_chat_action(pending["message"].chat.id, "typing")
+                response = aisha.think(pending["text"], platform="telegram")
+                bot.send_message(pending["message"].chat.id, response)
+            except Exception as e:
+                log.error(f"Failed to process pending message for approved user {user_id}: {e}")
+
+    else:  # deny
+        _pending_approvals.pop(user_id, None)
+        name = pending["user"].first_name if pending else f"User {user_id}"
+
+        bot.answer_callback_query(call.id, "❌ Denied.")
+        bot.send_message(AUTHORIZED_ID, f"❌ {name} ({user_id}) has been denied access.")
+        try:
+            bot.send_message(user_id, "🔒 The owner has declined your access request.")
+        except Exception:
+            pass
 
 
 # ─── Quick Action Buttons ──────────────────────────────────────────────────────
@@ -1358,6 +1504,8 @@ if __name__ == "__main__":
         telebot.types.BotCommand("/read",     "Read any file (/read src/core/ai_router.py)"),
         telebot.types.BotCommand("/gitpull",  "Pull latest code from GitHub"),
         telebot.types.BotCommand("/restart",  "Restart Aisha bot process"),
+        telebot.types.BotCommand("/upgrade",  "Full self-upgrade: audit → PR → deploy"),
+        telebot.types.BotCommand("/selfaudit","Audit code and propose improvements"),
     ])
     
     # ── Health + Trigger HTTP server (required by Render + pg_cron) ──────────
@@ -1454,14 +1602,20 @@ def handle_deploy_skill(call):
                 break
     
     bot.answer_callback_query(call.id, text=f"Deploying {skill_name} now! 🚀")
-    
-    from src.core.self_improvement import merge_github_pr, get_pr_number_from_url
+
+    from src.core.self_improvement import merge_github_pr, get_pr_number_from_url, trigger_redeploy
     pr_number = get_pr_number_from_url(pr_url) if pr_url else 0
-    
+
     if pr_number and merge_github_pr(pr_number):
+        # Trigger Render redeploy after successful merge
+        redeployed = trigger_redeploy()
+        status_line = "Deployed and live! 🚀" if redeployed else "Merged — Render will redeploy shortly."
         bot.edit_message_text(
-            f"✅ Successfully deployed: *{skill_name}*!\n"
-            "The PR has been merged. My brain is now more powerful! 💜",
+            f"✅ I upgraded myself!\n\n"
+            f"*Skill:* {skill_name}\n"
+            f"*Status:* {status_line}\n"
+            f"*PR:* {pr_url or 'N/A'}\n\n"
+            "My brain is now more powerful! 💜",
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             parse_mode="Markdown"
