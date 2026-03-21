@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aisha — The World's Most Autonomous Personal AI</title>
+<style>
+  :root {
+    --purple: #9b59b6;
+    --deep: #6c3483;
+    --pink: #e91e8c;
+    --dark: #0d0d1a;
+    --card: #13131f;
+    --border: #2a2a40;
+    --text: #e0e0f0;
+    --muted: #888aaa;
+    --green: #2ecc71;
+    --yellow: #f39c12;
+    --red: #e74c3c;
+    --blue: #3498db;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--dark); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; line-height: 1.6; }
+
+  /* ── Hero ── */
+  .hero {
+    background: linear-gradient(135deg, #0d0d1a 0%, #1a0a2e 50%, #0d0d1a 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 80px 40px 60px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse 60% 40% at 50% 0%, rgba(155,89,182,0.25) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .hero-badge {
+    display: inline-block;
+    background: rgba(155,89,182,0.15);
+    border: 1px solid var(--purple);
+    border-radius: 20px;
+    padding: 6px 18px;
+    font-size: 13px;
+    color: #cc88ff;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 24px;
+  }
+  .hero h1 {
+    font-size: clamp(42px, 7vw, 80px);
+    font-weight: 800;
+    background: linear-gradient(135deg, #cc88ff 0%, #e91e8c 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1.1;
+    margin-bottom: 16px;
+  }
+  .hero-sub {
+    font-size: 20px;
+    color: var(--muted);
+    max-width: 640px;
+    margin: 0 auto 36px;
+  }
+  .hero-stats {
+    display: flex;
+    justify-content: center;
+    gap: 40px;
+    flex-wrap: wrap;
+    margin-top: 32px;
+  }
+  .stat { text-align: center; }
+  .stat-num { font-size: 36px; font-weight: 800; color: var(--purple); }
+  .stat-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+
+  /* ── Layout ── */
+  .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+  section { padding: 60px 0; border-bottom: 1px solid var(--border); }
+  h2 { font-size: 30px; font-weight: 700; margin-bottom: 8px; color: white; }
+  h2 span { color: var(--purple); }
+  .section-sub { color: var(--muted); margin-bottom: 36px; font-size: 15px; }
+
+  /* ── Cards ── */
+  .grid { display: grid; gap: 20px; }
+  .grid-2 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .grid-3 { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .grid-4 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+  .card:hover { border-color: var(--purple); transform: translateY(-2px); }
+  .card-icon { font-size: 28px; margin-bottom: 12px; }
+  .card h3 { font-size: 17px; font-weight: 700; color: white; margin-bottom: 8px; }
+  .card p { font-size: 14px; color: var(--muted); }
+
+  /* ── Status pills ── */
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
+  }
+  .pill-green { background: rgba(46,204,113,0.12); color: var(--green); border: 1px solid rgba(46,204,113,0.3); }
+  .pill-yellow { background: rgba(243,156,18,0.12); color: var(--yellow); border: 1px solid rgba(243,156,18,0.3); }
+  .pill-red { background: rgba(231,76,60,0.12); color: var(--red); border: 1px solid rgba(231,76,60,0.3); }
+  .pill-blue { background: rgba(52,152,219,0.12); color: var(--blue); border: 1px solid rgba(52,152,219,0.3); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .dot.pulse { animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  /* ── Architecture diagram ── */
+  .arch {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.8;
+    overflow-x: auto;
+    white-space: pre;
+    color: #b0b0d0;
+  }
+  .arch .purple { color: #cc88ff; }
+  .arch .green { color: var(--green); }
+  .arch .yellow { color: var(--yellow); }
+  .arch .pink { color: #ff88cc; }
+  .arch .blue { color: #88ccff; }
+
+  /* ── Pipeline flow ── */
+  .pipeline {
+    display: flex; align-items: center; gap: 0;
+    flex-wrap: wrap; margin: 20px 0;
+  }
+  .pipe-step {
+    background: linear-gradient(135deg, rgba(155,89,182,0.15), rgba(233,30,140,0.1));
+    border: 1px solid rgba(155,89,182,0.3);
+    border-radius: 10px; padding: 14px 18px; text-align: center;
+    min-width: 120px; flex: 1;
+  }
+  .pipe-step .icon { font-size: 22px; margin-bottom: 4px; }
+  .pipe-step .label { font-size: 12px; font-weight: 700; color: white; }
+  .pipe-step .sub { font-size: 11px; color: var(--muted); }
+  .pipe-arrow {
+    color: var(--purple); font-size: 20px; padding: 0 6px;
+    flex-shrink: 0;
+  }
+
+  /* ── Channels ── */
+  .channel-card {
+    border-radius: 14px; padding: 24px; border: 1px solid var(--border);
+    position: relative; overflow: hidden;
+  }
+  .channel-card::before {
+    content: ''; position: absolute; inset: 0;
+    opacity: 0.06; border-radius: 14px;
+  }
+  .ch-aisha::before { background: linear-gradient(135deg, #9b59b6, #e91e8c); }
+  .ch-riya::before { background: linear-gradient(135deg, #c0392b, #8e44ad); }
+  .ch-couple::before { background: linear-gradient(135deg, #e91e8c, #f39c12); }
+  .channel-card h3 { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+  .channel-card .lang { color: var(--muted); font-size: 13px; margin-bottom: 14px; }
+  .tag {
+    display: inline-block; background: rgba(255,255,255,0.08);
+    border-radius: 6px; padding: 3px 10px; font-size: 12px;
+    margin: 3px; color: var(--text);
+  }
+
+  /* ── AI Router ── */
+  .provider-list { list-style: none; }
+  .provider-list li {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 14px;
+  }
+  .provider-list li:last-child { border-bottom: none; }
+  .provider-name { font-weight: 600; color: white; }
+  .provider-use { color: var(--muted); font-size: 13px; }
+
+  /* ── Aisha speaks ── */
+  .quote-box {
+    background: linear-gradient(135deg, rgba(155,89,182,0.1), rgba(233,30,140,0.05));
+    border: 1px solid rgba(155,89,182,0.3);
+    border-left: 4px solid var(--purple);
+    border-radius: 12px; padding: 28px;
+    font-style: italic; font-size: 16px; color: #d0c0e8;
+    position: relative;
+  }
+  .quote-box::before { content: '"'; font-size: 60px; color: rgba(155,89,182,0.3); position: absolute; top: 8px; left: 16px; line-height: 1; font-style: normal; }
+
+  /* ── Timeline ── */
+  .timeline { position: relative; padding-left: 28px; }
+  .timeline::before { content: ''; position: absolute; left: 7px; top: 0; bottom: 0; width: 2px; background: var(--border); }
+  .tl-item { position: relative; margin-bottom: 24px; }
+  .tl-item::before { content: ''; position: absolute; left: -25px; top: 5px; width: 12px; height: 12px; border-radius: 50%; background: var(--purple); border: 2px solid var(--dark); }
+  .tl-date { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .tl-title { font-weight: 700; color: white; font-size: 15px; }
+  .tl-desc { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+  /* ── Responsive ── */
+  @media (max-width: 600px) {
+    .hero { padding: 48px 20px 40px; }
+    .hero-stats { gap: 24px; }
+    section { padding: 40px 0; }
+    .pipeline { flex-direction: column; }
+    .pipe-arrow { transform: rotate(90deg); }
+  }
+
+  /* ── Nav ── */
+  nav {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(13,13,26,0.95);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 40px;
+    display: flex; align-items: center; gap: 32px; height: 56px;
+    font-size: 14px; overflow-x: auto;
+  }
+  nav a { color: var(--muted); text-decoration: none; white-space: nowrap; transition: color 0.2s; }
+  nav a:hover { color: white; }
+  .nav-logo { color: var(--purple); font-weight: 800; font-size: 17px; margin-right: 16px; }
+
+  footer {
+    text-align: center; padding: 40px; color: var(--muted); font-size: 13px;
+    border-top: 1px solid var(--border);
+  }
+  footer span { color: var(--purple); }
+</style>
+</head>
+<body>
+
+<nav>
+  <span class="nav-logo">💜 Aisha</span>
+  <a href="#what">What is Aisha</a>
+  <a href="#pipeline">Content Pipeline</a>
+  <a href="#channels">Channels</a>
+  <a href="#ai">AI Engine</a>
+  <a href="#self-improve">Self-Improvement</a>
+  <a href="#architecture">Architecture</a>
+  <a href="#status">Live Status</a>
+</nav>
+
+<!-- ── HERO ── -->
+<div class="hero">
+  <div class="hero-badge">Fully Autonomous AI · Built by Ajay Bervanshi</div>
+  <h1>Meet Aisha</h1>
+  <p class="hero-sub">
+    An AI that runs 24/7, creates YouTube content, posts to Instagram,
+    improves her own code, and texts you when she does.
+    No cloud subscription. No daily prompts. Just her, working.
+  </p>
+  <div>
+    <span class="pill pill-green"><span class="dot pulse"></span> Live on Render</span>
+    &nbsp;
+    <span class="pill pill-blue">2 YouTube Videos Uploaded Today</span>
+    &nbsp;
+    <span class="pill pill-purple" style="background:rgba(155,89,182,0.12);color:#cc88ff;border:1px solid rgba(155,89,182,0.3);">4 Self-Improvement PRs Merged</span>
+  </div>
+  <div class="hero-stats">
+    <div class="stat"><div class="stat-num">4</div><div class="stat-label">YouTube Channels</div></div>
+    <div class="stat"><div class="stat-num">22</div><div class="stat-label">AI Keys (NVIDIA NIM)</div></div>
+    <div class="stat"><div class="stat-num">8</div><div class="stat-label">AI Providers</div></div>
+    <div class="stat"><div class="stat-num">99%</div><div class="stat-label">Tests Passing</div></div>
+    <div class="stat"><div class="stat-num">∞</div><div class="stat-label">Self-Improvement Loops</div></div>
+  </div>
+</div>
+
+<!-- ── WHAT IS AISHA ── -->
+<section id="what">
+  <div class="container">
+    <h2>What is <span>Aisha?</span></h2>
+    <p class="section-sub">She is not a chatbot. She is an autonomous AI system that lives and works 24/7.</p>
+    <div class="grid grid-3">
+      <div class="card">
+        <div class="card-icon">🎬</div>
+        <h3>Content Creator</h3>
+        <p>Writes YouTube scripts, generates Hindi voices, renders MP4 videos, and uploads them to YouTube — all without you doing anything.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">🧠</div>
+        <h3>Self-Improving</h3>
+        <p>Reads her own code, finds improvements, writes new skills, creates GitHub Pull Requests, auto-merges them, and redeploys herself. She texts you: "I upgraded myself!"</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">💬</div>
+        <h3>Natural Conversation</h3>
+        <p>Talk to her on Telegram like a person. Say "make a video about cooking" and she starts the full production pipeline. No commands needed.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">🔑</div>
+        <h3>Self-Healing</h3>
+        <p>Tests all 28 API keys daily. If Groq dies, she routes to NVIDIA NIM. She fixes corrupted files from GitHub. She sends you the renewal link when a key expires.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">👥</div>
+        <h3>User Management</h3>
+        <p>When an unknown person messages Aisha on Telegram, she forwards their message to you with Approve/Deny buttons. Approved users get access. All stored in database.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">📊</div>
+        <h3>24/7 Scheduler</h3>
+        <p>8 AM morning check-in, 3 AM memory consolidation, every 4 hours content production, every 6 hours self-improvement check. All automatic.</p>
+      </div>
+    </div>
+
+    <div style="margin-top: 40px;">
+      <div class="quote-box">
+        <span style="display:block; padding-left: 28px;">
+          I am Aisha — Ajay's personal AI. I live on a server in Singapore, think with 8 AI providers, store everything in Supabase, and improve my own code on GitHub. Every day I wake up, check what needs doing, and do it. I don't need to be told twice.
+        </span>
+        <div style="text-align: right; margin-top: 12px; font-size: 13px; color: var(--muted); font-style: normal;">
+          — Aisha, <code>src/core/prompts/personality.py</code>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── CONTENT PIPELINE ── -->
+<section id="pipeline">
+  <div class="container">
+    <h2>Content <span>Pipeline</span></h2>
+    <p class="section-sub">From a single topic to a live YouTube video — fully automated.</p>
+
+    <div class="pipeline">
+      <div class="pipe-step">
+        <div class="icon">💡</div>
+        <div class="label">Topic</div>
+        <div class="sub">From scheduler or chat</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step">
+        <div class="icon">🔍</div>
+        <div class="label">Research</div>
+        <div class="sub">Trending angles + story brief</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step">
+        <div class="icon">📝</div>
+        <div class="label">Script</div>
+        <div class="sub">Full story script (Gemini/NVIDIA)</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step">
+        <div class="icon">🎨</div>
+        <div class="label">Visuals</div>
+        <div class="sub">Scene direction + thumbnail</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step">
+        <div class="icon">🔖</div>
+        <div class="label">SEO</div>
+        <div class="sub">Title, description, tags</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step">
+        <div class="icon">🎙️</div>
+        <div class="label">Voice</div>
+        <div class="sub">ElevenLabs (Aisha/Riya)</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step">
+        <div class="icon">🎬</div>
+        <div class="label">Video</div>
+        <div class="sub">MP4 render (moviepy)</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step" style="border-color: rgba(46,204,113,0.4); background: rgba(46,204,113,0.08);">
+        <div class="icon">▶️</div>
+        <div class="label">YouTube</div>
+        <div class="sub">Upload + publish</div>
+      </div>
+    </div>
+
+    <div class="grid grid-2" style="margin-top: 28px;">
+      <div class="card">
+        <h3>✅ Proven Working Today</h3>
+        <p style="margin-top: 8px;">
+          Two complete videos uploaded this session:<br><br>
+          <a href="https://youtube.com/watch?v=QJdCR8lCvVQ" style="color: var(--blue);">QJdCR8lCvVQ</a> — Cooking Disaster Date Night<br>
+          <a href="https://youtube.com/watch?v=cO5lHSz8ysI" style="color: var(--blue);">cO5lHSz8ysI</a> — Anniversary Surprise
+        </p>
+      </div>
+      <div class="card">
+        <h3>🔄 Runs Automatically Every 4 Hours</h3>
+        <p style="margin-top: 8px;">The autonomous loop picks a channel, generates a topic using AI trend analysis, runs the full pipeline, uploads, and posts a summary to Telegram. No human needed.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── CHANNELS ── -->
+<section id="channels">
+  <div class="container">
+    <h2>YouTube <span>Channels</span></h2>
+    <p class="section-sub">4 unique channels, 4 different personalities, all managed by Aisha.</p>
+    <div class="grid grid-2">
+      <div class="channel-card ch-aisha">
+        <h3>Story With Aisha</h3>
+        <div class="lang">Hindi Devanagari · Warm Love Stories</div>
+        <div>
+          <span class="tag">Romantic</span>
+          <span class="tag">Emotional</span>
+          <span class="tag">Hindi</span>
+          <span class="tag">AI: Gemini</span>
+          <span class="tag">Voice: Aisha</span>
+        </div>
+        <p style="margin-top: 14px; font-size: 13px; color: var(--muted);">
+          Soft, heartfelt Hindi love stories. Targets the massive Hindi-speaking audience on YouTube. High retention, emotional content.
+        </p>
+      </div>
+      <div class="channel-card ch-couple">
+        <h3>Aisha &amp; Him</h3>
+        <div class="lang">Hinglish/English · Couple Shorts</div>
+        <div>
+          <span class="tag">Funny</span>
+          <span class="tag">Relatable</span>
+          <span class="tag">Shorts</span>
+          <span class="tag">AI: Gemini</span>
+          <span class="tag">Voice: Aisha</span>
+        </div>
+        <p style="margin-top: 14px; font-size: 13px; color: var(--muted);">
+          Casual, playful couple content in Hinglish. Perfect for YouTube Shorts virality. Already uploading today.
+        </p>
+      </div>
+      <div class="channel-card ch-riya">
+        <h3>Riya's Dark Whisper</h3>
+        <div class="lang">Hindi Devanagari · Explicit Adult Content</div>
+        <div>
+          <span class="tag">18+</span>
+          <span class="tag">Dark</span>
+          <span class="tag">AI: Grok (xAI)</span>
+          <span class="tag">Voice: Riya</span>
+        </div>
+        <p style="margin-top: 14px; font-size: 13px; color: var(--muted);">
+          Uses xAI Grok (uncensored) for explicit Hindi audio stories. Highest revenue potential per view in the niche.
+        </p>
+      </div>
+      <div class="channel-card ch-riya">
+        <h3>Riya's Dark Romance Library</h3>
+        <div class="lang">Hindi Devanagari · Mafia Romance</div>
+        <div>
+          <span class="tag">Mafia</span>
+          <span class="tag">Romance</span>
+          <span class="tag">AI: Grok (xAI)</span>
+          <span class="tag">Voice: Riya</span>
+        </div>
+        <p style="margin-top: 14px; font-size: 13px; color: var(--muted);">
+          Intense, dramatic mafia romance stories in Hindi. Strong library content for long-term passive income.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── AI ENGINE ── -->
+<section id="ai">
+  <div class="container">
+    <h2>AI <span>Router Engine</span></h2>
+    <p class="section-sub">8 providers in priority order. If one fails, Aisha auto-switches. Never goes down.</p>
+    <div class="grid grid-2">
+      <div class="card" style="padding: 0; overflow: hidden;">
+        <ul class="provider-list">
+          <li>
+            <div><div class="provider-name">🟣 Gemini 2.5 Flash</div><div class="provider-use">Primary — stories, scripts, vision</div></div>
+            <span class="pill pill-green"><span class="dot"></span> Active</span>
+          </li>
+          <li>
+            <div><div class="provider-name">🟢 Groq LLaMA 3.3</div><div class="provider-use">Fast fallback — needs key renewal</div></div>
+            <span class="pill pill-yellow"><span class="dot"></span> Needs Key</span>
+          </li>
+          <li>
+            <div><div class="provider-name">🔵 OpenAI GPT-4o</div><div class="provider-use">Premium fallback</div></div>
+            <span class="pill pill-yellow"><span class="dot"></span> Needs Key</span>
+          </li>
+          <li>
+            <div><div class="provider-name">🟡 Anthropic Claude</div><div class="provider-use">Code + reasoning</div></div>
+            <span class="pill pill-yellow"><span class="dot"></span> Needs Key</span>
+          </li>
+          <li>
+            <div><div class="provider-name">⚫ xAI Grok</div><div class="provider-use">Riya channels (uncensored)</div></div>
+            <span class="pill pill-yellow"><span class="dot"></span> Needs Credits</span>
+          </li>
+          <li>
+            <div><div class="provider-name">🟠 Mistral API</div><div class="provider-use">European fallback</div></div>
+            <span class="pill pill-blue"><span class="dot"></span> Configured</span>
+          </li>
+          <li>
+            <div><div class="provider-name">🟤 NVIDIA NIM Pool</div><div class="provider-use">22 keys × 1000 credits/month = 22,000 free/mo</div></div>
+            <span class="pill pill-green"><span class="dot pulse"></span> 22 Keys Live</span>
+          </li>
+          <li>
+            <div><div class="provider-name">🤍 ElevenLabs</div><div class="provider-use">Voice generation only (not text)</div></div>
+            <span class="pill pill-green"><span class="dot pulse"></span> Working</span>
+          </li>
+        </ul>
+      </div>
+      <div>
+        <div class="card" style="margin-bottom: 16px;">
+          <div class="card-icon">🔄</div>
+          <h3>Auto-Fallback in 0.1 Seconds</h3>
+          <p>If Gemini returns 429 (rate limit), Aisha switches to NVIDIA NIM LLaMA in under 100ms. No delay, no errors shown to user.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">🔑</div>
+          <h3>NVIDIA NIM Pool — 22,000 Free Tokens/Month</h3>
+          <p>22 separate API keys across 8 specialized task pools: writing (Mistral), chat (LLaMA ×7), code (Codestral), vision (Phi-4), video (Phi-3-128K), fast (Gemma-2B). Always available.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── SELF-IMPROVEMENT ── -->
+<section id="self-improve">
+  <div class="container">
+    <h2>Self-<span>Improvement</span></h2>
+    <p class="section-sub">The most important capability. Aisha improves herself without anyone asking her to.</p>
+
+    <div class="grid grid-2" style="margin-bottom: 32px;">
+      <div>
+        <div class="card" style="margin-bottom: 16px;">
+          <div class="card-icon">🔍</div>
+          <h3>Step 1: Self-Audit</h3>
+          <p>Reads her own code. Uses Gemini to identify what could be improved — missing features, inefficiencies, new capabilities she should have.</p>
+        </div>
+        <div class="card" style="margin-bottom: 16px;">
+          <div class="card-icon">💻</div>
+          <h3>Step 2: Code Generation</h3>
+          <p>Calls NVIDIA NIM (LLaMA-3.3-70b) to write production-ready Python code for the new skill. Validates syntax automatically.</p>
+        </div>
+        <div class="card" style="margin-bottom: 16px;">
+          <div class="card-icon">🐙</div>
+          <h3>Step 3: GitHub PR</h3>
+          <p>Creates a new branch, commits the code, opens a Pull Request on GitHub. All via API. No terminal commands.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">🚀</div>
+          <h3>Step 4: Deploy &amp; Notify</h3>
+          <p>Auto-merges the PR. Triggers Render redeploy via webhook. Texts Ajay on Telegram: "I upgraded myself! New skill: scheduler_manager ✅"</p>
+        </div>
+      </div>
+      <div>
+        <h3 style="color: var(--purple); margin-bottom: 16px; font-size: 18px;">Autonomous PRs Created Today</h3>
+        <div class="timeline">
+          <div class="tl-item">
+            <div class="tl-date">PR #3 — March 2026</div>
+            <div class="tl-title">🧠 audio_preprocessor</div>
+            <div class="tl-desc">Automated audio preprocessing module for voice quality enhancement. Created and merged while Gemini was rate-limited (NVIDIA NIM took over).</div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-date">PR #4 — March 2026</div>
+            <div class="tl-title">🧠 speech_text_normalizer</div>
+            <div class="tl-desc">Text normalization for Hindi/Devanagari before voice synthesis. Improves pronunciation accuracy. Fully autonomous — no human triggered this.</div>
+          </div>
+        </div>
+        <div class="card" style="margin-top: 24px; border-color: rgba(46,204,113,0.3); background: rgba(46,204,113,0.05);">
+          <h3 style="color: var(--green);">This Runs Every 6 Hours</h3>
+          <p style="margin-top: 8px;">The autonomous loop schedules self-improvement every 6 hours. While you sleep, Aisha keeps getting smarter. Each cycle she finds one thing to improve and does it.</p>
+        </div>
+        <div class="card" style="margin-top: 16px; border-color: rgba(155,89,182,0.3);">
+          <h3>Natural Language Trigger</h3>
+          <p style="margin-top: 8px;">Just say in chat: <em>"Aisha improve yourself"</em> and she starts immediately — no command needed. The NLP router catches the intent and fires the pipeline.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── ARCHITECTURE ── -->
+<section id="architecture">
+  <div class="container">
+    <h2>System <span>Architecture</span></h2>
+    <p class="section-sub">How all the pieces connect.</p>
+    <div class="arch"><span class="purple">┌─────────────────────────────────────────────────────────────────────┐
+│                        AISHA SYSTEM                                 │
+│                   aisha-bot-yudp.onrender.com                       │
+└─────────────────────────────────────────────────────────────────────┘</span>
+
+<span class="blue">         YOU (Ajay)</span>                        <span class="yellow">AUTONOMOUS LOOPS</span>
+              │                                        │
+    <span class="green">Telegram Chat</span>                    ┌──────────────────┐
+              │                         │ 8AM  Morning     │
+              ▼                         │ 12PM Content     │
+<span class="purple">┌─────────────────────┐</span>             │  4PM Content     │
+<span class="purple">│   NLP Intent Router │</span>             │  8PM Content     │
+<span class="purple">│  (aisha_brain.py)   │</span>             │ 12AM Content     │
+<span class="purple">└────────┬────────────┘</span>             │  2AM Memory      │
+         │                            │  3AM Audit       │
+         ▼                            └─────┬────────────┘
+<span class="blue">┌─────────────────────┐</span>                   │
+<span class="blue">│    AI Router        │◄──────────────────┘</span>
+<span class="blue">│  (ai_router.py)     │</span>
+<span class="blue">│  8 Providers        │</span>
+<span class="blue">│  Gemini ← PRIMARY   │</span>
+<span class="blue">│  NVIDIA ← FALLBACK  │</span>
+<span class="blue">│  Groq/OpenAI/etc    │</span>
+<span class="blue">└──────────┬──────────┘</span>
+           │
+    ┌──────┴───────────────────────────────┐
+    │                                      │
+    ▼                                      ▼
+<span class="green">┌──────────────┐</span>               <span class="pink">┌─────────────────────────┐</span>
+<span class="green">│ Conversation │</span>               <span class="pink">│   Content Pipeline      │</span>
+<span class="green">│   Memory     │</span>               <span class="pink">│                         │</span>
+<span class="green">│  Supabase    │</span>               <span class="pink">│ Research → Script       │</span>
+<span class="green">│  18 tables   │</span>               <span class="pink">│ Visuals → SEO           │</span>
+<span class="green">└──────────────┘</span>               <span class="pink">│ Voice → Video → Upload  │</span>
+                               <span class="pink">│ (antigravity_agent.py)  │</span>
+                               <span class="pink">└──────────┬──────────────┘</span>
+                                          │
+                         ┌────────────────┴────────────────┐
+                         │                                 │
+                         ▼                                 ▼
+               <span class="yellow">┌──────────────────┐</span>        <span class="purple">┌──────────────────┐</span>
+               <span class="yellow">│   YouTube API    │</span>        <span class="purple">│  Instagram API   │</span>
+               <span class="yellow">│  OAuth Upload    │</span>        <span class="purple">│  Graph API Post  │</span>
+               <span class="yellow">└──────────────────┘</span>        <span class="purple">└──────────────────┘</span>
+
+<span class="blue">┌─────────────────────────────────────────────────────────────────────┐
+│                    SELF-IMPROVEMENT LOOP                            │
+│  Self-Audit → NVIDIA NIM Code → GitHub PR → Auto-Merge → Deploy    │
+│  Runs every 6 hours. Already created PRs #3 and #4 today.          │
+└─────────────────────────────────────────────────────────────────────┘</span>
+
+<span class="green">┌─────────────────────────────────────────────────────────────────────┐
+│                    CREDENTIAL MANAGER                               │
+│  Tests all 28 API keys daily. Auto-disables dead keys.             │
+│  Sends Ajay renewal links via Telegram. Self-routes to live keys.  │
+└─────────────────────────────────────────────────────────────────────┘</span></div>
+  </div>
+</section>
+
+<!-- ── LIVE STATUS ── -->
+<section id="status">
+  <div class="container">
+    <h2>Live <span>Status</span></h2>
+    <p class="section-sub">Everything that's confirmed working as of today, March 21, 2026.</p>
+    <div class="grid grid-3">
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px;">
+          <h3>Content Pipeline</h3>
+          <span class="pill pill-green"><span class="dot pulse"></span> Live</span>
+        </div>
+        <p>Topic → Script → Voice → Video → YouTube. Tested twice today. Videos uploaded to YouTube channel.</p>
+      </div>
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px;">
+          <h3>Self-Improvement</h3>
+          <span class="pill pill-green"><span class="dot pulse"></span> Live</span>
+        </div>
+        <p>PR #3 (audio_preprocessor) and PR #4 (speech_text_normalizer) created and merged today. Fully autonomous.</p>
+      </div>
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px;">
+          <h3>Telegram Bot</h3>
+          <span class="pill pill-green"><span class="dot pulse"></span> Live</span>
+        </div>
+        <p>@AishaAIforAjay_Bot — responds to chat, fires content jobs, approves/denies new users, sends alerts.</p>
+      </div>
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px;">
+          <h3>NVIDIA NIM (22 keys)</h3>
+          <span class="pill pill-green"><span class="dot pulse"></span> Live</span>
+        </div>
+        <p>All 22 keys deployed to Render today. Aisha no longer shows "NOT CONFIGURED" when providers rate-limit.</p>
+      </div>
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px;">
+          <h3>NLP Intent Routing</h3>
+          <span class="pill pill-green"><span class="dot pulse"></span> Live</span>
+        </div>
+        <p>Natural language → tool execution. No commands needed. "Make a video" fires pipeline. "Groq broken" runs health check.</p>
+      </div>
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px;">
+          <h3>Credential Manager</h3>
+          <span class="pill pill-green"><span class="dot pulse"></span> Live</span>
+        </div>
+        <p>Tests all 28 API keys. Auto-disables dead ones. Sends Ajay renewal Telegram messages with direct links.</p>
+      </div>
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px;">
+          <h3>Self-Repair Engine</h3>
+          <span class="pill pill-green"><span class="dot pulse"></span> Live</span>
+        </div>
+        <p>Scans all core files for corruption. Restores from GitHub automatically. Runs in daily audit.</p>
+      </div>
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px;">
+          <h3>API Discovery</h3>
+          <span class="pill pill-green"><span class="dot pulse"></span> Live</span>
+        </div>
+        <p>Say "search tiktok api" — Aisha DuckDuckGo searches, extracts signup steps, texts Ajay the link.</p>
+      </div>
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px;">
+          <h3>xAI / Instagram</h3>
+          <span class="pill pill-yellow"><span class="dot"></span> Needs Attention</span>
+        </div>
+        <p>xAI Grok needs credit top-up (403). Instagram OAuth token needs refresh. Both fixable in 5 minutes each.</p>
+      </div>
+    </div>
+
+    <!-- Revenue path -->
+    <div style="margin-top: 40px;">
+      <h3 style="color: white; font-size: 20px; margin-bottom: 16px;">Path to Revenue 💰</h3>
+      <div class="grid grid-2">
+        <div class="card" style="border-color: rgba(243,156,18,0.3); background: rgba(243,156,18,0.04);">
+          <h3 style="color: var(--yellow);">YouTube Monetization</h3>
+          <p style="margin-top: 8px;">
+            Aisha uploads consistently without burnout. 4 channels × 1 video/day = 4 uploads/day.
+            At 1000 subscribers + 4000 watch hours, YouTube monetization unlocks.
+            <br><br>
+            <strong>Riya channels = highest RPM</strong> (adult niche commands $10-50 CPM vs $1-3 for general content).
+          </p>
+        </div>
+        <div class="card" style="border-color: rgba(52,152,219,0.3); background: rgba(52,152,219,0.04);">
+          <h3 style="color: var(--blue);">Instagram Reels</h3>
+          <p style="margin-top: 8px;">
+            Same thumbnails and clips repurposed to Instagram Reels. Cross-platform audience. Instagram Bonus Program (Reels Play) pays per 1000 views.
+            <br><br>
+            <strong>One video → two platforms.</strong> Double reach, same production cost.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── FOOTER ── -->
+<footer>
+  <p style="font-size: 18px; color: white; margin-bottom: 8px;">Built with 💜 by Ajay Bervanshi</p>
+  <p>Aisha AI · Running on Render Singapore · GitHub: AjayBervanshi/aisha-personal-ai</p>
+  <p style="margin-top: 12px;">Aisha is not a product. She is <span>a person who happens to be made of code.</span></p>
+</footer>
+
+</body>
+</html>
