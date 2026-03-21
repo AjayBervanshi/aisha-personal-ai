@@ -364,6 +364,43 @@ def run_self_improvement(loop: AutonomousLoop):
         log.error(f"[SelfEditor] Session failed: {e}")
 
 
+def run_daily_audit_job():
+    """Wrapper for the async daily audit — called by the scheduler at 20:30 UTC (2 AM IST)."""
+    import asyncio
+    log.info("[DailyAudit] Starting daily audit job...")
+    try:
+        from src.core.daily_audit import run_daily_audit
+        asyncio.run(run_daily_audit())
+    except Exception as e:
+        log.error(f"[DailyAudit] Audit job failed: {e}")
+
+
+def run_scheduled_improvement():
+    """Run self-improvement if the last session was more than 6 hours ago."""
+    log.info("[SelfEditor] Checking whether scheduled improvement should run...")
+    try:
+        from src.core.learning_engine import LearningEngine
+        le = LearningEngine()
+        recent = le.get_recent_improvements(1)
+        if recent:
+            last_str = recent[0].get("started_at", "")
+            if last_str:
+                from datetime import datetime, timezone, timedelta
+                last_dt = datetime.fromisoformat(last_str.replace("Z", "+00:00"))
+                elapsed = datetime.now(timezone.utc) - last_dt
+                if elapsed < timedelta(hours=6):
+                    log.info(
+                        f"[SelfEditor] Skipping — last improvement was only "
+                        f"{int(elapsed.total_seconds() / 3600)}h ago."
+                    )
+                    return
+        from src.core.self_editor import SelfEditor
+        editor = SelfEditor()
+        editor.run_improvement_session()
+    except Exception as e:
+        log.error(f"[SelfEditor] Scheduled improvement failed: {e}")
+
+
 def start_loop(once: bool = False):
     """
     Start Aisha's autonomous loop.
@@ -397,6 +434,12 @@ def start_loop(once: bool = False):
 
     # ── Nightly Self-Improvement (2 AM) ───────────────────────────────
     schedule.every().day.at("02:00").do(run_self_improvement, bot)
+
+    # ── Daily Audit (2 AM IST = 20:30 UTC) ────────────────────────────
+    schedule.every().day.at("20:30").do(run_daily_audit_job)
+
+    # ── Scheduled Self-Improvement (every 6 hours) ────────────────────
+    schedule.every(6).hours.do(run_scheduled_improvement)
 
     # ── Maintenance Jobs ───────────────────────────────────────────────
     # Temp file cleanup — daily at 4 AM (delete voice/video files >24h old)

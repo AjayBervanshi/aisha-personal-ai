@@ -305,6 +305,40 @@ def cmd_upgrade(message):
     threading.Thread(target=_run_upgrade, daemon=True).start()
 
 
+@bot.message_handler(commands=["feature"])
+def cmd_feature(message):
+    """Request a new feature to be built autonomously by Aisha's 6-agent pipeline."""
+    if not is_ajay(message): return unauthorized_response(message)
+    feature_desc = message.text.replace("/feature", "").strip()
+    if not feature_desc:
+        bot.send_message(
+            message.chat.id,
+            "Usage: `/feature <description>`\n"
+            "Example: `/feature Add weather widget to morning briefing`",
+            parse_mode="Markdown",
+        )
+        return
+    bot.send_message(
+        message.chat.id,
+        f"Launching Feature Pipeline for:\n_{feature_desc}_\n\n"
+        "Agents: Research → Architecture → Code → Review → Test → Deploy\n"
+        "I'll notify you when done!",
+        parse_mode="Markdown",
+    )
+
+    def _run_pipeline():
+        try:
+            from src.core.feature_pipeline import run_feature_pipeline, notify_pipeline_result
+            result = run_feature_pipeline(feature_desc)
+            notify_pipeline_result(result)
+        except Exception as exc:
+            log.error(f"[/feature] Pipeline crashed: {exc}")
+            bot.send_message(message.chat.id, f"Feature pipeline crashed: {exc}")
+
+    import threading
+    threading.Thread(target=_run_pipeline, daemon=True).start()
+
+
 @bot.message_handler(commands=["skills"])
 def cmd_skills(message):
     """Show all skills Aisha has learned so far."""
@@ -1568,6 +1602,7 @@ if __name__ == "__main__":
         telebot.types.BotCommand("/restart",  "Restart Aisha bot process"),
         telebot.types.BotCommand("/upgrade",  "Full self-upgrade: audit → PR → deploy"),
         telebot.types.BotCommand("/selfaudit","Audit code and propose improvements"),
+        telebot.types.BotCommand("/feature",  "Build a new feature with 6-agent pipeline"),
     ])
     
     # ── Health + Trigger HTTP server (required by Render + pg_cron) ──────────
