@@ -28,6 +28,9 @@ env/
 temp_voice/
 temp/
 tmp/
+temp_assets/
+temp_videos/
+tests/screenshots/
 *.tmp
 *.log
 Aisha_Antigravity_log.txt
