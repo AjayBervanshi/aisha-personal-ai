@@ -667,6 +667,43 @@ class AIRouter:
     def available_providers(self) -> list:
         return list(self._clients.keys())
 
+    def get_active_provider(self) -> str:
+        """
+        Return a human-readable string describing which provider would be used right now.
+        Walks the default order and returns the first provider that is configured
+        and not cooling down.
+        """
+        order = ["gemini", "groq", "nvidia", "anthropic", "xai", "openai", "mistral", "ollama"]
+        provider_labels = {
+            "gemini":    f"Gemini {getattr(self, '_gemini_model_name', '2.5-flash')}",
+            "groq":      "Groq llama-3.3-70b",
+            "nvidia":    "NVIDIA NIM Pool",
+            "anthropic": "Claude (Anthropic)",
+            "xai":       "xAI Grok-2",
+            "openai":    "OpenAI GPT-4o",
+            "mistral":   "Mistral",
+            "ollama":    "Ollama (local)",
+        }
+        role_labels = {
+            "gemini":    "primary",
+            "groq":      "fallback #1",
+            "nvidia":    "fallback #2",
+            "anthropic": "fallback #3",
+            "xai":       "fallback #4",
+            "openai":    "fallback #5",
+            "mistral":   "fallback #6",
+            "ollama":    "fallback #7",
+        }
+        for provider in order:
+            if provider not in self._clients:
+                continue
+            if self._stats[provider].is_cooling_down():
+                continue
+            label = provider_labels.get(provider, provider)
+            role = role_labels.get(provider, "fallback")
+            return f"{label} ({role})"
+        return "None — all providers down"
+
     def chat(self, message: str, system_prompt: str = None, preferred_provider: str = None) -> str:
         """Simple wrapper — returns just the text string."""
         result = self.generate(

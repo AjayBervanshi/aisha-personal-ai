@@ -32,8 +32,9 @@ def create_github_pr(title: str, body: str, branch_name: str, file_path: str, fi
     """
     Creates a pull request on GitHub via API.
     Assumes GITHUB_TOKEN and GITHUB_REPO are set in .env
-    Returns the PR URL.
+    Returns the PR URL, or an error string starting with "Failed"/"No GitHub".
     """
+    import base64
     token = os.getenv("GITHUB_TOKEN")
     repo = os.getenv("GITHUB_REPO")
 
@@ -48,35 +49,73 @@ def create_github_pr(title: str, body: str, branch_name: str, file_path: str, fi
 
     base_url = f"https://api.github.com/repos/{repo}"
 
-    # 1. Get main branch SHA
-    main_ref = requests.get(f"{base_url}/git/refs/heads/main", headers=headers).json()
-    base_sha = main_ref.get("object", {}).get("sha")
+    try:
+        # 1. Get main branch SHA
+        ref_resp = requests.get(f"{base_url}/git/ref/heads/main", headers=headers, timeout=30)
+        if ref_resp.status_code != 200:
+            log.error(f"Failed to get main SHA: {ref_resp.status_code} {ref_resp.text[:200]}")
+            return f"Failed to get main branch SHA: {ref_resp.status_code}"
+        base_sha = ref_resp.json().get("object", {}).get("sha")
+        if not base_sha:
+            return "Failed to extract SHA from main branch response"
 
-    # 2. Create new branch
-    requests.post(f"{base_url}/git/refs", headers=headers, json={
-        "ref": f"refs/heads/{branch_name}",
-        "sha": base_sha
-    })
+        # 2. Create new branch
+        branch_resp = requests.post(f"{base_url}/git/refs", headers=headers, json={
+            "ref": f"refs/heads/{branch_name}",
+            "sha": base_sha
+        }, timeout=30)
+        if branch_resp.status_code not in (200, 201, 422):
+            log.error(f"Branch creation failed: {branch_resp.status_code} {branch_resp.text[:200]}")
+            return f"Failed to create branch: {branch_resp.status_code}"
 
-    # 3. Create file commit on new branch
-    import base64
-    content_b64 = base64.b64encode(file_content.encode("utf-8")).decode("utf-8")
+        # 3. Check if file already exists on that branch (need its SHA to update)
+        content_b64 = base64.b64encode(file_content.encode("utf-8")).decode("utf-8")
+        file_payload = {
+            "message": f"feat(skills): {title}",
+            "content": content_b64,
+            "branch": branch_name,
+        }
+        existing = requests.get(
+            f"{base_url}/contents/{file_path}",
+            headers=headers,
+            params={"ref": branch_name},
+            timeout=30,
+        )
+        if existing.status_code == 200:
+            file_payload["sha"] = existing.json().get("sha")
 
-    requests.put(f"{base_url}/contents/{file_path}", headers=headers, json={
-        "message": f"Add new skill: {title}",
-        "content": content_b64,
-        "branch": branch_name
-    })
+        file_resp = requests.put(
+            f"{base_url}/contents/{file_path}",
+            headers=headers,
+            json=file_payload,
+            timeout=30,
+        )
+        if file_resp.status_code not in (200, 201):
+            log.error(f"File push failed: {file_resp.status_code} {file_resp.text[:200]}")
+            return f"Failed to push file to branch: {file_resp.status_code}"
 
-    # 4. Create PR
-    pr_res = requests.post(f"{base_url}/pulls", headers=headers, json={
-        "title": f"🚀 New Skill: {title}",
-        "body": body,
-        "head": branch_name,
-        "base": "main"
-    }).json()
+        # 4. Create PR
+        pr_resp = requests.post(f"{base_url}/pulls", headers=headers, json={
+            "title": f"🧠 {title}",
+            "body": body,
+            "head": branch_name,
+            "base": "main"
+        }, timeout=30)
+        if pr_resp.status_code not in (200, 201):
+            log.error(f"PR creation failed: {pr_resp.status_code} {pr_resp.text[:200]}")
+            return f"Failed to create PR: {pr_resp.status_code}"
 
-    return pr_res.get("html_url", "Failed to create PR")
+        pr_url = pr_resp.json().get("html_url", "")
+        if not pr_url:
+            return "Failed to get PR URL from response"
+        return pr_url
+
+    except requests.exceptions.RequestException as e:
+        log.error(f"GitHub API network error: {e}")
+        return f"Failed due to network error: {e}"
+    except Exception as e:
+        log.error(f"create_github_pr unexpected error: {e}")
+        return f"Failed: {e}"
 
 
 def get_pr_number_from_url(pr_url: str) -> int:
@@ -163,12 +202,14 @@ def trigger_redeploy() -> bool:
         return False
 
     try:
-        response = requests.post(webhook_url, json={"trigger": "aisha-self-deploy"}, timeout=10)
-        if response.status_code in [200, 201, 204]:
-            log.info("✅ Render redeploy triggered successfully")
+        # Render deploy hooks accept GET or POST; no body required.
+        # Accepted success codes: 200, 201, 202, 204.
+        response = requests.get(webhook_url, timeout=15)
+        if response.status_code in [200, 201, 202, 204]:
+            log.info("Render redeploy triggered successfully")
             return True
         else:
-            log.error(f"Render deploy hook failed: {response.status_code} {response.text}")
+            log.error(f"Render deploy hook failed: {response.status_code} {response.text[:200]}")
             return False
     except Exception as e:
         log.error(f"Render deploy hook error: {e}")
@@ -215,25 +256,45 @@ def deploy_skill_from_pr(pr_url: str) -> bool:
     return True
 
 
+def _strip_markdown(code: str) -> str:
+    """Remove markdown code fences from generated code."""
+    code = code.strip()
+    if code.startswith("```"):
+        lines = code.split("\n")
+        # Remove first line (```python or ```) and last line (```)
+        start = 1
+        end = len(lines) - 1 if lines[-1].strip() == "```" else len(lines)
+        code = "\n".join(lines[start:end])
+    return code.strip()
+
+
+def _validate_syntax(code: str, file_path: str) -> bool:
+    """Returns True if code is syntactically valid Python."""
+    import ast as _ast
+    try:
+        _ast.parse(code)
+        log.info(f"Syntax validation passed for {file_path}")
+        return True
+    except SyntaxError as e:
+        log.error(f"Generated code has syntax error: {e}")
+        return False
+
+
 def use_jules_to_write_skill(task_description: str, file_path: str) -> str | None:
     """
-    Uses Google Jules AI to write code for a new skill or fix.
-    Jules is an AI coding agent that can write, test, and iterate on code.
+    Code generation waterfall for Aisha's self-improvement.
 
-    Returns the generated code as a string, or None on failure.
+    Priority order:
+    1. Gemini 2.5-flash (primary — best quality)
+    2. NVIDIA NIM LLaMA-3.3-70b (fallback — always available, 22 keys)
+    3. NVIDIA NIM Mistral-Large-3 (secondary fallback)
+    4. Mistral API (tertiary fallback)
+
+    Returns generated Python code as string, or None on complete failure.
     """
-    jules_key = os.getenv("JULES_API_KEY")
-    if not jules_key:
-        log.warning("JULES_API_KEY not set. Jules self-improvement disabled.")
-        return None
+    import requests as _req
 
-    try:
-        # Jules uses Gemini REST (avoid SDK DNS issues on Render)
-        import requests as _req
-        gemini_key = os.getenv("GEMINI_API_KEY") or jules_key  # Jules key fallback
-        _gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
-
-        prompt = f"""You are Jules, an expert Python coding agent for Aisha AI.
+    prompt = f"""You are Jules, an expert Python coding agent for Aisha AI.
 
 Task: {task_description}
 
@@ -247,36 +308,109 @@ Requirements:
 5. Follow existing Aisha code style (src/core/ files for reference)
 6. Include a simple __main__ test at the bottom
 
-Return ONLY the Python code. No markdown, no explanation, no backticks."""
+Return ONLY the Python code. No markdown fences, no explanation, no backticks."""
 
-        _resp = _req.post(
-            _gemini_url,
-            json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.3, "maxOutputTokens": 8192}},
-            timeout=120
-        )
-        _resp.raise_for_status()
-        code = _resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-        # Remove any accidental markdown
-        if code.startswith("```"):
-            lines = code.split("\n")
-            code = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
-
-        log.info(f"✅ Jules generated {len(code)} chars of code for: {task_description[:50]}")
-
-        # Validate syntax before returning
-        import ast as _ast
+    # ── Attempt 1: Gemini REST ─────────────────────────────────────────────────
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    if gemini_key:
         try:
-            _ast.parse(code)
-            log.info(f"Syntax validation passed for {file_path}")
-        except SyntaxError as e:
-            log.error(f"Generated code has syntax error: {e}")
-            return None
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
+            resp = _req.post(
+                url,
+                json={"contents": [{"parts": [{"text": prompt}]}],
+                      "generationConfig": {"temperature": 0.3, "maxOutputTokens": 8192}},
+                timeout=120
+            )
+            if resp.status_code == 200:
+                code = _strip_markdown(resp.json()["candidates"][0]["content"]["parts"][0]["text"])
+                if code and _validate_syntax(code, file_path):
+                    log.info(f"✅ Gemini wrote {len(code)} chars for: {task_description[:50]}")
+                    return code
+            elif resp.status_code == 429:
+                log.warning("Gemini rate limited — falling back to NVIDIA NIM")
+            else:
+                log.warning(f"Gemini returned {resp.status_code} — falling back")
+        except Exception as e:
+            log.warning(f"Gemini code generation error: {e} — trying NVIDIA NIM")
 
-        return code
+    # ── Attempt 2: NVIDIA NIM — LLaMA-3.3-70b (chat pool, 7 keys) ─────────────
+    nvidia_chat_keys = [os.getenv(f"NVIDIA_KEY_{i:02d}") for i in [5, 6, 8, 10, 11, 12, 13] if os.getenv(f"NVIDIA_KEY_{i:02d}")]
+    for nvidia_key in nvidia_chat_keys:
+        try:
+            resp = _req.post(
+                "https://integrate.api.nvidia.com/v1/chat/completions",
+                headers={"Authorization": f"Bearer {nvidia_key}", "Content-Type": "application/json"},
+                json={
+                    "model": "meta/llama-3.3-70b-instruct",
+                    "messages": [
+                        {"role": "system", "content": "You are an expert Python developer. Return ONLY Python code, no markdown fences."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "max_tokens": 4096,
+                    "temperature": 0.2
+                },
+                timeout=60
+            )
+            if resp.status_code == 200:
+                code = _strip_markdown(resp.json()["choices"][0]["message"]["content"])
+                if code and _validate_syntax(code, file_path):
+                    log.info(f"✅ NVIDIA NIM LLaMA wrote {len(code)} chars for: {task_description[:50]}")
+                    return code
+            elif resp.status_code in (429, 503):
+                log.warning(f"NVIDIA NIM key {nvidia_key[:12]}... rate limited, trying next key")
+                continue
+        except Exception as e:
+            log.warning(f"NVIDIA NIM LLaMA failed: {e}")
+            continue
 
-    except Exception as e:
-        log.error(f"Jules code generation failed: {e}")
-        return None
+    # ── Attempt 3: NVIDIA NIM — Mistral-Large-3 (writing pool) ────────────────
+    nvidia_writing_keys = [os.getenv(f"NVIDIA_KEY_{i:02d}") for i in [1, 2] if os.getenv(f"NVIDIA_KEY_{i:02d}")]
+    for nvidia_key in nvidia_writing_keys:
+        try:
+            resp = _req.post(
+                "https://integrate.api.nvidia.com/v1/chat/completions",
+                headers={"Authorization": f"Bearer {nvidia_key}", "Content-Type": "application/json"},
+                json={
+                    "model": "mistralai/mistral-large-instruct-2407",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 4096,
+                    "temperature": 0.2
+                },
+                timeout=60
+            )
+            if resp.status_code == 200:
+                code = _strip_markdown(resp.json()["choices"][0]["message"]["content"])
+                if code and _validate_syntax(code, file_path):
+                    log.info(f"✅ NVIDIA NIM Mistral wrote {len(code)} chars for: {task_description[:50]}")
+                    return code
+        except Exception as e:
+            log.warning(f"NVIDIA NIM Mistral failed: {e}")
+            continue
+
+    # ── Attempt 4: Mistral API direct ─────────────────────────────────────────
+    mistral_key = os.getenv("MISTRAL_API_KEY")
+    if mistral_key:
+        try:
+            resp = _req.post(
+                "https://api.mistral.ai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {mistral_key}", "Content-Type": "application/json"},
+                json={
+                    "model": "mistral-large-latest",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 4096, "temperature": 0.2
+                },
+                timeout=60
+            )
+            if resp.status_code == 200:
+                code = _strip_markdown(resp.json()["choices"][0]["message"]["content"])
+                if code and _validate_syntax(code, file_path):
+                    log.info(f"✅ Mistral API wrote {len(code)} chars for: {task_description[:50]}")
+                    return code
+        except Exception as e:
+            log.warning(f"Mistral API failed: {e}")
+
+    log.error("All code generation providers exhausted — self-improvement failed this cycle")
+    return None
 
 
 def aisha_self_improve(task_description: str, skill_name: str = None) -> str | None:

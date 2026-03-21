@@ -54,7 +54,16 @@ def check_ai_providers() -> Dict[str, str]:
         else:
             results["groq"] = "⚠️ No key"
     except Exception as e:
-        results["groq"] = f"❌ {str(e)[:30]}"
+        err = str(e)
+        # Parse clean status code + message instead of raw dict truncation
+        if "401" in err:
+            results["groq"] = "❌ 401 Invalid API Key — renew at console.groq.com"
+        elif "429" in err:
+            results["groq"] = "❌ 429 Rate Limited / Quota exhausted"
+        elif "403" in err:
+            results["groq"] = "❌ 403 Forbidden — check plan/permissions"
+        else:
+            results["groq"] = f"❌ {err[:60]}"
 
     # ElevenLabs
     try:
@@ -141,10 +150,26 @@ def full_health_report() -> str:
     """Generate complete system health report as Telegram-formatted string."""
     lines = ["*🏥 Aisha System Health Report*", f"_{datetime.now().strftime('%d %b %Y %H:%M IST')}_\n"]
 
+    # Active AI provider
+    try:
+        try:
+            from src.core.ai_router import AIRouter
+        except ImportError:
+            from core.ai_router import AIRouter
+        _router = AIRouter()
+        active = _router.get_active_provider()
+        lines.append(f"🤖 *Active AI:* {active}\n")
+    except Exception as e:
+        lines.append(f"🤖 *Active AI:* ⚠️ Could not determine ({str(e)[:40]})\n")
+
     # AI Providers
+    ai_results = check_ai_providers()
     lines.append("*AI Providers:*")
-    for provider, status in check_ai_providers().items():
+    for provider, status in ai_results.items():
         lines.append(f"  • {provider}: {status}")
+        # Add fix hint for known invalid key errors
+        if provider == "groq" and "401 Invalid API Key" in status:
+            lines.append("    ↳ ⚠️ Get new key: console.groq.com → API Keys → Create")
 
     # Database
     lines.append("\n*Database Tables:*")

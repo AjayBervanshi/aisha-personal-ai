@@ -652,7 +652,10 @@ def handle_shell_callback(call):
 def cmd_read(message):
     """Read a file and send its contents."""
     if not is_ajay(message): return unauthorized_response(message)
-    filepath = message.text.replace("/read", "").strip()
+    filepath = message.text.replace("/read", "").strip().splitlines()[0].strip()
+    if filepath in (".env", ".env.local", ".env.production"):
+        bot.send_message(message.chat.id, "🔒 `.env` is protected — I don't send secrets over chat.", parse_mode="Markdown")
+        return
     if not filepath:
         bot.send_message(message.chat.id,
             "Usage: `/read <filepath>`\n"

@@ -221,11 +221,20 @@ Write ONLY the Python code, nothing else."""
     # ── NOTIFY ────────────────────────────────────────────────────────────────
 
     def notify_ajay(self, message: str):
-        """Send Ajay a Telegram message about a self-edit."""
+        """Send Ajay a Telegram message about a self-edit via raw HTTP (no telebot needed)."""
         try:
-            import telebot
-            bot = telebot.TeleBot(self.bot_token)
-            bot.send_message(self.ajay_id, f"[Aisha Self-Edit]\n{message}")
+            import requests as _req
+            token = self.bot_token
+            chat_id = self.ajay_id
+            if not token or not chat_id:
+                log.warning("[SelfEditor] Telegram credentials not set — skipping notification")
+                return
+            url = f"https://api.telegram.org/bot{token}/sendMessage"
+            _req.post(url, json={
+                "chat_id": chat_id,
+                "text": message,
+                "parse_mode": "Markdown",
+            }, timeout=15)
         except Exception as e:
             log.error(f"[SelfEditor] Telegram notify failed: {e}")
 
@@ -309,13 +318,13 @@ TASK: <detailed description of what to build — 2-3 sentences>
         redeployed = trigger_redeploy() if merged else False
 
         # Step 6: Notify Ajay with full details
-        status = "deployed and live" if redeployed else ("merged, redeploying soon" if merged else "created (needs review)")
+        status = "Deployed ✓" if redeployed else ("Merged — redeploying soon" if merged else "PR created (needs review)")
         self.notify_ajay(
-            f"I upgraded myself!\n\n"
-            f"What I improved: {skill_name}\n"
-            f"Description: {task_description}\n"
-            f"Status: PR {status}\n"
-            f"PR: {pr_url}"
+            f"✅ I upgraded myself!\n\n"
+            f"*Skill:* {skill_name}\n"
+            f"*Task:* {task_description}\n"
+            f"*Status:* {status}\n"
+            f"*PR:* {pr_url}"
         )
 
         log.info(f"[SelfEditor] Self-improvement complete: {skill_name}")
