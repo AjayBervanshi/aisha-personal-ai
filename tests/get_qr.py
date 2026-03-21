@@ -20,7 +20,7 @@ with sync_playwright() as p:
     page = ctx.pages[0] if ctx.pages else ctx.new_page()
 
     print("Loading web.telegram.org ...")
-    page.goto("https://web.telegram.org/k/", wait_until="networkidle", timeout=60000)
+    page.goto("https://web.telegram.org/k/", wait_until="domcontentloaded", timeout=60000)
     page.wait_for_timeout(8000)
 
     # Check if already logged in
