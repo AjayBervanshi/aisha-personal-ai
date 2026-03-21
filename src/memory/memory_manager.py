@@ -184,25 +184,51 @@ class MemoryManager:
 
     # ── Conversations ──────────────────────────────────────────
 
-    def save_conversation(self, role: str, message: str, platform: str = "telegram", language: str = "English", mood: str = "casual"):
-        """Log conversation turn to Supabase."""
+    def save_conversation(self, role: str, message: str, platform: str = "telegram",
+                          language: str = "English", mood: str = "casual",
+                          user_id: Optional[int] = None):
+        """Log conversation turn to Supabase.
+
+        Args:
+            user_id: When provided and not None, the row is tagged with
+                     ``guest_user_id`` so guest conversations are stored
+                     separately and never surface in Ajay's warm-start query.
+                     Pass ``None`` (default) for owner/system turns.
+        """
         try:
-            self.db.table("aisha_conversations").insert({
+            row: Dict[str, Any] = {
                 "platform": platform,
                 "role": role,
                 "message": message,
                 "language": language,
-                "mood_detected": mood
-            }).execute()
+                "mood_detected": mood,
+            }
+            if user_id is not None:
+                row["guest_user_id"] = user_id
+            self.db.table("aisha_conversations").insert(row).execute()
         except Exception as e:
             print(f"[Memory] Error saving conversation: {e}")
 
-    def get_recent_conversation(self, limit: int = 10) -> List[Dict[str, Any]]:
-        """Get recent conversation history for context continuity."""
+    def get_recent_conversation(self, limit: int = 10,
+                                user_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Get recent conversation history for context continuity.
+
+        When ``user_id`` is None (default), only owner turns are returned
+        (rows where ``guest_user_id`` is NULL).  This prevents guest messages
+        from polluting the owner warm-start.
+        """
         try:
-            res = (
+            query = (
                 self.db.table("aisha_conversations")
                 .select("role, message, created_at")
+            )
+            if user_id is None:
+                # Owner warm-start: exclude guest-tagged rows
+                query = query.is_("guest_user_id", "null")
+            else:
+                query = query.eq("guest_user_id", user_id)
+            res = (
+                query
                 .order("created_at", desc=True)
                 .limit(limit)
                 .execute()
