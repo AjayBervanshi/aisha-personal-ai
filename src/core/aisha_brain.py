@@ -278,20 +278,29 @@ class AishaBrain:
 
         return None
 
-    def think(self, user_message: str, platform: str = "telegram", image_bytes: bytes = None) -> str:
+    def think(self, user_message: str, platform: str = "telegram",
+              image_bytes: bytes = None, caller_name: str = "Ajay",
+              caller_id: int = None, is_owner: bool = True) -> str:
         """
-        Main method — takes Ajay's message, returns Aisha's response.
+        Main method — takes a message, returns Aisha's response.
         Full pipeline: detect language → detect mood → load context → call AI → save memory.
+
+        Args:
+            caller_name: First name of who is talking (used in system prompt).
+            caller_id:   Telegram user ID of the caller.
+            is_owner:    True if Ajay himself is talking (full access + private data).
         """
         # 1. Detect language and mood
         language, _ = detect_language(user_message)
         mood_res = detect_mood(user_message)
         mood     = mood_res.mood
 
-        # 2. Load Ajay's context from Supabase
-        context = self.memory.load_context(user_message)
-        context["language"] = language
-        context["mood"]     = mood
+        # 2. Load context — only load Ajay's private data when Ajay is talking
+        context = self.memory.load_context(user_message) if is_owner else {}
+        context["language"]    = language
+        context["mood"]        = mood
+        context["caller_name"] = caller_name
+        context["is_owner"]    = is_owner
 
         # 3. Build dynamic system prompt
         system_prompt = build_system_prompt(context)

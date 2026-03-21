@@ -63,8 +63,15 @@ class AutonomousLoop:
         except Exception as e:
             log.warning(f"event=startup_recovery_failed err={e}")
 
+    # Class-level flag — only send the webhook warning ONCE across all restarts
+    # (Render may restart the process multiple times in quick succession)
+    _webhook_warned: bool = False
+
     def _assert_no_telegram_webhook(self):
-        """Warn loudly if a Telegram webhook is set while we are in long-polling mode."""
+        """Warn loudly if a Telegram webhook is set while we are in long-polling mode.
+        Only sends the Telegram message once per process lifetime to avoid spam."""
+        if AutonomousLoop._webhook_warned:
+            return
         try:
             bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
             if not bot_token:
@@ -74,11 +81,13 @@ class AutonomousLoop:
             webhook_url = resp.get("result", {}).get("url", "")
             if webhook_url:
                 msg = (
-                    f"⚠️ STARTUP WARNING: Telegram webhook is still set to '{webhook_url}'!\n"
-                    "Long-polling mode is active — webhook will intercept messages.\n"
-                    "Run: curl -X POST https://api.telegram.org/bot<TOKEN>/deleteWebhook"
+                    f"⚠️ STARTUP WARNING: Telegram webhook is still set!\n"
+                    "Long-polling is active — webhook will intercept messages.\n"
+                    "Run: curl -X POST https://api.telegram.org/bot<TOKEN>/deleteWebhook\n\n"
+                    "(This warning will not repeat until next full redeploy.)"
                 )
                 log.warning(f"event=webhook_conflict webhook_url={webhook_url}")
+                AutonomousLoop._webhook_warned = True
                 if self.telegram and self.ajay_id:
                     try:
                         self.telegram.send_message(self.ajay_id, msg)

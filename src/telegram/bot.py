@@ -1311,17 +1311,48 @@ def handle_photo(message):
 @bot.message_handler(func=lambda message: True)
 def handle_text(message, override_text=None):
     if not is_ajay(message): return unauthorized_response(message)
-    
+
     user_text = override_text or message.text
     if not user_text or not user_text.strip():
         return
-    
+
+    # Identify who is talking so Aisha addresses them correctly
+    caller_id   = message.from_user.id
+    caller_name = message.from_user.first_name or "Guest"
+    owner       = (caller_id == AUTHORIZED_ID)
+
+    # ── "Share with owner" intent ─────────────────────────────────────────
+    # If an approved non-owner user says "share this with Ajay/owner", forward it.
+    if not owner and any(kw in user_text.lower() for kw in [
+        "share with", "tell ajay", "tell your owner", "tell the owner",
+        "forward to", "send to ajay", "notify ajay", "let ajay know"
+    ]):
+        forward_msg = (
+            f"📨 *{caller_name}* wants you to know:\n\n"
+            f"_{user_text[:800]}_"
+        )
+        try:
+            bot.send_message(AUTHORIZED_ID, forward_msg, parse_mode="Markdown")
+        except Exception:
+            pass
+        bot.send_message(
+            message.chat.id,
+            f"Done! I've flagged that for Ajay, {caller_name}. He'll see it shortly."
+        )
+        return
+
     # Show typing indicator
     bot.send_chat_action(message.chat.id, "typing")
-    
+
     try:
-        log.info(f"[{message.from_user.first_name}] {user_text[:80]}")
-        response = aisha.think(user_text, platform="telegram")
+        log.info(f"[{caller_name}] {user_text[:80]}")
+        response = aisha.think(
+            user_text,
+            platform="telegram",
+            caller_name=caller_name,
+            caller_id=caller_id,
+            is_owner=owner,
+        )
         
         # Send text response
         if len(response) > 4000:
@@ -1356,7 +1387,7 @@ def handle_text(message, override_text=None):
         log.error(f"Error processing message: {e}")
         bot.send_message(
             message.chat.id,
-            "Arre yaar, kuch gadbad ho gayi 😅 Try again in a moment, Ajay!"
+            f"Something went wrong on my end, {caller_name}. Please try again in a moment!"
         )
 
 
@@ -1553,6 +1584,40 @@ def cmd_findapi(message):
     _fire_in_thread(_run)
 
 
+@bot.message_handler(commands=["instagram_setup", "instagram_auth"])
+def cmd_instagram_setup(message):
+    """Generate and send the Meta OAuth URL so Ajay can reconnect Instagram."""
+    if not is_ajay(message):
+        return unauthorized_response(message)
+
+    app_id = os.getenv("INSTAGRAM_APP_ID", "")
+    if not app_id:
+        bot.send_message(message.chat.id, "❌ INSTAGRAM_APP_ID not set in env. Add it first.")
+        return
+
+    render_url = os.getenv("RENDER_EXTERNAL_URL", "https://aisha-bot-yudp.onrender.com")
+    redirect_uri = f"{render_url}/instagram_callback"
+
+    from urllib.parse import urlencode
+    params = urlencode({
+        "client_id": app_id,
+        "redirect_uri": redirect_uri,
+        "scope": "instagram_basic,instagram_content_publish,pages_read_engagement,pages_manage_posts,public_profile",
+        "response_type": "code",
+    })
+    auth_url = f"https://www.facebook.com/v19.0/dialog/oauth?{params}"
+
+    bot.send_message(
+        message.chat.id,
+        f"*Instagram OAuth Setup*\n\n"
+        f"Your current token has expired. Click the link below to reconnect Instagram:\n\n"
+        f"[Connect Instagram]({auth_url})\n\n"
+        f"After you approve, Aisha will automatically save the new token and notify you here. ✅",
+        parse_mode="Markdown",
+        disable_web_page_preview=False,
+    )
+
+
 def _apply_key_update(chat_id: int, key_name: str, new_value: str):
     """Validate a new API key value and save it to Supabase api_keys table."""
     import requests as _req
@@ -1596,6 +1661,166 @@ def _apply_key_update(chat_id: int, key_name: str, new_value: str):
 
 # ─── Render Health + Trigger Server ──────────────────────────────────────────
 
+def _handle_instagram_oauth_callback(handler):
+    """
+    Handle Instagram/Facebook OAuth2 callback.
+    Exchange the code for a short-lived token, then a long-lived token,
+    save to Supabase api_keys and notify Ajay on Telegram.
+    """
+    from urllib.parse import urlparse, parse_qs
+    import json as _j
+    import requests as _r
+
+    parsed = urlparse(handler.path)
+    params = parse_qs(parsed.query)
+
+    app_id     = os.getenv("INSTAGRAM_APP_ID", "")
+    app_secret = os.getenv("INSTAGRAM_APP_SECRET", "")
+    render_url = os.getenv("RENDER_EXTERNAL_URL", "https://aisha-bot-yudp.onrender.com")
+    redirect_uri = f"{render_url}/instagram_callback"
+
+    error = params.get("error", [None])[0]
+    if error:
+        msg = f"❌ Instagram OAuth denied: {params.get('error_description', ['unknown'])[0]}"
+        log.error(f"[Instagram OAuth] {msg}")
+        _notify_ajay(msg)
+        body = f"<html><body>{msg}</body></html>".encode()
+        handler.send_response(400)
+        handler.send_header("Content-Type", "text/html")
+        handler.send_header("Content-Length", str(len(body)))
+        handler.end_headers()
+        handler.wfile.write(body)
+        return
+
+    code = params.get("code", [None])[0]
+    if not code:
+        body = b"<html><body>Missing code parameter.</body></html>"
+        handler.send_response(400)
+        handler.send_header("Content-Type", "text/html")
+        handler.send_header("Content-Length", str(len(body)))
+        handler.end_headers()
+        handler.wfile.write(body)
+        return
+
+    try:
+        # Step 1: Exchange code for short-lived user token
+        token_resp = _r.post(
+            "https://graph.facebook.com/v19.0/oauth/access_token",
+            data={
+                "client_id": app_id,
+                "client_secret": app_secret,
+                "redirect_uri": redirect_uri,
+                "code": code,
+            },
+            timeout=15,
+        ).json()
+
+        short_token = token_resp.get("access_token")
+        if not short_token:
+            raise RuntimeError(f"Token exchange failed: {token_resp}")
+
+        # Step 2: Exchange short-lived token for long-lived token (60 days)
+        ll_resp = _r.get(
+            "https://graph.facebook.com/v19.0/oauth/access_token",
+            params={
+                "grant_type": "fb_exchange_token",
+                "client_id": app_id,
+                "client_secret": app_secret,
+                "fb_exchange_token": short_token,
+            },
+            timeout=15,
+        ).json()
+
+        long_token = ll_resp.get("access_token", short_token)
+        expires_in = ll_resp.get("expires_in", 5183944)  # ~60 days in seconds
+
+        # Step 3: Get Facebook Pages to find Instagram Business Account
+        pages_resp = _r.get(
+            "https://graph.facebook.com/v19.0/me/accounts",
+            params={"access_token": long_token, "fields": "id,name,instagram_business_account"},
+            timeout=15,
+        ).json()
+
+        ig_biz_id = None
+        page_token = long_token
+
+        for page in pages_resp.get("data", []):
+            ig = page.get("instagram_business_account")
+            if ig:
+                ig_biz_id = ig.get("id")
+                # Use page-specific access token for posting
+                page_token = _r.get(
+                    f"https://graph.facebook.com/v19.0/{page['id']}",
+                    params={"fields": "access_token", "access_token": long_token},
+                    timeout=10,
+                ).json().get("access_token", long_token)
+                break
+
+        if not ig_biz_id:
+            ig_biz_id = os.getenv("INSTAGRAM_BUSINESS_ID", "")
+
+        # Step 4: Save to Supabase api_keys table
+        token_payload = _j.dumps({
+            "access_token": page_token,
+            "business_id": ig_biz_id,
+            "expires_in": expires_in,
+        })
+
+        supabase_url = os.getenv("SUPABASE_URL", "")
+        supabase_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+        headers = {
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates",
+        }
+        _r.post(
+            f"{supabase_url}/rest/v1/api_keys",
+            json={"name": "INSTAGRAM_TOKEN", "secret": token_payload, "active": True},
+            headers=headers,
+            timeout=10,
+        )
+
+        # Also update env var for this session
+        os.environ["INSTAGRAM_ACCESS_TOKEN"] = page_token
+        if ig_biz_id:
+            os.environ["INSTAGRAM_BUSINESS_ID"] = ig_biz_id
+
+        msg = (
+            f"✅ *Instagram Connected!*\n\n"
+            f"Business Account ID: `{ig_biz_id or 'not found'}`\n"
+            f"Token expires in: ~{expires_in // 86400} days\n\n"
+            f"Aisha can now post Reels and images! Run `/syscheck` to verify."
+        )
+        _notify_ajay(msg)
+        log.info(f"[Instagram OAuth] Connected. biz_id={ig_biz_id}, expires_in={expires_in}s")
+
+        body = b"<html><body><h1>Instagram connected!</h1><p>You can close this tab. Aisha has been notified.</p></body></html>"
+        handler.send_response(200)
+        handler.send_header("Content-Type", "text/html")
+        handler.send_header("Content-Length", str(len(body)))
+        handler.end_headers()
+        handler.wfile.write(body)
+
+    except Exception as e:
+        log.error(f"[Instagram OAuth] Callback failed: {e}", exc_info=True)
+        _notify_ajay(f"❌ Instagram OAuth callback failed: {str(e)[:300]}")
+        body = f"<html><body>Error: {e}</body></html>".encode()
+        handler.send_response(500)
+        handler.send_header("Content-Type", "text/html")
+        handler.send_header("Content-Length", str(len(body)))
+        handler.end_headers()
+        handler.wfile.write(body)
+
+
+def _notify_ajay(msg: str):
+    """Send a message to Ajay's Telegram chat (fire and forget)."""
+    try:
+        bot.send_message(AUTHORIZED_ID, msg, parse_mode="Markdown")
+    except Exception as e:
+        log.warning(f"[_notify_ajay] Failed: {e}")
+
+
 # Global reference to the AutonomousLoop instance (set during startup)
 _autonomous_loop = None
 
@@ -1613,6 +1838,8 @@ class _AishaHTTPHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+        elif self.path.startswith('/instagram_callback'):
+            _handle_instagram_oauth_callback(self)
         else:
             self.send_response(404)
             self.end_headers()
@@ -1738,7 +1965,8 @@ if __name__ == "__main__":
         telebot.types.BotCommand("/feature",  "Build a new feature with 6-agent pipeline"),
         telebot.types.BotCommand("/keyhealth","Check all API keys health"),
         telebot.types.BotCommand("/updatekey","Update an API key (/updatekey KEY value)"),
-        telebot.types.BotCommand("/findapi",  "Search web for API setup guide (/findapi tiktok)"),
+        telebot.types.BotCommand("/findapi",        "Search web for API setup guide (/findapi tiktok)"),
+        telebot.types.BotCommand("/instagram_setup", "Reconnect Instagram OAuth token"),
     ])
     
     # ── Health + Trigger HTTP server (required by Render + pg_cron) ──────────
