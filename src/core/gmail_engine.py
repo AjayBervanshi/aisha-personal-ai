@@ -27,7 +27,7 @@ class GmailEngine:
         msg['From'] = f"Aisha AI <{self.user}>"
         msg['To'] = to_email
         msg['Subject'] = subject
-        msg.attach(MIMEText(body, 'plain'))
+        msg.attach(MIMEText(body, 'plain', 'utf-8'))
 
         try:
             with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
