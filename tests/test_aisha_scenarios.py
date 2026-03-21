@@ -207,6 +207,11 @@ class TestVoiceEngine:
         """ElevenLabs returns a file path for Aisha's voice channel."""
         fake_audio = b"\xff\xfb" + b"\x00" * 512  # minimal fake MP3 header
 
+        import src.core.voice_engine as _ve
+        # Reset module-level key pool so the patched env var is read fresh
+        _ve._EL_KEYS = []
+        _ve._EL_INDEX = 0
+
         with patch.dict(os.environ, {"ELEVENLABS_API_KEY": "test_key_123"}):
             with patch("requests.post") as mock_post:
                 mock_resp = MagicMock()
@@ -640,14 +645,15 @@ class TestSelfImprovement:
     # 38
     def test_self_improvement_trigger_redeploy_returns_true_on_200(self):
         """trigger_redeploy() returns True when the deploy hook responds with HTTP 200."""
+        import src.core.self_improvement as _si  # ensure module is loaded before patching
         with patch.dict(os.environ, {"RENDER_DEPLOY_HOOK_URL": "https://api.render.com/deploy/test"}):
-            with patch("src.core.self_improvement.requests.get") as mock_get:
+            with patch.object(_si.requests, "get") as mock_get:
                 mock_resp = MagicMock()
                 mock_resp.status_code = 200
+                mock_resp.text = ""
                 mock_get.return_value = mock_resp
 
-                from src.core.self_improvement import trigger_redeploy
-                result = trigger_redeploy()
+                result = _si.trigger_redeploy()
 
         assert result is True
 
@@ -907,6 +913,9 @@ class TestTelegramBot:
     def test_telegram_bot_unauthorized_user_gets_locked_response(self):
         """A non-owner user receives the privacy lock message."""
         bot_module, mock_bot = self._reload_bot()
+
+        # Verify bot_module.bot is the mock we control (guard against reload losing the ref)
+        assert bot_module.bot is mock_bot, "bot_module.bot is not the expected mock instance after reload"
 
         reply_texts = []
         mock_bot.reply_to.side_effect = lambda msg, text: reply_texts.append(text)
