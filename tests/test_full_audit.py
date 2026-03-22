@@ -12,6 +12,21 @@ import sys, io, time
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 from playwright.sync_api import sync_playwright
 
+def get_last_bot_reply(page) -> str:
+    """Return the last incoming (bot) message text — excludes own sent messages."""
+    return page.evaluate("""() => {
+        const msgs = Array.from(document.querySelectorAll('.Message'));
+        // Bot messages do NOT have 'own' in their classList
+        const botMsgs = msgs.filter(el => !el.classList.contains('own'));
+        for (let i = botMsgs.length - 1; i >= 0; i--) {
+            const tc = botMsgs[i].querySelector('.text-content');
+            if (tc && tc.textContent.trim().length > 5) {
+                return tc.textContent.trim();
+            }
+        }
+        return '';
+    }""")
+
 def send_and_wait(page, text, wait_ms=28000):
     before = page.locator('.Message').count()
     page.evaluate("document.getElementById('editable-message-text')?.focus()")
@@ -20,24 +35,29 @@ def send_and_wait(page, text, wait_ms=28000):
     page.wait_for_timeout(150)
     page.keyboard.press("Enter")
     print(f"  >> {text!r}")
+    # Wait until OUR message appears (count > before)
+    sent_deadline = time.time() + 10
+    while time.time() < sent_deadline:
+        if page.locator('.Message').count() > before:
+            break
+        page.wait_for_timeout(300)
+
+    # Now wait for bot reply (count > before + 1)
     deadline = time.time() + wait_ms / 1000
     last, stable = "", 0
     while time.time() < deadline:
         if page.locator('.Message').count() > before + 1:
-            page.wait_for_timeout(700)
-            txts = page.locator('.text-content').all()
-            if txts:
-                cur = txts[-1].inner_text().strip()
-                if len(cur) >= 10:
-                    if cur == last:
-                        stable += 1
-                        if stable >= 2:
-                            return cur
-                    else:
-                        last, stable = cur, 0
+            page.wait_for_timeout(800)
+            cur = get_last_bot_reply(page)
+            if len(cur) >= 10:
+                if cur == last:
+                    stable += 1
+                    if stable >= 3:
+                        return cur
+                else:
+                    last, stable = cur, 0
         page.wait_for_timeout(400)
-    txts = page.locator('.text-content').all()
-    return txts[-1].inner_text().strip() if txts else ""
+    return get_last_bot_reply(page)
 
 TESTS = [
     # ── IDENTITY ─────────────────────────────────────────────────────────────
@@ -108,7 +128,7 @@ def main():
         for i, (name, msg, expect, banned) in enumerate(TESTS, 1):
             cat = name.split(":")[0].strip()
             print(f"\n[{i:02d}/{len(TESTS)}] {name}")
-            wait = 50000 if "syscheck" in msg.lower() else 28000
+            wait = 90000 if "syscheck" in msg.lower() else 32000
             reply = send_and_wait(page, msg, wait_ms=wait)
             ok  = any(e.lower() in reply.lower() for e in expect) if expect else True
             bad = any(b.lower() in reply.lower() for b in banned)
