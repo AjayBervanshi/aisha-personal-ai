@@ -434,6 +434,43 @@ class AishaBrain:
             )
             response_text = result.text
 
+            # 6a. HINDI QUALITY CHECK — if language is Hindi/Marathi but fallback
+            # provider (NVIDIA/Groq) responded in English, retry with explicit Hindi
+            # instruction. Gemini handles Devanagari natively; others often don't.
+            if language in ("Hindi", "Marathi") and result.provider not in ("gemini",):
+                deva_count = sum(1 for c in response_text if '\u0900' <= c <= '\u097F')
+                if deva_count < 20:
+                    log.warning(
+                        f"[Brain] Hindi response from {result.provider} has only "
+                        f"{deva_count} Devanagari chars — retrying with explicit Hindi instruction"
+                    )
+                    hindi_system = (
+                        "CRITICAL INSTRUCTION: तुम्हें हर जवाब 100% हिंदी देवनागरी लिपि में "
+                        "देना है। Roman script या English का एक भी शब्द use मत करो। "
+                        "सिर्फ देवनागरी। यह mandatory है।\n\n"
+                        + system_prompt
+                    )
+                    hindi_user = (
+                        "[ज़रूरी: जवाब केवल हिंदी देवनागरी में दो — English या Roman नहीं]\n"
+                        + user_message
+                    )
+                    try:
+                        retry_result = self.ai.generate(
+                            hindi_system,
+                            hindi_user,
+                            history[:-1],
+                            nvidia_task_type="writing",
+                        )
+                        retry_deva = sum(1 for c in retry_result.text if '\u0900' <= c <= '\u097F')
+                        if retry_deva > deva_count:
+                            response_text = retry_result.text
+                            log.info(
+                                f"[Brain] Hindi retry improved: {deva_count} → {retry_deva} Devanagari chars "
+                                f"via {retry_result.provider}"
+                            )
+                    except Exception as e:
+                        log.warning(f"[Brain] Hindi retry failed: {e}")
+
             # 6. VIDEO PRODUCTION TRIGGER (T-102)
             # Recognize if Ajay wants to start a YouTube production run
             video_triggers = ["render the video", "start production", "video banao", "make video", "generate the video"]

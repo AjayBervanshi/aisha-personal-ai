@@ -93,34 +93,32 @@ aisha/
 │   │   ├── handlers.py             ← Message handlers
 │   │   └── voice_handler.py        ← Voice message processing
 │   │
-│   ├── 📁 web/
-│   │   ├── index.html              ← Full web app (single file)
-│   │   └── voice.js                ← Voice/speech module
-│   │
 │   ├── 📁 memory/
-│   │   ├── memory_manager.py       ← Read/write Aisha's memory
-│   │   └── context_builder.py      ← Build context from memories
+│   │   └── memory_manager.py       ← Read/write Aisha's memory
 │   │
 │   └── 📁 core/
 │       ├── aisha_brain.py          ← Core AI logic
+│       ├── ai_router.py            ← 8-provider AI fallback chain
 │       ├── language_detector.py    ← Hindi/Marathi/English detection
-│       └── mood_detector.py        ← Detect conversation mood/mode
+│       ├── mood_detector.py        ← Detect conversation mood/mode
+│       ├── voice_engine.py         ← ElevenLabs + Edge-TTS
+│       └── autonomous_loop.py      ← 24/7 scheduler (12 jobs)
 │
 ├── 📁 supabase/
-│   ├── schema.sql                  ← Full database schema
-│   ├── seed.sql                    ← Initial data for Ajay
-│   └── functions/                  ← Supabase Edge Functions
-│       └── memory_search.ts        ← Semantic memory search
+│   ├── functions/                  ← Supabase Edge Functions
+│   │   ├── chat/index.ts           ← Web chat brain
+│   │   ├── trigger-studio/         ← pg_cron studio trigger
+│   │   └── trigger-maintenance/    ← pg_cron maintenance trigger
+│   └── migrations/                 ← SQL migration files
 │
 ├── 📁 docs/
 │   ├── SETUP_GUIDE.md              ← Step-by-step setup guide
-│   ├── SYSTEM_PROMPT.md            ← Aisha's full system prompt
-│   ├── API_REFERENCE.md            ← API documentation
+│   ├── ARCHITECTURE.md             ← Full system architecture
 │   └── CONTRIBUTING.md             ← How to add features
 │
-└── 📁 scripts/
-    ├── deploy_telegram.sh          ← Deploy Telegram bot
-    └── test_aisha.py               ← Test Aisha locally
+└── 📁 tests/
+    ├── test_production_agent.py    ← Production test suite (22 scenarios)
+    └── test_full_audit.py          ← Full Telegram audit tests
 ```
 
 ---
