@@ -1,0 +1,42 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python*:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push*)",
+      "Bash(git status)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git tag*)",
+      "Bash(npm*:*)",
+      "Bash(npx*:*)",
+      "Bash(claude mcp*)",
+      "Bash(curl -s https://aisha-bot-yudp.onrender.com*)",
+      "Bash(gh pr*)",
+      "Bash(gh issue*)",
+      "mcp__filesystem__*",
+      "mcp__memory__*",
+      "mcp__github__*",
+      "mcp__supabase__*",
+      "mcp__playwright__*"
+    ],
+    "deny": [
+      "Bash(rm -rf src*)",
+      "Bash(rm -rf supabase*)",
+      "Bash(git push --force*)"
+    ]
+  },
+  "hooks": {
+    "PreBash": [
+      {
+        "command": "bash .claude/hooks/pre-bash.sh \"$BASH_COMMAND\""
+      }
+    ],
+    "PostWrite": [
+      {
+        "command": "bash .claude/hooks/post-write.sh \"$FILE_PATH\""
+      }
+    ]
+  }
+}

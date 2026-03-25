@@ -1,13 +1,42 @@
 {
   "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "E:/VSCode/Aisha"],
+      "description": "Read/write files in the Aisha project"
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "description": "Persistent memory across sessions"
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"],
+      "description": "Up-to-date library docs from Context7"
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"],
+      "description": "Browser automation for Telegram Web testing"
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["-y", "chrome-devtools-mcp@latest"],
+      "description": "CDP connection to running Chrome/Edge"
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "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"
+      },
+      "description": "GitHub PR/issue/repo management"
+    },
     "supabase": {
       "command": "npx",
-      "args": [
-        "-y",
-        "@supabase/mcp-server-supabase@latest",
-        "--access-token",
-        "sbp_2c1b958655c9fd3cce6d15cf226ed8c1337b9343"
-      ]
+      "args": ["-y", "@supabase/mcp-server-supabase@latest", "--access-token", "sbp_2c1b958655c9fd3cce6d15cf226ed8c1337b9343"],
+      "description": "Supabase DB tables, functions, migrations"
     }
   }
 }
