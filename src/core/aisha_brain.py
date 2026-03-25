@@ -54,6 +54,9 @@ class AishaBrain:
         # Format: { user_id: [{"role": ..., "content": ...}, ...] }
         self._histories: dict = {}
 
+        # Optional mood override — set by /mood <name> command, cleared each response
+        self.mood_override: str | None = None
+
         # Pre-warm owner history so the first owner message feels continuous.
         owner_uid = self._get_owner_id()
         if owner_uid is not None:
@@ -375,7 +378,12 @@ class AishaBrain:
         # 1. Detect language and mood
         language, _ = detect_language(user_message)
         mood_res = detect_mood(user_message)
-        mood     = mood_res.mood
+        # Allow /mood command override; consume it for one response only
+        if self.mood_override:
+            mood = self.mood_override
+            self.mood_override = None
+        else:
+            mood = mood_res.mood
 
         # Resolve the effective user id — fall back to 0 (owner legacy bucket)
         # when caller_id is None so that old call-sites stay compatible.

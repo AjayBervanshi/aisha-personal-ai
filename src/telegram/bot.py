@@ -888,6 +888,27 @@ def cmd_imagine(message):
 @bot.message_handler(commands=["mood"])
 def cmd_mood(message):
     if not is_ajay(message): return unauthorized_response(message)
+    # Support: /mood casual  /mood motivational  etc.
+    parts = message.text.strip().split(maxsplit=1)
+    if len(parts) > 1:
+        requested = parts[1].strip().lower()
+        from src.core.prompts.personality import MOOD_INSTRUCTIONS
+        if requested in MOOD_INSTRUCTIONS:
+            aisha.mood_override = requested
+            bot.send_message(
+                message.chat.id,
+                f"✅ Mood switched to *{requested}* mode, Ajay!",
+                parse_mode="Markdown"
+            )
+        else:
+            valid = ", ".join(MOOD_INSTRUCTIONS.keys())
+            bot.send_message(
+                message.chat.id,
+                f"⚠️ Unknown mood *{requested}*. Available: {valid}",
+                parse_mode="Markdown"
+            )
+        return
+    # No argument — show keyboard picker
     bot.send_message(
         message.chat.id,
         "💜 *How are you feeling right now, Ajay?*",
