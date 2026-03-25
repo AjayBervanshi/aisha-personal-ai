@@ -1718,6 +1718,11 @@ def cmd_instagram_setup(message):
     )
 
 
+def _fire_in_thread(fn):
+    """Run *fn* in a background daemon thread (fire-and-forget helper)."""
+    threading.Thread(target=fn, daemon=True).start()
+
+
 def _apply_key_update(chat_id: int, key_name: str, new_value: str):
     """Validate a new API key value and save it to Supabase api_keys table."""
     import requests as _req

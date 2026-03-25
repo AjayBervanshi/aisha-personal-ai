@@ -13,6 +13,7 @@ from src.core.video_engine import render_video
 from src.core.trend_engine import get_trends_for_channel
 from src.core.prompts.personality import CHANNEL_PROMPTS
 from src.core.config import CHANNEL_VOICE_IDS
+from src.core.series_tracker import get_continuity_context
 
 CHANNEL_IDENTITY = {
     "Story With Aisha": {
@@ -154,12 +155,16 @@ Output: 300 words max. Be specific and concrete.""",
                 nvidia_task_type=nvidia_task,
         )
 
+        # Inject series continuity context if this is part of an episodic series
+        continuity_ctx = ""
+        if inputs.get("series_id"):
+            continuity_ctx = get_continuity_context(inputs["series_id"])
+
         print("[Lexi] Writing full script...")
         self.results["script"] = self._generate(
             f"""You are Lexi, the Master Scriptwriter.
 {channel_context}
-
-Story Brief:
+{continuity_ctx + chr(10) + chr(10) if continuity_ctx else ""}Story Brief:
 {self.results['research']}
 
 Write the complete script. Include:

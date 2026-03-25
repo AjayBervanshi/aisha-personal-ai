@@ -43,16 +43,56 @@ and improves her own code via GitHub PRs.
 |------|---------|
 | `src/telegram/bot.py` | Telegram bot + health server + autonomous loop thread |
 | `src/core/ai_router.py` | 8-provider AI fallback chain |
-| `src/core/autonomous_loop.py` | 24/7 scheduler (12 jobs) |
+| `src/core/autonomous_loop.py` | 24/7 scheduler (12+ jobs) |
 | `src/core/self_editor.py` | Aisha patches her own code (PR-gated) |
 | `src/core/self_improvement.py` | GitHub PR creation/merge for self-improvement |
 | `src/core/self_repair.py` | File integrity monitor + auto-restore from GitHub |
 | `src/core/voice_engine.py` | ElevenLabs + Edge-TTS voice generation |
-| `src/agents/youtube_crew.py` | 5-agent content pipeline |
-| `src/agents/antigravity_agent.py` | Job queue processor |
+| `src/core/video_engine.py` | Ken Burns MP4 rendering (MoviePy) |
+| `src/core/social_media_engine.py` | YouTube upload + Instagram Reel posting |
+| `src/core/series_tracker.py` | Episodic YouTube Shorts series continuity tracker |
+| `src/core/token_manager.py` | Instagram + YouTube OAuth token health + refresh |
+| `src/agents/youtube_crew.py` | 5-agent content pipeline (Research→Script→Visual→SEO→Voice) |
+| `src/agents/antigravity_agent.py` | Job queue processor → render → upload → post |
 | `src/core/image_engine.py` | Image generation (Gemini → DALL-E → Pollinations) |
 | `src/core/config.py` | All env vars, CHANNEL_VOICE_IDS, CHANNEL_AI_PROVIDER |
 | `src/core/prompts/personality.py` | MOOD_INSTRUCTIONS + CHANNEL_PROMPTS |
+
+---
+
+## Skills Claude Should Auto-Use When Working on Aisha
+
+| When working on... | Auto-use skill |
+|--------------------|---------------|
+| Any new Python file or function | `superpowers:test-driven-development` |
+| Any DB migration or Supabase query | `supabase-postgres-best-practices` |
+| Before committing code | `superpowers:verification-before-completion` then `commit` |
+| After implementing a module | `coderabbit:code-review` + `owasp-security` |
+| Voice/audio generation code | `elevenlabs` skill |
+| Thumbnail/image generation code | `imagen` skill |
+| YouTube competitor analysis | `youtube-transcript` skill |
+| Content scripts (Hindi stories) | `content-creator` + `avoid-ai-writing` |
+| Architecture decisions | `architecture-diagram-creator` |
+| Complex multi-file changes | `superpowers:dispatching-parallel-agents` |
+| Release / deploy | `release` + `owasp-security` |
+| Documentation updates | `update-docs` + `sc:document` |
+
+---
+
+## Aisha's Extended API Capabilities (use all .env keys)
+
+| Capability | API / Method | File |
+|-----------|-------------|------|
+| Voice narration | ElevenLabs (`ELEVENLABS_API_KEY`) | `voice_engine.py` |
+| Voice fallback | Edge-TTS (free) | `voice_engine.py` |
+| Image generation | Gemini imagen (`GEMINI_API_KEY`) | `image_engine.py` |
+| Image fallback | DALL-E (`OPENAI_API_KEY`) → Pollinations (free) | `image_engine.py` |
+| Video rendering | MoviePy (local) | `video_engine.py` |
+| YouTube upload | Google Data API v3 (`tokens/youtube_token.json`) | `social_media_engine.py` |
+| Instagram post | Meta Graph API (`tokens/instagram_token.json`) | `social_media_engine.py` |
+| HuggingFace inference | `HUGGINGFACE_API_KEY` — sentiment, classification, NLP | (future: `hf_engine.py`) |
+| Competitor video analysis | YouTube transcript + AI summary | (future: `competitor_analyzer.py`) |
+| Email/Gmail | Gmail API (`GMAIL_APP_PASSWORD`) | (reminders) |
 
 ---
 
@@ -111,12 +151,22 @@ Key tables: `aisha_conversations`, `aisha_memories`, `aisha_expenses`,
 
 ---
 
-## Active Issues (2026-03-22)
+## Active Issues (2026-03-25)
 - Groq API 401 — renew at console.groq.com
 - xAI Grok 403 — no credits (Riya falls back to Groq)
 - PR #2 on GitHub open — "Acknowledging user instructions"
-- Guest migration SQL pending — run in Supabase Dashboard SQL Editor:
+- Guest migration SQL pending:
   `ALTER TABLE aisha_conversations ADD COLUMN IF NOT EXISTS guest_user_id BIGINT DEFAULT NULL;`
+
+## Pending Implementations (2026-03-25 — parallel agents executing)
+- [ ] `antigravity_agent.py` — wire render_video=True + auto upload/post
+- [ ] `autonomous_loop.py` — pass platforms + auto_post to studio sessions
+- [ ] `src/core/series_tracker.py` — episodic series DB + tracker class (NEW)
+- [ ] `src/core/token_manager.py` — Instagram/YouTube token health (NEW)
+- [ ] `src/telegram/bot.py` — missing commands: /syscheck /studio /upgrade /voice /mood /aistatus
+- [ ] `tests/test_smart_agent.py` — randomized smart test agent (NEW)
+- [ ] Supabase `aisha_series` + `aisha_episodes` tables migration
+- [ ] Supabase Storage bucket `content-videos` (for Instagram Reel video hosting)
 
 ---
 

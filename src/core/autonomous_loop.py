@@ -19,6 +19,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 from src.core.config import TIMEZONE
 from src.core.aisha_brain import AishaBrain
 from src.core.logger import get_logger
+from src.core.token_manager import run_token_health_check
 import os
 import telebot
 
@@ -465,6 +466,8 @@ def start_loop(once: bool = False):
     schedule.every().day.at("04:00").do(bot.run_temp_cleanup)
     # API key expiry monitor — daily at 9 AM
     schedule.every().day.at("09:00").do(bot.run_key_expiry_check)
+    # Token health check — daily at 6 AM (refresh Instagram/YouTube OAuth before expiry)
+    schedule.every().day.at("06:00").do(run_token_health_check)
 
     # Run the first studio session instantly on startup
     bot.run_studio_session()
