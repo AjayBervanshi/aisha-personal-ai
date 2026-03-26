@@ -151,22 +151,43 @@ Key tables: `aisha_conversations`, `aisha_memories`, `aisha_expenses`,
 
 ---
 
-## Active Issues (2026-03-25)
-- Groq API 401 — renew at console.groq.com
-- xAI Grok 403 — no credits (Riya falls back to Groq)
+## Active Issues (2026-03-25) — API Audit Results
+
+### ❌ Keys to Renew
+- **Groq** 401 Invalid → renew at console.groq.com
+- **OpenAI** 401 Invalid → renew at platform.openai.com
+- **Anthropic** 401 Invalid → renew at console.anthropic.com
+- **xAI (Grok)** 403 BLOCKED — key was leaked & auto-revoked → get new key at console.x.ai
+- **HuggingFace** 401 — looks like a placeholder key → get real token at huggingface.co/settings/tokens
+- **Gemini** 429 Quota exceeded → wait for monthly reset or upgrade billing at aistudio.google.com
+
+### 🚨 ElevenLabs CRITICAL
+- Only **178 characters remaining** (starter plan, 50,140 limit)
+- voice_engine.py already falls back to Edge-TTS on 422 (quota error) — SAFE
+- Upgrade at elevenlabs.io before next YouTube story generation run
+
+### ✅ Working Keys (as of 2026-03-25)
+- **NVIDIA NIM**: 21/22 keys active (KEY_18 disabled — 403 forbidden)
+- **YouTube API**: Working (AIzaSyD0rPY4...)
+- **Instagram**: @story_with_aisha — token active
+- **Gmail SMTP**: Working (aishaa1662001@gmail.com)
+- **GitHub**: Working (AjayBervanshi)
+- **Supabase PAT**: Working (Aisha-Brain-Cloud project)
+
+### Other
 - PR #2 on GitHub open — "Acknowledging user instructions"
 - Guest migration SQL pending:
   `ALTER TABLE aisha_conversations ADD COLUMN IF NOT EXISTS guest_user_id BIGINT DEFAULT NULL;`
 
-## Pending Implementations (2026-03-25 — parallel agents executing)
-- [ ] `antigravity_agent.py` — wire render_video=True + auto upload/post
-- [ ] `autonomous_loop.py` — pass platforms + auto_post to studio sessions
-- [ ] `src/core/series_tracker.py` — episodic series DB + tracker class (NEW)
-- [ ] `src/core/token_manager.py` — Instagram/YouTube token health (NEW)
-- [ ] `src/telegram/bot.py` — missing commands: /syscheck /studio /upgrade /voice /mood /aistatus
-- [ ] `tests/test_smart_agent.py` — randomized smart test agent (NEW)
-- [ ] Supabase `aisha_series` + `aisha_episodes` tables migration
-- [ ] Supabase Storage bucket `content-videos` (for Instagram Reel video hosting)
+## Completed Implementations (2026-03-25)
+- [x] `antigravity_agent.py` — render_video=True + auto upload/post (already wired)
+- [x] `autonomous_loop.py` — platforms + auto_post to studio sessions (already wired)
+- [x] `src/core/series_tracker.py` — episodic series DB + tracker class
+- [x] `src/core/token_manager.py` — Instagram/YouTube token health
+- [x] `src/telegram/bot.py` — /syscheck /studio /upgrade /voice /mood /aistatus all exist
+- [x] `tests/test_smart_agent.py` — randomized smart test agent (5/5 passing)
+- [x] Supabase `aisha_series` + `aisha_episodes` tables migration applied
+- [x] Supabase Storage bucket `content-videos` created
 
 ---
 

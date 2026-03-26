@@ -157,7 +157,8 @@ def _generate_elevenlabs(text: str, language: str = "English", mood: str = "casu
         
         try:
             response = requests.post(url, json=data, headers=headers, timeout=90)
-            if response.status_code == 401 or response.status_code == 429:
+            if response.status_code in (401, 402, 422, 429):
+                # 401=invalid key, 402=payment/quota, 422=char limit exceeded, 429=rate limit
                 _mark_key_failed()
                 continue
                 

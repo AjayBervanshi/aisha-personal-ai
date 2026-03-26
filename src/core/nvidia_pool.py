@@ -57,8 +57,8 @@ NVIDIA NIM Pool Orchestrator — 22 keys × 1,000 credits/month = 22,000 total c
 ║  KEY_17  Mistral-Large-3 Writer B  mistralai/mistral-large-3-675b          ║
 ║          → Same giant writer, second key. Full backup for story writing    ║
 ║                                                                             ║
-║  KEY_18  LLaMA-3.3 Chat C          meta/llama-3.3-70b-instruct             ║
-║          → Third LLaMA-3.3 key. Used when A & B are rate-limited          ║
+║  KEY_18  ⛔ DISABLED                 403 Forbidden — key blocked by NVIDIA  ║
+║          → Do not use. Will be skipped automatically via failure counter   ║
 ║                                                                             ║
 ║  KEY_19  LLaMA-3.3 Chat D          meta/llama-3.3-70b-instruct             ║
 ║          → Fourth key. Aisha's autonomous loop uses this for decisions     ║
@@ -131,7 +131,8 @@ _KEY_DEFINITIONS = [
     ("NVIDIA_KEY_15", "google/gemma-2-27b-it",                            "general"), # Gemma-2 27B General
     ("NVIDIA_KEY_16", "microsoft/phi-3-small-8k-instruct",                "fast"),    # Phi-3 Small Fast (SEO, metadata)
     ("NVIDIA_KEY_17", "mistralai/mistral-large-3-675b-instruct-2512",     "writing"), # Mistral-Large-3 Writer B
-    ("NVIDIA_KEY_18", "meta/llama-3.3-70b-instruct",                      "chat"),    # LLaMA-3.3 Chat C
+    # KEY_18 is 403 FORBIDDEN (key blocked by NVIDIA) — excluded from pool
+    # ("NVIDIA_KEY_18", "meta/llama-3.3-70b-instruct",                   "chat"),
     ("NVIDIA_KEY_19", "meta/llama-3.3-70b-instruct",                      "chat"),    # LLaMA-3.3 Chat D (autonomous loop)
     ("NVIDIA_KEY_20", "meta/llama-3.3-70b-instruct",                      "chat"),    # LLaMA-3.3 Chat E (Telegram bot)
     ("NVIDIA_KEY_21", "meta/llama-3.3-70b-instruct",                      "chat"),    # LLaMA-3.3 Chat F (content pipeline)
