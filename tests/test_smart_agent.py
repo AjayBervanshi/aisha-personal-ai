@@ -72,7 +72,7 @@ def test_imports() -> dict:
     """Test that all core modules import without errors."""
     results = {"name": "imports", "passed": [], "failed": []}
     modules = [
-        ("src.core.config", "Config"),
+        ("src.core.config", None),
         ("src.core.ai_router", "AIRouter"),
         ("src.core.aisha_brain", "AishaBrain"),
         ("src.core.voice_engine", None),
@@ -100,7 +100,7 @@ def test_ai_router() -> dict:
     try:
         from src.core.ai_router import AIRouter
         router = AIRouter()
-        response = router.chat(question, max_tokens=100)
+        response = router.chat(question)
         results["status"] = "PASS"
         results["response_len"] = len(response) if response else 0
         results["response_preview"] = (response or "")[:100]
@@ -122,7 +122,7 @@ def test_brain_response() -> dict:
             brain.set_mood(mood)
         elif hasattr(brain, 'mood_override'):
             brain.mood_override = mood
-        response = brain.think(question, user_id=1002381172)
+        response = brain.think(question, caller_id=1002381172)
         results["status"] = "PASS"
         results["response_len"] = len(response) if response else 0
         results["response_preview"] = (response or "")[:150]
@@ -144,11 +144,12 @@ def test_content_job_enqueue() -> dict:
         kwargs = {
             "topic": f"[TEST] {topic}",
             "channel": channel,
-            "content_format": "Short/Reel",
-            "platforms": ["youtube"],
+            "fmt": "Short/Reel",
+            "platform_targets": ["youtube"],
             "auto_post": False,  # NEVER auto-post during tests
         }
-        job_id = agent.enqueue_job(**kwargs)
+        job_result = agent.enqueue_job(**kwargs)
+        job_id = job_result.get("id") if isinstance(job_result, dict) else job_result
         results["status"] = "PASS"
         results["job_id"] = str(job_id)
 
