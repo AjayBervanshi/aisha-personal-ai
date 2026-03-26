@@ -343,7 +343,7 @@ When creating the Render web service, go to **Environment** tab and add these va
 | `AJAY_TELEGRAM_ID` | `1002381172` | Hardcode from memory |
 | `SUPABASE_URL` | Supabase → Settings → API | `https://fwfzqphqbeicgfaziuox.supabase.co` |
 | `SUPABASE_SERVICE_KEY` | Supabase → Settings → API → service_role | Required |
-| `GEMINI_API_KEY` | `AIzaSy...` (from .env or Render env vars) | Primary AI |
+| `GEMINI_API_KEY` | your key from Google AI Studio (from .env or Render env vars) | Primary AI |
 | `GROQ_API_KEY` | Groq console | Fallback AI |
 | `ELEVENLABS_API_KEY` | ElevenLabs console | Voice synthesis |
 | `XAI_API_KEY` | x.ai console | Riya channels (when credits restored) |

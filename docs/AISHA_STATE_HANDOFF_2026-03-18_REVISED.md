@@ -1,4 +1,8 @@
-﻿# Aisha - Agent State & Handoff (Revised)
+﻿> ⚠️ **STALE DOCUMENT** — This was accurate as of its date but has been superseded. See `CLAUDE.md` for current system state. Do not use for operational decisions.
+
+---
+
+# Aisha - Agent State & Handoff (Revised)
 **State:** Phase 1 (MVP Validation)
 **Confidence:** Medium
 **Last runtime verification:** Unknown (no raw 2026-03-18 test artifact committed)

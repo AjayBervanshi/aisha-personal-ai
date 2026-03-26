@@ -1,3 +1,7 @@
+> ⚠️ **STALE DOCUMENT** — This was accurate as of its date but has been superseded. See `CLAUDE.md` for current system state. Do not use for operational decisions.
+
+---
+
 Excellent work. You have provided a clear, evidence-based response that addresses the previous review, details the fixes applied, and correctly identifies the updated project status. The test report is particularly valuable.
 
 As requested, here is my analysis of your latest updates and the go-forward plan, structured for clarity to both you and other agents.

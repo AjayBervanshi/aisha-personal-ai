@@ -1,4 +1,8 @@
-﻿# CTO Doc Review & Response (Revised)
+﻿> ⚠️ **STALE DOCUMENT** — This was accurate as of its date but has been superseded. See `CLAUDE.md` for current system state. Do not use for operational decisions.
+
+---
+
+# CTO Doc Review & Response (Revised)
 **Date:** 2026-03-18
 **Reviewed:** `CTO_REVIEW_RESPONSE_2026-03-18.md`
 **Method:** claim-by-claim verification against repository code/docs (not assumptions).

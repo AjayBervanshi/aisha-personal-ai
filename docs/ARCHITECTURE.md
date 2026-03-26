@@ -1,3 +1,5 @@
+> **Note (2026-03-25):** This document was last fully updated 2026-03-17. Some sections may be stale. See `CLAUDE.md` for current system state.
+
 # AISHA — COMPLETE TECHNICAL ARCHITECTURE DOCUMENT
 **Principal Software Architect Review | 2026-03-17**
 
@@ -626,7 +628,7 @@ Month 4+:
 ### Technical Debt (Priority Order)
 ```
 HIGH:
-  1. No automated tests — any change can silently break the system
+  1. Automated tests exist (`tests/test_smart_agent.py`, 5/5 passing) but coverage is limited — many paths remain untested and can silently break
   2. Two Telegram implementations (bot.py + index.ts) can diverge
   3. video_engine.py half-implemented (HuggingFace 410 Gone)
   4. Hard-coded channel prompts in Python (DB table exists but unused)
@@ -736,7 +738,7 @@ Functionally complete, operationally immature. Core intelligence, content pipeli
 
 ### Major Risks
 ```
-⚠️ No automated tests — silent breakage on any change
+⚠️ Test coverage is limited — `tests/test_smart_agent.py` exists (5/5 passing) but most paths are untested; silent breakage still possible
 ⚠️ NVIDIA keys expire 2026-09-17 — 22,000 credits lost with no alert
 ⚠️ Single Railway instance — one crash = Aisha goes silent
 ⚠️ xAI Grok 403 — Riya channels blocked until credits purchased

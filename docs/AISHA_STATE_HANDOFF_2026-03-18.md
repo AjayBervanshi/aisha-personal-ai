@@ -1,3 +1,7 @@
+> ⚠️ **STALE DOCUMENT** — This was accurate as of its date but has been superseded. See `CLAUDE.md` for current system state. Do not use for operational decisions.
+
+---
+
 # Aisha — Agent State & Handoff Document
 **State: Phase 1 (MVP Validation) | Confidence: HIGH | Last runtime verification: 2026-03-18 — 17/17 tests passed**
 
@@ -56,7 +60,7 @@
 | Full E2E video upload to YouTube (create → render → publish) | ❌ **NOT TESTED** — YouTube upload code exists and token exists, but upload not executed | HIGH — Phase 1 gate |
 | Video render (MP4 from voice + images) | ❌ **NOT WORKING** — HuggingFace endpoints all 410 Gone, no image source for video | MEDIUM — pipeline works without video (audio-only format valid for YouTube) |
 | GMAIL_USER / GMAIL_APP_PASSWORD set in .env | **UNKNOWN** — email alert system added but credential status unverified | MEDIUM — alerts silently fail if not set |
-| Groq API key valid | ❌ **EXPIRED** — key `gsk_C6Lmx...` returns 401. NVIDIA chat pool covers this. | LOW — covered by NVIDIA fallback |
+| Groq API key valid | ❌ **EXPIRED** — key `[REDACTED]` returns 401. NVIDIA chat pool covers this. | LOW — covered by NVIDIA fallback |
 | AutonomousLoop daily cron running | **UNKNOWN** — loop code exists (`src/core/autonomous_loop.py`) but Railway deploy status unknown | MEDIUM — manual runs work |
 
 ---

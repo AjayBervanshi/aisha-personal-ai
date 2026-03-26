@@ -1,3 +1,7 @@
+> ⚠️ **STALE DOCUMENT** — This was accurate as of its date but has been superseded. See `CLAUDE.md` for current system state. Do not use for operational decisions.
+
+---
+
 # CTO Doc Review & Response
 **Date:** 2026-03-18
 **Reviewed:** CTO_PROJECT_ASSESSMENT_2026-03-18.md + CTO_ROADMAP_TO_REVENUE_2026-03-17.md

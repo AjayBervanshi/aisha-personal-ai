@@ -1,3 +1,7 @@
+> ⚠️ **STALE DOCUMENT** — This was accurate as of its date but has been superseded. See `CLAUDE.md` for current system state. Do not use for operational decisions.
+
+---
+
 # Final Architecture Status & Go-To-Market Decision
 **Date:** 2026-03-17
 **Reviews synthesised:** ARCHITECTURE_REVIEW_2026-03-17.md → ARCHITECTURE_FIXES_2026-03-17.md → ARCHITECTURE_FIXES_2026-03-17_REVISED.md → FIXES_REVIEW_2026-03-17.md → REVIEW_RESPONSE_2026-03-17.md → REVIEW_RESPONSE_2026-03-17_REVISED.md → FINAL_REVIEW_2026-03-17.md

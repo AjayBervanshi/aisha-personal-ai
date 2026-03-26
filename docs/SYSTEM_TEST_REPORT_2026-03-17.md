@@ -1,3 +1,7 @@
+> ⚠️ **STALE DOCUMENT** — This was accurate as of its date but has been superseded. See `CLAUDE.md` for current system state. Do not use for operational decisions.
+
+---
+
 # Aisha System Test Report — 2026-03-17
 **Test:** `python scripts/test_all_systems.py`
 **Run by:** Claude Code
@@ -17,7 +21,7 @@
 | 6 | Supabase | content_queue + idempotency | ✅ PASS | — |
 | 7 | Supabase | api_keys table | ✅ PASS | — |
 | 8 | AI Router | Gemini | ❌ FAIL | Daily quota exhausted (20 req/day free tier limit for gemini-2.5-flash) |
-| 9 | AI Router | Groq LLaMA-3.3 | ❌ FAIL | API key 401 Invalid — key `gsk_C6Lmx...` is expired |
+| 9 | AI Router | Groq LLaMA-3.3 | ❌ FAIL | API key 401 Invalid — key `[REDACTED]` is expired |
 | 10 | AI Router | NVIDIA Mistral-Large-3 (Riya) | ❌ FAIL | Read timeout (both keys, 60s) — likely cold start or service issue |
 | 11 | Voice | ElevenLabs Aisha | ✅ PASS | (from prior successful run) |
 | 12 | Voice | ElevenLabs Riya | ✅ PASS | (from prior successful run) |
