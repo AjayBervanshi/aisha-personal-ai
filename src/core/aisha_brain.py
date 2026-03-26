@@ -363,6 +363,53 @@ class AishaBrain:
 
         return None
 
+    def _detect_nvidia_task_type(self, user_message: str, language: str, image_bytes: bytes = None) -> str:
+        """
+        Map this message to the best NVIDIA NIM pool:
+          writing  → Hindi stories, scripts, kahani (uses Mistral-Large-3 675B)
+          code     → programming, debugging, SQL (uses Codestral)
+          vision   → image attached (uses Phi-4 Multimodal)
+          video    → YouTube/Reel scripts, storyboard (uses Phi-3-128K + Qwen-122B)
+          fast     → quick greetings, simple 1-line answers (uses Gemma-2B)
+          general  → everything else (uses Qwen-122B, Gemma-27B)
+          chat     → conversation, emotional, daily chat (uses LLaMA-3.3 pool ×6 keys)
+        """
+        if image_bytes:
+            return "vision"
+
+        msg = user_message.lower()
+
+        # Writing / storytelling — use the big Mistral-Large-3 writing pool
+        if any(kw in msg for kw in [
+            "story", "kahani", "script", "episode", "chapter", "likhna", "likho",
+            "poem", "shayari", "kavita", "narrat", "sunao", "ek kahani",
+            "write a", "story sunao", "romantic", "love story",
+        ]) or language in ("Hindi", "Marathi"):
+            return "writing"
+
+        # Code / technical
+        if any(kw in msg for kw in [
+            "code", "python", "javascript", "function", "class", "debug", "error",
+            "sql", "query", "script", "program", "fix this", "import",
+        ]):
+            return "code"
+
+        # Video / YouTube content
+        if any(kw in msg for kw in [
+            "youtube", "reel", "shorts", "video", "storyboard", "thumbnail",
+            "title", "description", "tags", "seo", "content plan",
+        ]):
+            return "video"
+
+        # Fast — very short / greeting messages
+        if len(user_message.strip()) < 30 or any(kw in msg for kw in [
+            "hi", "hello", "hey", "ok", "okay", "haan", "hmm", "theek", "bye",
+        ]):
+            return "fast"
+
+        # Default: chat pool (6 × LLaMA-3.3-70B keys — fast, reliable)
+        return "chat"
+
     def think(self, user_message: str, platform: str = "telegram",
               image_bytes: bytes = None, caller_name: str = "Ajay",
               caller_id: int = None, is_owner: bool = True) -> str:
@@ -423,6 +470,10 @@ class AishaBrain:
                  context["mood"] = "riya"
                  system_prompt = build_system_prompt(context)
 
+        # 5b. NVIDIA task-type — pick the right NIM pool for the message type.
+        # This routes to the best model: writing pool for stories, code pool for code, etc.
+        nvidia_task_type = self._detect_nvidia_task_type(user_message, language, image_bytes)
+
         # 6. Generate Response via Router
         try:
             result = self.ai.generate(
@@ -430,7 +481,8 @@ class AishaBrain:
                 user_message,
                 history[:-1],
                 image_bytes=image_bytes,
-                preferred_provider=preferred_provider
+                preferred_provider=preferred_provider,
+                nvidia_task_type=nvidia_task_type,
             )
             response_text = result.text
 

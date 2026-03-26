@@ -210,7 +210,9 @@ class AIRouter:
         if image_bytes:
             order = ["gemini", "anthropic", "openai"]  # Only providers with Vision
         else:
-            order = ["gemini", "groq", "nvidia", "anthropic", "xai", "openai", "mistral", "ollama"]
+            # NVIDIA NIM is primary (21 active keys, 188 models, 21,000 credits/month)
+            # All other providers currently have invalid/expired keys — NVIDIA is first
+            order = ["nvidia", "gemini", "groq", "anthropic", "xai", "openai", "mistral", "ollama"]
             
         if preferred_provider and preferred_provider in self._clients:
             # Move preferred to the front if it's not already there
@@ -673,11 +675,11 @@ class AIRouter:
         Walks the default order and returns the first provider that is configured
         and not cooling down.
         """
-        order = ["gemini", "groq", "nvidia", "anthropic", "xai", "openai", "mistral", "ollama"]
+        order = ["nvidia", "gemini", "groq", "anthropic", "xai", "openai", "mistral", "ollama"]
         provider_labels = {
+            "nvidia":    "NVIDIA NIM Pool (21 keys, 188 models)",
             "gemini":    f"Gemini {getattr(self, '_gemini_model_name', '2.5-flash')}",
             "groq":      "Groq llama-3.3-70b",
-            "nvidia":    "NVIDIA NIM Pool",
             "anthropic": "Claude (Anthropic)",
             "xai":       "xAI Grok-2",
             "openai":    "OpenAI GPT-4o",
@@ -685,9 +687,9 @@ class AIRouter:
             "ollama":    "Ollama (local)",
         }
         role_labels = {
-            "gemini":    "primary",
-            "groq":      "fallback #1",
-            "nvidia":    "fallback #2",
+            "nvidia":    "primary",
+            "gemini":    "fallback #1",
+            "groq":      "fallback #2",
             "anthropic": "fallback #3",
             "xai":       "fallback #4",
             "openai":    "fallback #5",
