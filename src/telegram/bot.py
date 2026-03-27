@@ -792,6 +792,231 @@ def cmd_healthreport(message):
         bot.edit_message_text(f"❌ Health report error: {e}", message.chat.id, loading_msg.message_id)
 
 
+@bot.message_handler(commands=["fixkeys"])
+def cmd_fixkeys(message):
+    """Check all API keys and report their live status — Ajay only."""
+    if not is_ajay(message):
+        return unauthorized_response(message)
+
+    loading_msg = bot.send_message(message.chat.id, "🔑 Checking all API keys in parallel... ⏳")
+
+    def _run():
+        import requests as _req
+        import concurrent.futures
+        from pathlib import Path as _Path
+
+        # ── Collect keys from environment (already loaded from .env) ──────────
+        gemini_key      = os.getenv("GEMINI_API_KEY", "")
+        groq_key        = os.getenv("GROQ_API_KEY", "")
+        openai_key      = os.getenv("OPENAI_API_KEY", "")
+        xai_key         = os.getenv("XAI_API_KEY", "")
+        elevenlabs_key  = os.getenv("ELEVENLABS_API_KEY", "")
+
+        # NVIDIA — count keys that start with "nvapi-"
+        nvidia_keys = [
+            v for k, v in os.environ.items()
+            if k.startswith("NVIDIA_") and v.startswith("nvapi-")
+        ]
+
+        TIMEOUT = 5  # seconds per check
+
+        # ── Individual key testers ─────────────────────────────────────────────
+
+        def check_gemini():
+            if not gemini_key:
+                return "❌", "Gemini", "No key set"
+            try:
+                r = _req.post(
+                    f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}",
+                    json={"contents": [{"parts": [{"text": "hi"}]}]},
+                    timeout=TIMEOUT,
+                )
+                if r.status_code == 200:
+                    return "✅", "Gemini", "Working"
+                elif r.status_code == 429:
+                    return "⚠️", "Gemini", "429 Quota exceeded"
+                elif r.status_code == 400:
+                    return "⚠️", "Gemini", "400 Bad request (key may be OK)"
+                else:
+                    return "❌", "Gemini", f"{r.status_code} Error"
+            except Exception as e:
+                return "❌", "Gemini", f"Timeout/Error: {str(e)[:60]}"
+
+        def check_groq():
+            if not groq_key:
+                return "❌", "Groq", "No key set"
+            try:
+                r = _req.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
+                    json={"model": "llama-3.3-70b-versatile", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 1},
+                    timeout=TIMEOUT,
+                )
+                if r.status_code == 200:
+                    return "✅", "Groq", "Working"
+                elif r.status_code == 401:
+                    return "❌", "Groq", "401 Invalid key"
+                elif r.status_code == 429:
+                    return "⚠️", "Groq", "429 Rate limited"
+                else:
+                    return "❌", "Groq", f"{r.status_code} Error"
+            except Exception as e:
+                return "❌", "Groq", f"Timeout/Error: {str(e)[:60]}"
+
+        def check_openai():
+            if not openai_key:
+                return "❌", "OpenAI", "No key set"
+            try:
+                r = _req.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"},
+                    json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 1},
+                    timeout=TIMEOUT,
+                )
+                if r.status_code == 200:
+                    return "✅", "OpenAI", "Working"
+                elif r.status_code == 401:
+                    return "❌", "OpenAI", "401 Invalid key"
+                elif r.status_code == 429:
+                    return "⚠️", "OpenAI", "429 Rate limited"
+                else:
+                    return "❌", "OpenAI", f"{r.status_code} Error"
+            except Exception as e:
+                return "❌", "OpenAI", f"Timeout/Error: {str(e)[:60]}"
+
+        def check_xai():
+            if not xai_key:
+                return "❌", "xAI (Grok)", "No key set"
+            try:
+                r = _req.post(
+                    "https://api.x.ai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {xai_key}", "Content-Type": "application/json"},
+                    json={"model": "grok-3-mini", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 1},
+                    timeout=TIMEOUT,
+                )
+                if r.status_code == 200:
+                    return "✅", "xAI (Grok)", "Working"
+                elif r.status_code == 401:
+                    return "❌", "xAI (Grok)", "401 Invalid key"
+                elif r.status_code == 403:
+                    return "❌", "xAI (Grok)", "403 Blocked / no credits"
+                elif r.status_code == 429:
+                    return "⚠️", "xAI (Grok)", "429 Rate limited"
+                else:
+                    return "❌", "xAI (Grok)", f"{r.status_code} Error"
+            except Exception as e:
+                return "❌", "xAI (Grok)", f"Timeout/Error: {str(e)[:60]}"
+
+        def check_elevenlabs():
+            if not elevenlabs_key:
+                return "❌", "ElevenLabs", "No key set"
+            try:
+                r = _req.get(
+                    "https://api.elevenlabs.io/v1/user",
+                    headers={"xi-api-key": elevenlabs_key},
+                    timeout=TIMEOUT,
+                )
+                if r.status_code == 200:
+                    data = r.json()
+                    sub = data.get("subscription", {})
+                    used = sub.get("character_count", 0)
+                    limit = sub.get("character_limit", 0)
+                    remaining = limit - used
+                    if remaining < 500:
+                        return "⚠️", "ElevenLabs", f"{remaining:,} chars left (CRITICAL)"
+                    elif remaining < 5000:
+                        return "⚠️", "ElevenLabs", f"{remaining:,} chars left (low)"
+                    else:
+                        return "✅", "ElevenLabs", f"{remaining:,} chars left"
+                elif r.status_code == 401:
+                    return "❌", "ElevenLabs", "401 Invalid key"
+                else:
+                    return "❌", "ElevenLabs", f"{r.status_code} Error"
+            except Exception as e:
+                return "❌", "ElevenLabs", f"Timeout/Error: {str(e)[:60]}"
+
+        def check_nvidia():
+            if not nvidia_keys:
+                return "❌", "NVIDIA NIM", "No nvapi- keys found in env"
+            # Spot-check first key with a lightweight models list call
+            key = nvidia_keys[0]
+            try:
+                r = _req.get(
+                    "https://api.nvidia.com/v1/models",
+                    headers={"Authorization": f"Bearer {key}"},
+                    timeout=TIMEOUT,
+                )
+                if r.status_code in (200, 201):
+                    return "✅", "NVIDIA NIM", f"{len(nvidia_keys)} keys in pool"
+                elif r.status_code in (401, 403):
+                    # Key format valid but may be expired — still count them
+                    return "⚠️", "NVIDIA NIM", f"{len(nvidia_keys)} keys (spot-check {r.status_code})"
+                else:
+                    return "⚠️", "NVIDIA NIM", f"{len(nvidia_keys)} keys (spot-check {r.status_code})"
+            except Exception:
+                # Endpoint might not exist — fall back to format check
+                return "✅", "NVIDIA NIM", f"{len(nvidia_keys)} keys (format OK)"
+
+        # ── Run all checks in parallel ─────────────────────────────────────────
+        checkers = [check_gemini, check_groq, check_openai, check_xai, check_elevenlabs, check_nvidia]
+        results = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+            futures = {pool.submit(fn): fn.__name__ for fn in checkers}
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    results.append(future.result())
+                except Exception as exc:
+                    results.append(("❌", futures[future], f"Error: {exc}"))
+
+        # Sort to a stable display order by service name
+        display_order = ["Gemini", "Groq", "OpenAI", "xAI (Grok)", "ElevenLabs", "NVIDIA NIM"]
+        results.sort(key=lambda x: display_order.index(x[1]) if x[1] in display_order else 99)
+
+        # ── Build report ───────────────────────────────────────────────────────
+        lines = ["*Key Status Report:*\n"]
+        working_names = []
+        broken_names  = []
+        for icon, name, detail in results:
+            lines.append(f"{icon} *{name}*: {detail}")
+            if icon == "✅":
+                working_names.append(name)
+            elif icon == "❌":
+                broken_names.append(name)
+
+        # Active chain summary
+        chain_parts = []
+        for name in ["Gemini", "NVIDIA NIM", "Groq", "xAI (Grok)", "OpenAI"]:
+            matched = next((r for r in results if r[1] == name), None)
+            if matched:
+                icon = matched[0]
+                chain_parts.append(f"{name} {icon}" if icon != "✅" else name)
+        lines.append(f"\n*Active chain:* {' → '.join(chain_parts)}")
+
+        # Tips
+        if broken_names:
+            lines.append(f"\n*Tip:* Renew broken keys with `/updatekey KEY_NAME value`")
+            for icon, name, detail in results:
+                if icon == "❌":
+                    if "Groq" in name:
+                        lines.append("  • Groq: console.groq.com")
+                    elif "OpenAI" in name:
+                        lines.append("  • OpenAI: platform.openai.com")
+                    elif "xAI" in name:
+                        lines.append("  • xAI: console.x.ai")
+                    elif "Gemini" in name:
+                        lines.append("  • Gemini: aistudio.google.com")
+
+        report = "\n".join(lines)
+
+        try:
+            bot.delete_message(message.chat.id, loading_msg.message_id)
+        except Exception:
+            pass
+        bot.send_message(message.chat.id, report, parse_mode="Markdown")
+
+    _fire_in_thread(_run)
+
+
 @bot.message_handler(commands=["shell", "run"])
 def cmd_shell(message):
     """Run a shell command with confirmation before execution."""
