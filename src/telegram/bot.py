@@ -239,6 +239,8 @@ def cmd_help(message):
         "⚡ *Power Commands (Claude Code Level):*\n"
         "/upload [channel] — Upload latest content to YouTube\n"
         "/queue — See content pipeline jobs\n"
+        "/earnings — Revenue dashboard & monetization progress\n"
+        "/calendar — Weekly content schedule (+ /calendar generate)\n"
         "/logs [n] — View last N lines of aisha.log\n"
         "/syscheck — Run full system test\n"
         "/shell <cmd> — Run shell command (with confirmation)\n"
@@ -626,6 +628,140 @@ def cmd_logs(message):
             parse_mode="Markdown")
     except Exception as e:
         bot.send_message(message.chat.id, f"❌ Logs error: {e}")
+
+
+@bot.message_handler(commands=["earnings"])
+def cmd_earnings(message):
+    """Show revenue dashboard: uploads, views, monetization progress."""
+    if not is_ajay(message): return unauthorized_response(message)
+    bot.send_message(message.chat.id, "📊 Pulling revenue data... ⏳")
+
+    def _build_report():
+        try:
+            from datetime import datetime, timedelta
+            week_ago = (datetime.utcnow() - timedelta(days=7)).isoformat()
+
+            # Content jobs completed this week
+            rows = db.table("content_jobs") \
+                     .select("channel, status, youtube_status, youtube_video_id, created_at") \
+                     .gte("created_at", week_ago) \
+                     .execute().data or []
+
+            uploaded = [r for r in rows if r.get("youtube_status") == "uploaded"]
+            completed = [r for r in rows if r.get("status") == "completed"]
+
+            # Channel breakdown
+            channel_counts = {}
+            for r in uploaded:
+                ch = (r.get("channel") or "Unknown")[:20]
+                channel_counts[ch] = channel_counts.get(ch, 0) + 1
+
+            # All-time uploads
+            all_uploaded = db.table("content_jobs") \
+                             .select("id") \
+                             .eq("youtube_status", "uploaded") \
+                             .execute().data or []
+
+            # Monetization progress (need 1000 subs + 4000 watch hours)
+            total_videos = len(all_uploaded)
+            # Rough estimate: each Short = ~0.5 watch-hour average
+            est_watch_hours = total_videos * 0.5
+            watch_pct = min(100, (est_watch_hours / 4000) * 100)
+
+            lines = [
+                "📊 *Aisha Revenue Dashboard*\n",
+                f"_Updated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}_\n",
+                "─────────────────────────",
+                f"📹 Videos uploaded (7d): *{len(uploaded)}*",
+                f"⚙️  Jobs completed (7d): *{len(completed)}*",
+                f"🎬 Total uploads ever: *{total_videos}*",
+            ]
+
+            if channel_counts:
+                lines.append("\n📺 *By channel (this week):*")
+                for ch, cnt in sorted(channel_counts.items(), key=lambda x: -x[1]):
+                    lines.append(f"  • {ch}: {cnt} video{'s' if cnt!=1 else ''}")
+
+            lines += [
+                "\n💰 *YouTube Monetization Progress:*",
+                f"  ⏱️  Est. watch hours: ~{est_watch_hours:.0f} / 4,000 ({watch_pct:.1f}%)",
+                f"  👥 Subscribers needed: 1,000 (check YouTube Studio)",
+                f"  📈 At 2 uploads/day per channel → ~{max(1, int((4000-est_watch_hours)/2/4/0.5))} days to 4k hrs",
+                "\n🚀 *Actions to accelerate:*",
+                "  1. Run `/studio` now to queue content",
+                "  2. Renew xAI key for Riya channels (higher watch time)",
+                "  3. Upgrade ElevenLabs for premium voice quality",
+            ]
+
+            return "\n".join(lines)
+        except Exception as e:
+            log.error(f"[/earnings] Error: {e}")
+            return f"❌ Could not load earnings data: {e}"
+
+    report = _build_report()
+    bot.send_message(message.chat.id, report, parse_mode="Markdown")
+
+
+@bot.message_handler(commands=["calendar"])
+def cmd_calendar(message):
+    """Show or regenerate the weekly content calendar."""
+    if not is_ajay(message): return unauthorized_response(message)
+    arg = message.text.replace("/calendar", "").strip().lower()
+
+    def _get_or_generate():
+        try:
+            from datetime import datetime, timedelta
+            now = datetime.utcnow()
+            # Slots per channel per day
+            slots = {
+                "Story With Aisha":           ["11:00", "19:00"],
+                "Riya's Dark Whisper":         ["12:00", "20:00"],
+                "Riya's Dark Romance Library": ["13:00", "21:00"],
+                "Aisha & Him":                 ["10:00", "18:00"],
+            }
+
+            if arg == "generate":
+                # Queue one job per channel for today
+                from src.agents.antigravity_agent import AntigravityAgent
+                agent = AntigravityAgent()
+                queued = 0
+                for channel in slots:
+                    try:
+                        agent.enqueue_job(
+                            topic=None,  # agent picks trending topic
+                            channel=channel,
+                            fmt="short",
+                            platform_targets=["youtube", "instagram"],
+                            auto_post=True,
+                        )
+                        queued += 1
+                    except Exception as eq:
+                        log.warning(f"[calendar] Failed to queue {channel}: {eq}")
+                return f"✅ Queued *{queued}* jobs (one per channel). Check `/queue` for status."
+
+            # Show upcoming schedule
+            today = now.date()
+            lines = ["📅 *Aisha Content Calendar (next 3 days):*\n"]
+            for day_offset in range(3):
+                day = today + timedelta(days=day_offset)
+                day_label = day.strftime("%a %b %d")
+                lines.append(f"\n*{day_label}*")
+                for channel, times in slots.items():
+                    ch_short = channel[:22]
+                    for t in times:
+                        lines.append(f"  {t} IST — {ch_short}")
+
+            lines += [
+                "\n─────────────────────────",
+                "Run `/calendar generate` to queue today's content now.",
+                "Run `/studio` to let Aisha pick a single topic herself.",
+            ]
+            return "\n".join(lines)
+        except Exception as e:
+            log.error(f"[/calendar] Error: {e}")
+            return f"❌ Calendar error: {e}"
+
+    bot.send_message(message.chat.id, _get_or_generate(), parse_mode="Markdown")
 
 
 @bot.message_handler(commands=["syscheck"])

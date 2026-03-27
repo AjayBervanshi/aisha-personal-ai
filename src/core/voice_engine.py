@@ -200,17 +200,21 @@ def _transliterate_hinglish(text: str) -> str:
     return text
 
 
-def generate_voice(text: str, language: str = "English", mood: str = "casual", channel: str = None) -> str:
+def generate_voice(text: str, language: str = "English", mood: str = "casual", channel: str = None, force_elevenlabs: bool = False) -> str:
     """
     Synchronous wrapper for voice generation.
     Returns path to the generated .mp3 file.
     When channel is provided, uses ElevenLabs with the channel-specific voice ID.
+    ElevenLabs is only used for short replies (<=500 chars) to protect quota.
+    Pass force_elevenlabs=True to override this guard for priority use cases.
     """
     if language in ["Hinglish", "Hindi"]:
         text = _transliterate_hinglish(text)
 
     xi_api_key = os.getenv("ELEVENLABS_API_KEY")
-    if xi_api_key and "your_" not in xi_api_key:
+    # Guard: skip ElevenLabs for long content scripts to protect quota (178 chars left)
+    el_quota_guard = len(text) > 500 and not force_elevenlabs
+    if xi_api_key and "your_" not in xi_api_key and not el_quota_guard:
         result = _generate_elevenlabs(text, language, mood, channel=channel)
         if result:
             return result
