@@ -23,6 +23,7 @@ from supabase import create_client, Client
 from src.agents.youtube_crew import YouTubeCrew
 from src.core.social_media_engine import SocialMediaEngine
 from src.core.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
+import src.core.system_logger as syslog
 
 log = logging.getLogger("Aisha.Antigravity")
 
@@ -118,6 +119,7 @@ class AntigravityAgent:
 
         self._set_status(job_id, "processing", started_at=_utc_now(), error_text=None)
         log.info(f"[Antigravity] Processing job {job_id} | {channel} | {topic}")
+        syslog.info("antigravity_agent", "job_start", details={"job_id": job_id, "channel": channel, "topic": topic, "format": fmt})
 
         try:
             crew_output = self.crew.kickoff(
@@ -213,6 +215,7 @@ class AntigravityAgent:
 
             result["post_results"] = post_results
             self._set_status(job_id, "completed", completed_at=_utc_now(), output=result)
+            syslog.info("antigravity_agent", "job_complete", details={"job_id": job_id, "channel": channel, "topic": topic, "platforms": list(post_results.keys())})
             return result
 
         except Exception as e:
@@ -239,12 +242,14 @@ class AntigravityAgent:
                     "scheduled_at": next_run_iso,
                     "error_text": err_text,
                 }).eq("id", job_id).execute()
+                syslog.warning("antigravity_agent", "job_retrying", details={"job_id": job_id, "attempt": retry_count, "next_run": next_run_iso, "error": err_text})
                 return {"status": "retrying", "retry_count": retry_count, "next_run": next_run_iso, "error": err_text}
             else:
                 log.error(
                     f"[Antigravity] Job {job_id} permanently failed after {retry_count - 1} retries. Error: {err_text}"
                 )
                 self._set_status(job_id, "failed", completed_at=_utc_now(), error_text=err_text)
+                syslog.error("antigravity_agent", "job_failed", details={"job_id": job_id, "retries": retry_count - 1, "error": err_text})
                 return {"status": "failed", "error": err_text}
 
     def run_once(self) -> Dict[str, Any]:
