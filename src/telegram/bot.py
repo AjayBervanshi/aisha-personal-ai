@@ -32,9 +32,11 @@ from src.core.voice_engine import generate_voice, cleanup_voice_file
 
 load_dotenv()
 
-# Ensure UTF-8 output on Windows (prevents encoding errors with Hindi/Devanagari text)
+# Ensure UTF-8 output on Windows (prevents UnicodeEncodeError with emoji/Hindi/Devanagari text)
 if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 # ─── Rate-limited fallback message (max once per 10 min per chat) ─────────────
 import time as _time
@@ -1909,53 +1911,80 @@ def handle_voice(message):
 @bot.message_handler(content_types=["photo"])
 def handle_photo(message):
     if not is_ajay(message): return unauthorized_response(message)
-    
-    bot.send_chat_action(message.chat.id, "typing")
-    
+
+    chat_id    = message.chat.id
+    message_id = message.message_id
+
+    # Track the latest message per chat (photo counts as a message turn)
+    _last_message_id[chat_id] = message_id
+
+    # Acquire the per-chat lock — serialise against text/voice messages in the same chat
+    lock = _get_chat_lock(chat_id)
+    if not lock.acquire(timeout=120):
+        log.warning(f"handle_photo lock_timeout chat_id={chat_id} msg_id={message_id}")
+        return
+
     try:
-        # Get highest resolution photo
-        raw_photo = message.photo[-1]
-        file_info = bot.get_file(raw_photo.file_id)
-        downloaded_bytes = bot.download_file(file_info.file_path)
-        
-        user_text = message.caption if message.caption else "I sent you a photo. What do you see?"
-        
-        # Pass image to Aisha's brain
-        photo_caller_id   = message.from_user.id
-        photo_caller_name = message.from_user.first_name or "Guest"
-        photo_is_owner    = (photo_caller_id == AUTHORIZED_ID)
-        response = aisha.think(
-            user_text,
-            platform="telegram",
-            image_bytes=downloaded_bytes,
-            caller_name=photo_caller_name,
-            caller_id=photo_caller_id,
-            is_owner=photo_is_owner,
-        )
-        bot.reply_to(message, response)
-        
-        # Optional: Voice reply
-        if VOICE_MODE_ENABLED and len(response) < 1000:
-            try:
-                bot.send_chat_action(message.chat.id, "record_voice")
-                from src.core.mood_detector import detect_mood
-                from src.core.language_detector import detect_language
-                mood_res = detect_mood(user_text)
-                mood = mood_res.mood if hasattr(mood_res, "mood") else str(mood_res)
-                lang_tuple = detect_language(user_text)
-                language = lang_tuple[0] if isinstance(lang_tuple, tuple) else "English"
-                
-                voice_reply = generate_voice(response, language=language, mood=mood)
-                if voice_reply:
-                    with open(voice_reply, "rb") as vf:
-                        bot.send_voice(message.chat.id, vf)
-                    cleanup_voice_file(voice_reply)
-            except Exception as ve:
-                log.warning(f"Voice reply skipped for photo: {ve}")
-                
-    except Exception as e:
-        log.error(f"Image processing failed: {e}")
-        bot.reply_to(message, "Arre Ajay, I couldn't process that image 😔 Technical issue on my end!")
+        # Drop if a newer message arrived while waiting for the lock
+        if _last_message_id.get(chat_id) != message_id:
+            log.info(f"handle_photo dropped_stale chat_id={chat_id} msg_id={message_id}")
+            return
+
+        bot.send_chat_action(chat_id, "typing")
+
+        try:
+            # Get highest resolution photo
+            raw_photo = message.photo[-1]
+            file_info = bot.get_file(raw_photo.file_id)
+            downloaded_bytes = bot.download_file(file_info.file_path)
+
+            user_text = message.caption if message.caption else "I sent you a photo. What do you see?"
+
+            # Pass image to Aisha's brain
+            photo_caller_id   = message.from_user.id
+            photo_caller_name = message.from_user.first_name or "Guest"
+            photo_is_owner    = (photo_caller_id == AUTHORIZED_ID)
+            response = aisha.think(
+                user_text,
+                platform="telegram",
+                image_bytes=downloaded_bytes,
+                caller_name=photo_caller_name,
+                caller_id=photo_caller_id,
+                is_owner=photo_is_owner,
+            )
+
+            # Guard: don't send if a newer message has already arrived
+            if _last_message_id.get(chat_id) != message_id:
+                log.info(f"handle_photo reply_dropped_stale chat_id={chat_id} msg_id={message_id}")
+                return
+
+            bot.reply_to(message, response)
+
+            # Optional: Voice reply
+            if VOICE_MODE_ENABLED and len(response) < 1000:
+                try:
+                    bot.send_chat_action(chat_id, "record_voice")
+                    from src.core.mood_detector import detect_mood
+                    from src.core.language_detector import detect_language
+                    mood_res = detect_mood(user_text)
+                    mood = mood_res.mood if hasattr(mood_res, "mood") else str(mood_res)
+                    lang_tuple = detect_language(user_text)
+                    language = lang_tuple[0] if isinstance(lang_tuple, tuple) else "English"
+
+                    voice_reply = generate_voice(response, language=language, mood=mood)
+                    if voice_reply:
+                        if _last_message_id.get(chat_id) == message_id:
+                            with open(voice_reply, "rb") as vf:
+                                bot.send_voice(chat_id, vf)
+                        cleanup_voice_file(voice_reply)
+                except Exception as ve:
+                    log.warning(f"Voice reply skipped for photo: {ve}")
+
+        except Exception as e:
+            log.error(f"Image processing failed: {e}")
+            bot.reply_to(message, "Arre Ajay, I couldn't process that image 😔 Technical issue on my end!")
+    finally:
+        lock.release()
 
 # ─── Main Text Handler ─────────────────────────────────────────────────────────
 
