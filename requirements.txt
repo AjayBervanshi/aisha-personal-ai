@@ -53,3 +53,6 @@ newsapi-python>=0.2.6           # NewsAPI client (free tier: 100 req/day)
 
 # Mistral AI (lazy-imported in ai_router.py)
 mistralai>=1.0.0                # Mistral Large via direct API
+
+# Timezone handling
+pytz>=2024.1                    # Timezone conversions (IST, UTC) used in bot.py + autonomous_loop.py
