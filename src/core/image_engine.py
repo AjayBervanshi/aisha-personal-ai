@@ -66,39 +66,38 @@ def _generate_via_gemini(prompt: str) -> bytes | None:
 
 
 def _generate_via_openai(prompt: str) -> bytes | None:
-    """OpenAI DALL-E 3 — works on existing key, best quality after Gemini."""
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key or "your_" in api_key:
+    """NVIDIA NIM image generation (stable-diffusion-xl) — replaces OpenAI DALL-E."""
+    api_key = os.getenv("NVIDIA_MISTRAL_LARGE_A") or os.getenv("NVIDIA_API_KEY")
+    if not api_key:
         return None
 
     try:
         resp = requests.post(
-            "https://api.openai.com/v1/images/generations",
+            "https://ai.api.nvidia.com/v1/genai/stabilityai/stable-diffusion-xl",
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json={
-                "model": "dall-e-3",
-                "prompt": prompt[:4000],
-                "n": 1,
-                "size": "1792x1024",  # 16:9 landscape
-                "response_format": "b64_json",
-                "quality": "standard",
+                "text_prompts": [{"text": prompt[:500], "weight": 1}],
+                "cfg_scale": 7,
+                "sampler": "K_DPM_2_ANCESTRAL",
+                "seed": 0,
+                "steps": 25,
+                "width": 1280,
+                "height": 720,
             },
             timeout=90,
         )
         if resp.status_code == 200:
             data = resp.json()
-            b64 = data["data"][0]["b64_json"]
-            log.info("Image generated via OpenAI DALL-E 3")
-            return base64.b64decode(b64)
-        elif resp.status_code == 400:
-            # Content policy — return None so we fall back to placeholder
-            log.warning(f"DALL-E 3 content policy: {resp.json().get('error', {}).get('message', '')[:100]}")
-            return None
-        else:
-            log.warning(f"DALL-E 3: {resp.status_code} — {resp.text[:100]}")
-            return None
+            artifacts = data.get("artifacts", [])
+            if artifacts:
+                b64 = artifacts[0].get("base64", "")
+                if b64:
+                    log.info("Image generated via NVIDIA Stable Diffusion XL")
+                    return base64.b64decode(b64)
+        log.warning(f"NVIDIA image: {resp.status_code} — {resp.text[:100]}")
+        return None
     except Exception as e:
-        log.error(f"DALL-E 3 error: {e}")
+        log.error(f"NVIDIA image error: {e}")
         return None
 
 

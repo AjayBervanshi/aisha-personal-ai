@@ -581,7 +581,8 @@ Deno.serve(async (req) => {
     }
 
     // ── Save conversation (fire-and-forget, don't block response) ───────────
-    EdgeRuntime.waitUntil((async () => {
+    // Fire-and-forget DB save (EdgeRuntime.waitUntil not available in Supabase Edge)
+    ;(async () => {
       try {
         await supabase.from("aisha_conversations").insert([
           { platform: "web", role: "user",      message, language, mood_detected: moodResult.mood },

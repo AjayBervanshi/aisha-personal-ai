@@ -97,8 +97,9 @@ async function getYouTubeToken(): Promise<string | null> {
 }
 
 // ─── Upload audio to Supabase Storage ───────────────────────────────────────
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function uploadAudio(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
   audioBytes: Uint8Array,
   filename: string
 ): Promise<string | null> {

@@ -234,7 +234,7 @@ async function sendPhoto(token: string, chatId: string, photoUrl: string, captio
 async function sendVoiceNote(token: string, chatId: string, audioBytes: Uint8Array): Promise<boolean> {
   try {
     const formData = new FormData();
-    const blob = new Blob([audioBytes], { type: "audio/mpeg" });
+    const blob = new Blob([audioBytes as unknown as BlobPart], { type: "audio/mpeg" });
     formData.append("chat_id", chatId);
     formData.append("voice", blob, "aisha_voice.mp3");
     const res = await fetch(`https://api.telegram.org/bot${token}/sendVoice`, {
@@ -272,7 +272,8 @@ async function sendRecordingAction(token: string, chatId: string): Promise<void>
 // ─────────────────────────────────────────────────────────────────────────────
 // VOICE MODE — read/write from aisha_memory
 // ─────────────────────────────────────────────────────────────────────────────
-async function getVoiceMode(supabase: ReturnType<typeof createClient>): Promise<boolean> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getVoiceMode(supabase: any): Promise<boolean> {
   try {
     const { data } = await supabase
       .from("aisha_memory")
@@ -286,7 +287,8 @@ async function getVoiceMode(supabase: ReturnType<typeof createClient>): Promise<
   }
 }
 
-async function setVoiceMode(supabase: ReturnType<typeof createClient>, on: boolean): Promise<void> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function setVoiceMode(supabase: any, on: boolean): Promise<void> {
   try {
     const { data: existing } = await supabase
       .from("aisha_memory")
@@ -875,7 +877,8 @@ Deno.serve(async (req) => {
     }
 
     // ── Fire-and-forget DB save ───────────────────────────────────────────────
-    EdgeRuntime.waitUntil((async () => {
+    // Fire-and-forget DB save (EdgeRuntime.waitUntil not available in Supabase Edge)
+    ;(async () => {
       try {
         await supabase.from("aisha_conversations").insert([
           { platform: "telegram", role: "user",      message: userText },

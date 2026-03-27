@@ -68,7 +68,12 @@ class SocialMediaEngine:
         self._token_cache: dict = {}
 
     def _refresh_instagram_token(self, token: str) -> str:
-        """Refresh a long-lived Instagram token. Returns new token or original on failure."""
+        """Refresh a long-lived Instagram token. Returns new token or original on failure.
+
+        NOTE: Tokens starting with 'IGAAV' are Instagram Graph API tokens and must
+        use graph.instagram.com — they are NOT Facebook Graph API tokens and will
+        return 'Cannot parse access token' (code 190) on graph.facebook.com.
+        """
         try:
             import requests as _req
             resp = _req.get(
@@ -180,7 +185,10 @@ class SocialMediaEngine:
         if hashtags:
             full_caption += "\n\n" + " ".join(f"#{h.strip('#')}" for h in hashtags[:30])
 
-        base_url = f"https://graph.facebook.com/v19.0/{biz_id}"
+        # IMPORTANT: Instagram Graph API tokens (IGAAV...) must use graph.instagram.com.
+        # Using graph.facebook.com returns error 190 "Cannot parse access token" for
+        # Instagram-native tokens. Tested and confirmed working 2026-03-28.
+        base_url = f"https://graph.instagram.com/v19.0/{biz_id}"
 
         try:
             create_resp = requests.post(
@@ -199,12 +207,15 @@ class SocialMediaEngine:
 
             for _ in range(12):
                 status_resp = requests.get(
-                    f"https://graph.facebook.com/v19.0/{container_id}",
-                    params={"fields": "status_code", "access_token": token},
+                    f"https://graph.instagram.com/v19.0/{container_id}",
+                    params={"fields": "status_code,status", "access_token": token},
                     timeout=20,
                 ).json()
-                if status_resp.get("status_code") == "FINISHED":
+                sc = status_resp.get("status_code") or status_resp.get("status", "")
+                if sc == "FINISHED":
                     break
+                if sc in ("ERROR", "EXPIRED"):
+                    return {"success": False, "error": f"Container processing failed: {status_resp}"}
                 time.sleep(5)
 
             publish_resp = requests.post(
@@ -246,7 +257,8 @@ class SocialMediaEngine:
         if hashtags:
             full_caption += "\n\n" + " ".join(f"#{h.strip('#')}" for h in hashtags[:30])
 
-        base_url = f"https://graph.facebook.com/v19.0/{biz_id}"
+        # Use graph.instagram.com — Instagram-native tokens (IGAAV...) are rejected by graph.facebook.com
+        base_url = f"https://graph.instagram.com/v19.0/{biz_id}"
 
         try:
             create_resp = requests.post(
