@@ -300,8 +300,11 @@ class AutonomousLoop:
                 name=f"studio-job-{job.get('id','?')[:8]}"
             ).start()
             log.info(f"[Studio] Processing thread started for job {job.get('id')}")
+            _log_to_db("INFO", "autonomous_loop", f"job_completed: studio_session",
+                       details={"job_id": job.get("id"), "channel": selected["name"], "topic": topic})
         except Exception as e:
             log.error(f"[Studio] Queue enqueue failed, falling back to local process: {e}")
+            _log_to_db("ERROR", "autonomous_loop", f"job_failed: studio_session: {e}")
             # Fallback path: launch production script directly
             try:
                 import subprocess

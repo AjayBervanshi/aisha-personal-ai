@@ -25,6 +25,28 @@ except ImportError:
 log = logging.getLogger("Aisha.AIRouter")
 
 
+def _log_to_db(level: str, module: str, message: str, details=None):
+    """Write a row to aisha_system_log. Never raises — silently swallows errors."""
+    try:
+        import requests as _req
+        url = os.getenv("SUPABASE_URL")
+        key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        if not url or not key:
+            return
+        _req.post(
+            f"{url}/rest/v1/aisha_system_log",
+            headers={
+                "apikey": key,
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            },
+            json={"level": level, "module": module, "message": message, "details": details},
+            timeout=3,
+        )
+    except Exception:
+        pass  # Never crash the main flow for logging
+
+
 @dataclass
 class AIResult:
     text: str
@@ -245,6 +267,7 @@ class AIRouter:
                 latency = int((time.time() - start) * 1000)
                 stats.mark_success()
                 log.info(f"[{provider}] ✅ Response in {latency}ms")
+                _log_to_db("INFO", "ai_router", f"{provider} success in {latency}ms")
                 return AIResult(
                     text=result,
                     provider=provider,
@@ -607,6 +630,8 @@ class AIRouter:
         Rate-limited to once per 6 hours per event to avoid inbox spam.
         """
         alert_key = f"{provider}:{error_type}"
+        _log_to_db("ERROR", "ai_router", f"{provider} failed: {error_type}",
+                   details={"provider": provider, "error_type": error_type, "fallback": current_fallback})
         if not self._should_alert(alert_key):
             log.debug(f"[Alert] Suppressed duplicate alert: {alert_key}")
             return
