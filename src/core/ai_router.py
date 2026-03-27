@@ -10,11 +10,18 @@ Aisha never goes down because one API is tired.
 
 import os
 import re
+import sys
 import time
 import logging
 from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass, field
+
+# Ensure UTF-8 output on Windows (prevents UnicodeEncodeError with emoji in log lines)
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 # Load .env from project root so AIRouter works standalone
 try:
@@ -301,6 +308,45 @@ class AIRouter:
         except Exception:
             pass  # Not running locally
 
+    # ── SDK provider re-init ──────────────────────────────────
+
+    # Providers that use an initialized SDK client stored in self._clients[provider].
+    # For these, simply setting self._<provider>_key does nothing — we must re-create
+    # the client object with the new key.
+    _SDK_PROVIDERS = frozenset({"groq", "xai", "openai", "anthropic", "mistral"})
+
+    def _reinit_provider(self, provider: str, key: str) -> bool:
+        """
+        Re-create the SDK client for *provider* using *key*.
+        Returns True on success, False on failure.
+        For REST providers (gemini, nvidia, ollama) this is a no-op — callers
+        must update self._gemini_key directly.
+        """
+        try:
+            if provider == "groq":
+                from groq import Groq
+                self._clients["groq"] = Groq(api_key=key)
+            elif provider == "openai":
+                from openai import OpenAI
+                self._clients["openai"] = OpenAI(api_key=key)
+            elif provider == "xai":
+                from openai import OpenAI
+                self._clients["xai"] = OpenAI(api_key=key, base_url="https://api.x.ai/v1")
+            elif provider == "anthropic":
+                from anthropic import Anthropic
+                self._clients["anthropic"] = Anthropic(api_key=key)
+            elif provider == "mistral":
+                from mistralai.client import MistralClient
+                self._clients["mistral"] = MistralClient(api_key=key)
+            else:
+                # REST providers: nothing to reinit here
+                return False
+            log.info(f"[{provider}] SDK client re-initialized with backup key.")
+            return True
+        except Exception as e:
+            log.warning(f"[{provider}] Failed to reinit SDK client with backup key: {e}")
+            return False
+
     # ── Main call ─────────────────────────────────────────────
 
     def generate(
@@ -310,7 +356,8 @@ class AIRouter:
         history: list = None,
         image_bytes: bytes = None,
         preferred_provider: str = None,
-        nvidia_task_type: str = "chat"
+        nvidia_task_type: str = "chat",
+        is_owner: bool = False,
     ) -> AIResult:
         """
         Try each provider in order. Return first successful response.
@@ -323,14 +370,15 @@ class AIRouter:
             # NVIDIA NIM is the reliable backstop (22k credits/month, never fails)
             # Dead providers (Groq/OAI/Anthropic/xAI) get 24h cooldown on first 401 and are skipped
             order = ["gemini", "nvidia", "groq", "anthropic", "xai", "openai", "mistral", "ollama"]
-            
+
         if preferred_provider and preferred_provider in self._clients:
             # Move preferred to the front if it's not already there
             if preferred_provider in order:
                 order.remove(preferred_provider)
             order.insert(0, preferred_provider)
-            
+
         history = history or []
+        failed_providers: list = []
 
         for provider in order:
             if provider not in self._clients:
@@ -379,13 +427,22 @@ class AIRouter:
                     backup_key = _find_backup_key(provider, current_key)
                     if backup_key:
                         log.info(f"[{provider}] Auth error — found backup key, retrying once.")
+                        # Save original state so we can restore on failure
+                        _orig_key_attr = f"_{provider}_key"
+                        _had_attr = hasattr(self, _orig_key_attr)
+                        _orig_val = getattr(self, _orig_key_attr, None) if _had_attr else None
+                        _orig_client = self._clients.get(provider)
                         try:
-                            # Swap in the backup key temporarily for this call
-                            _orig_key_attr = f"_{provider}_key"
-                            _had_attr = hasattr(self, _orig_key_attr)
-                            _orig_val = getattr(self, _orig_key_attr, None) if _had_attr else None
-                            if _had_attr:
-                                setattr(self, _orig_key_attr, backup_key)
+                            if provider in self._SDK_PROVIDERS:
+                                # SDK providers (groq, xai, openai, anthropic, mistral) use an
+                                # initialized client object — setting self._<provider>_key alone
+                                # has no effect.  Re-create the client with the backup key.
+                                if not self._reinit_provider(provider, backup_key):
+                                    raise RuntimeError(f"Could not reinit {provider} client")
+                            else:
+                                # REST providers (gemini) only need the key attribute updated
+                                if _had_attr:
+                                    setattr(self, _orig_key_attr, backup_key)
                             start = time.time()
                             result = self._call_provider(
                                 provider, system_prompt, user_message, history, image_bytes,
@@ -403,9 +460,11 @@ class AIRouter:
                             )
                         except Exception as backup_err:
                             log.warning(f"[{provider}] Backup key also failed: {backup_err}")
-                            # Restore original key attribute
+                            # Restore original state (key attr + SDK client)
                             if _had_attr and _orig_val is not None:
                                 setattr(self, _orig_key_attr, _orig_val)
+                            if _orig_client is not None:
+                                self._clients[provider] = _orig_client
                             # Fall through to mark_failure below
 
                 # Try to extract retry_delay from error
@@ -423,6 +482,7 @@ class AIRouter:
                             retry_after = 30  # Default 30s for brief rate limits
 
                 log.warning(f"[{provider}] Failed: {type(e).__name__}: {error_str[:150]}")
+                failed_providers.append(provider)
                 stats.mark_failure(
                     is_rate_limit=is_rate_limit,
                     retry_after=retry_after,
@@ -473,7 +533,7 @@ class AIRouter:
         else:
             log.warning("[AIRouter] All providers down — all-down alert suppressed (sent < 1h ago)")
         return AIResult(
-            text=self._fallback_message(),
+            text=self._fallback_message(failed_providers=failed_providers, is_owner=is_owner),
             provider="fallback",
             model="none",
             latency_ms=0
@@ -839,10 +899,25 @@ class AIRouter:
             lines.append(f"  {name.upper():<12} {status}")
         return "\n".join(lines)
 
-    def _fallback_message(self) -> str:
+    def _fallback_message(self, failed_providers: list = None, is_owner: bool = False) -> str:
+        """Return a user-appropriate message when all AI providers are exhausted.
+
+        - Owner (Ajay): shows which providers failed + that NVIDIA fallback was tried.
+        - Non-owner: generic temporary-issue message, no technical details exposed.
+        """
+        if is_owner:
+            failed_str = (
+                ", ".join(failed_providers) if failed_providers else "all configured providers"
+            )
+            return (
+                f"Ajay, all AI providers are temporarily down. "
+                f"Failed: {failed_str}. NVIDIA NIM fallback was also exhausted. "
+                f"Run /syscheck for details. I'll retry automatically on your next message. 🔧"
+            )
+        # Generic message for guests — no internal details exposed
         return (
-            "Ek second Ajay... mujhe kuch technical dikkat aa rahi hai. "
-            "Ek baar aur try karo? Agar problem rahe toh /syscheck se check karo. 🔧"
+            "I'm having a temporary connection issue — please try again in a moment. "
+            "My backup systems are standing by and should recover shortly. 🙏"
         )
 
     @property
@@ -897,10 +972,12 @@ class AIRouter:
 
     def status(self) -> dict:
         """Return current status of all providers."""
+        now = time.time()
         return {
             name: {
                 "available": name in self._clients,
                 "cooling_down": stats.is_cooling_down(),
+                "cooldown_secs_left": max(0, int(stats.cooldown_until - now)) if stats.is_cooling_down() else 0,
                 "calls": stats.calls,
                 "failures": stats.failures,
             }

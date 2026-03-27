@@ -42,15 +42,35 @@ if hasattr(sys.stderr, "reconfigure"):
 import time as _time
 _last_fallback: dict[int, float] = {}
 
-def _get_fallback_msg(chat_id: int) -> str | None:
-    """Returns fallback message string, or None if rate-limited."""
+def _get_fallback_msg(chat_id: int, error: Exception = None) -> str | None:
+    """Returns fallback message string, or None if rate-limited.
+
+    - For Ajay: shows that it's a temporary issue, NVIDIA fallback is available,
+      and includes the error class without raw tracebacks.
+    - For guests: generic retry message, no technical details.
+    """
     now = _time.time()
     if now - _last_fallback.get(chat_id, 0) < 600:  # 10 min cooldown
         return None
     _last_fallback[chat_id] = now
+
+    # Lazy import to avoid circular — AUTHORIZED_ID is set at module level after load_dotenv()
+    try:
+        _owner_id = AUTHORIZED_ID
+    except NameError:
+        _owner_id = 0
+
+    if _owner_id and chat_id == _owner_id:
+        error_hint = f" ({type(error).__name__})" if error else ""
+        return (
+            f"Ajay, kuch temporary issue aa gayi{error_hint}. "
+            "NVIDIA NIM fallback active hai — ek baar aur try karo. "
+            "Agar problem rahe toh /syscheck se check karo. 🔧"
+        )
+    # Generic message for guests — no internal details
     return (
-        "Ek second Ajay... mujhe kuch technical dikkat aa rahi hai. "
-        "Ek baar aur try karo? Agar problem rahe toh /syscheck se check karo. 🔧"
+        "I'm having a temporary issue — please try again in a moment. "
+        "My backup systems should recover shortly. 🙏"
     )
 
 # ─── IST timezone helpers ─────────────────────────────────────────────────────
@@ -2092,7 +2112,7 @@ def handle_text(message, override_text=None):
 
         except Exception as e:
             log.error(f"Error processing message: {e}")
-            fallback_msg = _get_fallback_msg(chat_id)
+            fallback_msg = _get_fallback_msg(chat_id, error=e)
             if fallback_msg:
                 bot.send_message(chat_id, fallback_msg)
     finally:
