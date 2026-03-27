@@ -363,11 +363,20 @@ def generate_performance_report() -> str:
 
 def run_weekly_performance_sync() -> int:
     """
-    Iterate over all aisha_episodes that have a youtube_video_id and
-    refresh their performance stats.
+    Two-pass sync:
+      1. Update aisha_episodes (existing behaviour — OAuth-based richer stats).
+      2. Update content_jobs rows that have youtube_video_id set, using the
+         public YouTube Data API v3 key (no OAuth required for public stats).
 
-    Returns the number of episodes successfully updated.
+    Returns the total number of rows successfully updated across both tables.
     """
+    updated = _sync_aisha_episodes()
+    updated += _sync_content_jobs()
+    return updated
+
+
+def _sync_aisha_episodes() -> int:
+    """Sync aisha_episodes (original behaviour). Returns number of rows updated."""
     updated = 0
     try:
         from supabase import create_client
@@ -376,7 +385,6 @@ def run_weekly_performance_sync() -> int:
             os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""),
         )
 
-        # Fetch all episodes that have been uploaded to YouTube
         ep_resp = (
             sb.table("aisha_episodes")
             .select("id,youtube_video_id,title")
@@ -385,19 +393,273 @@ def run_weekly_performance_sync() -> int:
         )
 
         episodes = ep_resp.data or []
-        log.info(f"[PerformanceTracker] Weekly sync: {len(episodes)} episodes to refresh")
+        log.info(f"[PerformanceTracker] aisha_episodes sync: {len(episodes)} episodes")
 
         for ep in episodes:
             ep_id = ep.get("id")
             video_id = ep.get("youtube_video_id")
             if not ep_id or not video_id:
                 continue
-            success = update_episode_performance(ep_id, video_id)
-            if success:
+            if update_episode_performance(ep_id, video_id):
                 updated += 1
 
-        log.info(f"[PerformanceTracker] Weekly sync complete: {updated}/{len(episodes)} updated")
+        log.info(f"[PerformanceTracker] aisha_episodes sync done: {updated}/{len(episodes)}")
     except Exception as e:
-        log.error(f"[PerformanceTracker] run_weekly_performance_sync failed: {e}")
+        log.error(f"[PerformanceTracker] _sync_aisha_episodes failed: {e}")
 
     return updated
+
+
+def _fetch_stats_bulk(video_ids: list) -> dict:
+    """
+    Fetch view / like / comment counts for up to 50 video IDs in one API call.
+    Uses the public YouTube Data API v3 key (YOUTUBE_API_KEY env var) — no OAuth.
+    Returns {video_id: {"views": int, "likes": int, "comments": int}}.
+
+    Batches into groups of 50 (YouTube API hard limit per request) and retries
+    up to 3 times with exponential backoff on rate-limit (429) responses.
+    """
+    import time as _time
+
+    api_key = os.getenv("YOUTUBE_API_KEY", "")
+    if not api_key:
+        log.error("[PerformanceTracker] YOUTUBE_API_KEY not set — cannot fetch bulk stats")
+        return {}
+
+    result: dict = {}
+    batch_size = 50
+
+    for i in range(0, len(video_ids), batch_size):
+        batch = video_ids[i : i + batch_size]
+        ids_param = ",".join(batch)
+
+        for attempt in range(3):
+            try:
+                resp = _req.get(
+                    "https://www.googleapis.com/youtube/v3/videos",
+                    params={"part": "statistics", "id": ids_param, "key": api_key},
+                    timeout=20,
+                )
+
+                if resp.status_code == 429:
+                    wait = 2 ** attempt * 5
+                    log.warning("[YouTube API] Rate-limited (429). Waiting %ss...", wait)
+                    _time.sleep(wait)
+                    continue
+
+                if resp.status_code != 200:
+                    log.error(
+                        "[YouTube API] Unexpected %s: %s",
+                        resp.status_code,
+                        resp.text[:200],
+                    )
+                    break
+
+                for item in resp.json().get("items", []):
+                    vid_id = item.get("id", "")
+                    stats = item.get("statistics", {})
+                    result[vid_id] = {
+                        "views": int(stats.get("viewCount", 0)),
+                        "likes": int(stats.get("likeCount", 0)),
+                        "comments": int(stats.get("commentCount", 0)),
+                    }
+                break  # success
+
+            except _req.exceptions.Timeout:
+                wait = 2 ** attempt * 3
+                log.warning("[YouTube API] Timeout attempt %d, retrying in %ds", attempt + 1, wait)
+                _time.sleep(wait)
+            except Exception as exc:
+                log.error("[YouTube API] Request error: %s", exc)
+                break
+
+    return result
+
+
+def _compute_performance_score(views: int, likes: int, comments: int) -> float:
+    """
+    Weighted engagement score (capped at 9999.99).
+    Formula: (views * 1 + likes * 50 + comments * 30) / 1000
+    Likes and comments carry higher weight — they signal active engagement.
+    """
+    raw = views * 1.0 + likes * 50.0 + comments * 30.0
+    return min(round(raw / 1_000.0, 2), 9999.99)
+
+
+def _sync_content_jobs() -> int:
+    """
+    Fetch YouTube stats for all content_jobs rows that have youtube_video_id set
+    and write yt_views, yt_likes, yt_comments, performance_score back to DB.
+
+    Uses the public YouTube Data API v3 key (no OAuth needed for public stats).
+    Returns the number of rows successfully updated.
+    """
+    updated = 0
+    try:
+        from supabase import create_client
+        from datetime import datetime, timezone
+        sb = create_client(
+            os.getenv("SUPABASE_URL", ""),
+            os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""),
+        )
+
+        rows_resp = (
+            sb.table("content_jobs")
+            .select("id, youtube_video_id, channel, topic")
+            .not_.is_("youtube_video_id", "null")
+            .execute()
+        )
+        rows = rows_resp.data or []
+
+        if not rows:
+            log.info("[PerformanceTracker] content_jobs sync: no published videos found")
+            return 0
+
+        log.info("[PerformanceTracker] content_jobs sync: %d video(s) to refresh", len(rows))
+
+        video_id_map = {row["youtube_video_id"]: row["id"] for row in rows}
+        stats_map = _fetch_stats_bulk(list(video_id_map.keys()))
+
+        if not stats_map:
+            log.warning("[PerformanceTracker] No stats returned — quota issue or all IDs invalid?")
+            return 0
+
+        for video_id, stats in stats_map.items():
+            job_id = video_id_map.get(video_id)
+            if not job_id:
+                continue
+
+            views = stats["views"]
+            likes = stats["likes"]
+            comments = stats["comments"]
+            score = _compute_performance_score(views, likes, comments)
+
+            try:
+                sb.table("content_jobs").update({
+                    "yt_views": views,
+                    "yt_likes": likes,
+                    "yt_comments": comments,
+                    "performance_score": score,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }).eq("id", job_id).execute()
+                updated += 1
+                log.info(
+                    "[PerformanceTracker] content_job=%s video=%s views=%d likes=%d score=%.2f",
+                    job_id[:8], video_id, views, likes, score,
+                )
+            except Exception as exc:
+                log.error("[PerformanceTracker] Update failed for job %s: %s", job_id[:8], exc)
+
+        log.info(
+            "[PerformanceTracker] content_jobs sync done: %d/%d updated", updated, len(rows)
+        )
+    except Exception as e:
+        log.error("[PerformanceTracker] _sync_content_jobs failed: %s", e)
+
+    return updated
+
+
+def get_performance_insights() -> str:
+    """
+    Convenience function: sync content_jobs stats then return a human-readable
+    performance insight string.
+
+    Aisha calls this to understand what content resonates with the audience
+    and to improve future topic selection in studio sessions.
+
+    Returns a multi-line string formatted for Telegram (Markdown).
+    """
+    log.info("[PerformanceTracker] Running get_performance_insights()...")
+
+    # 1. Sync latest stats
+    updated = _sync_content_jobs()
+
+    # 2. Query updated data
+    try:
+        from supabase import create_client
+        from datetime import datetime, timezone
+        sb = create_client(
+            os.getenv("SUPABASE_URL", ""),
+            os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""),
+        )
+
+        rows_resp = (
+            sb.table("content_jobs")
+            .select("id, channel, topic, yt_views, yt_likes, yt_comments, performance_score")
+            .not_.is_("youtube_video_id", "null")
+            .not_.is_("performance_score", "null")
+            .order("performance_score", desc=True)
+            .execute()
+        )
+        rows = rows_resp.data or []
+    except Exception as exc:
+        log.error("[PerformanceTracker] get_performance_insights DB query failed: %s", exc)
+        return "Performance data unavailable — database error."
+
+    if not rows:
+        return (
+            "No performance data yet.\n"
+            "Videos will be tracked after their first YouTube upload."
+        )
+
+    # ── Aggregate ────────────────────────────────────────────────────────────
+    total_views = sum(r.get("yt_views") or 0 for r in rows)
+    avg_views = total_views // len(rows)
+
+    best = rows[0]
+    worst = rows[-1]
+
+    # Per-channel average views for recommendation
+    channel_stats: dict = {}
+    for r in rows:
+        ch = r.get("channel") or "Unknown"
+        channel_stats.setdefault(ch, []).append(r.get("yt_views") or 0)
+
+    channel_avg = {ch: (sum(v) / len(v)) for ch, v in channel_stats.items() if v}
+    best_ch = max(channel_avg, key=channel_avg.get) if channel_avg else None
+    worst_ch = min(channel_avg, key=channel_avg.get) if channel_avg else None
+
+    recommendation = ""
+    if best_ch and worst_ch and best_ch != worst_ch and channel_avg.get(worst_ch, 0) > 0:
+        ratio = channel_avg[best_ch] / channel_avg[worst_ch]
+        recommendation = (
+            f"Focus on *{best_ch}* — performs {ratio:.1f}x better than *{worst_ch}*"
+        )
+    elif best_ch:
+        recommendation = f"*{best_ch}* is your top-performing channel right now"
+
+    # ── Build report ─────────────────────────────────────────────────────────
+    best_topic = (best.get("topic") or "Unknown")[:60]
+    best_views = best.get("yt_views") or 0
+    best_likes = best.get("yt_likes") or 0
+
+    worst_topic = (worst.get("topic") or "Unknown")[:60]
+    worst_views = worst.get("yt_views") or 0
+
+    report_date = datetime.now(timezone.utc).strftime("%d %b %Y")
+
+    lines = [
+        f"📊 Content Performance Insights:",
+        f"• Best performing topic: \"{best_topic}\" ({best_views:,} views, {best_likes:,} likes)",
+        f"• Worst performing: \"{worst_topic}\" ({worst_views:,} views)",
+        f"• Average views: {avg_views:,}",
+    ]
+
+    if recommendation:
+        lines.append(f"• Recommendation: {recommendation}")
+
+    top3 = rows[:3]
+    if len(top3) > 1:
+        lines.append("\nTop videos:")
+        for idx, r in enumerate(top3, 1):
+            t = (r.get("topic") or "Unknown")[:50]
+            v = r.get("yt_views") or 0
+            s = r.get("performance_score") or 0
+            lines.append(f"  {idx}. \"{t}\" — {v:,} views (score: {s:.1f})")
+
+    if updated > 0:
+        lines.append(f"\n_Synced {updated} video(s) — {report_date}_")
+    else:
+        lines.append(f"\n_{report_date}_")
+
+    return "\n".join(lines)
