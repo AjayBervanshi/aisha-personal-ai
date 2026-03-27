@@ -624,7 +624,7 @@ Return only valid JSON (no markdown):
           }
         }
       } catch (e) { console.error("Background save error:", e); }
-    })());
+    })();
 
     return new Response(
       JSON.stringify({

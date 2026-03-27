@@ -885,7 +885,7 @@ Deno.serve(async (req) => {
           { platform: "telegram", role: "assistant", message: reply },
         ]);
       } catch (e) { console.log("DB save:", e); }
-    })());
+    })();
 
     const mode   = isRiya ? "Riya" : "Aisha";
     const extras = [
