@@ -2,8 +2,8 @@
 voice_engine.py
 ===============
 Aisha's Voice Engine — converts text responses to natural-sounding speech.
-Primary: Microsoft Edge-TTS (100% free, unlimited, no API key needed).
-Optional upgrade: ElevenLabs (only if quota >= 500 chars AND force_elevenlabs=True).
+Primary: ElevenLabs (premium quality, character-specific voices).
+Fallback: Microsoft Edge-TTS (100% free, unlimited, no API key needed).
 
 Voices:
   - English:  en-IN-NeerjaExpressiveNeural (warm, soothing Indian female)
@@ -56,6 +56,17 @@ MOOD_VOICE_SETTINGS = {
 # Temp directory for voice files
 VOICE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "temp_voice")
 os.makedirs(VOICE_DIR, exist_ok=True)
+
+# Clean up any stale voice files left from previous runs (>10 min old)
+try:
+    import time as _t
+    _now = _t.time()
+    for _f in os.listdir(VOICE_DIR):
+        _fp = os.path.join(VOICE_DIR, _f)
+        if os.path.isfile(_fp) and (_now - os.path.getmtime(_fp)) > 600:
+            os.remove(_fp)
+except Exception:
+    pass
 
 
 async def _generate_voice_async(

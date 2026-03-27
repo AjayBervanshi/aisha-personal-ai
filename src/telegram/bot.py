@@ -67,7 +67,7 @@ def get_greeting() -> str:
     return "Good night"
 
 # ─── Voice Mode State ─────────────────────────────────────────────────────────
-VOICE_MODE_ENABLED = True   # Voice ON — toggle with /voice command
+VOICE_MODE_ENABLED = False  # Voice OFF by default — enable with /voice command
 
 # ─── Per-chat processing lock + message correlation ───────────────────────────
 # Prevents reply bleed when async/threaded tasks from previous messages
