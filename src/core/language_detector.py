@@ -89,7 +89,13 @@ def get_response_language_instruction(language: str) -> str:
     """Return the language instruction to inject into Aisha's prompt."""
     instructions = {
         "English":  "Respond in warm Indian English. Use Indian expressions naturally (Arre, yaar, sahi hai). Keep it personal and real.",
-        "Hindi":    "हिंदी में जवाब दो। Natural बोलो, textbook की तरह formal मत बोलो। थोड़ा English mix करना ठीक है।",
+        "Hindi":    (
+            "MANDATORY: हर जवाब पूरी तरह देवनागरी हिंदी में दो। "
+            "हर हिंदी शब्द — दिल, प्यार, मोहब्बत, इश्क़, यार, भाई — देवनागरी में लिखो। "
+            "कोई रोमन/लैटिन स्क्रिप्ट में हिंदी शब्द नहीं (no 'dil', 'pyaar', 'yaar', 'bhai'). "
+            "सिर्फ वही English technical terms रहें जिनका हिंदी equivalent न हो (जैसे app, link, file). "
+            "टोन natural और warm रखो — textbook formal नहीं।"
+        ),
         "Marathi":  "मराठीत उत्तर दे। एखाद्या जवळच्या मित्रासारखं बोल — natural आणि warm. थोडं English मिक्स केलं तरी चालेल.",
         "Hinglish": "Hinglish mein respond karo — Hindi aur English naturally mix karo, Roman script mein. Very casual and fun raho.",
     }

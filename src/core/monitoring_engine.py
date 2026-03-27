@@ -51,6 +51,32 @@ def _check_ai_providers() -> list:
     return lines
 
 
+def _check_stuck_queue() -> list:
+    """Return alert lines for content_jobs stuck in 'queued' for more than 1 hour."""
+    lines = []
+    base = _supabase_base()
+    if not base:
+        return []
+    headers = _supabase_headers()
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    try:
+        r = requests.get(
+            f"{base}/rest/v1/content_jobs"
+            f"?status=eq.queued&created_at=lt.{cutoff}&select=id",
+            headers={**headers, "Prefer": "count=exact"},
+            timeout=10,
+        )
+        if r.ok:
+            count = int(r.headers.get("Content-Range", "0/0").split("/")[-1])
+            if count > 10:
+                lines.append(
+                    f"⚠️ content_jobs: {count} jobs stuck >1h in 'queued'"
+                )
+    except Exception as e:
+        log.warning("Stuck-queue check failed: %s", e)
+    return lines
+
+
 def _check_supabase_tables() -> list:
     lines = []
     base = _supabase_base()
@@ -71,6 +97,8 @@ def _check_supabase_tables() -> list:
                 counts[s] = counts.get(s, 0) + 1
             summary = ", ".join(f"{s}:{n}" for s, n in sorted(counts.items())) or "empty"
             lines.append(f"✅ `content_jobs` — {summary}")
+            # Append stuck-queue alert beneath the status summary
+            lines.extend(_check_stuck_queue())
         else:
             lines.append(f"⚠️ `content_jobs` — HTTP {r.status_code}")
     except Exception as e:

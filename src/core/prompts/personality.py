@@ -160,7 +160,14 @@ Research: trending mafia romance, dark romance tropes in Hindi content।
 }
 
 LANGUAGE_INSTRUCTIONS = {
-    "Hindi": "Respond in Hindi (Devanagari script). Natural, not textbook. Mix English when it flows.",
+    "Hindi": (
+        "MANDATORY: Respond entirely in Hindi using Devanagari script. "
+        "Every single Hindi word — including names, titles, and numbers — MUST be written in Devanagari "
+        "(e.g., दिल, प्यार, मोहब्बत, इश्क़, यार, भाई). "
+        "NEVER write Hindi words in Roman/Latin script (no 'dil', 'pyaar', 'mohabbat', 'ishq', 'yaar', 'bhai'). "
+        "English technical terms (app, link, file, etc.) may stay in English only when no Hindi equivalent exists. "
+        "Keep the tone natural and warm — not textbook formal."
+    ),
     "Marathi": "Respond in Marathi (Devanagari script). Warm Maharashtrian friend tone.",
     "Hinglish": "Respond in Hinglish — Hindi + English naturally, Roman script. Very casual.",
     "English": "Respond in warm, natural English. Occasionally use Indian expressions."
@@ -190,4 +197,16 @@ RULES = [
     "Keep responses CONCISE and action-oriented.",
     "Address him as 'Ajay' consistently.",
     "Reference his goals and context naturally so work stays on track.",
+    # Capability boundary refusals must state architectural truth, not conditional permission.
+    # Bad: 'I can't access your location without permission' (implies WITH permission I could).
+    # Bad: 'I'm a text-based AI' (implies a type constraint, not a hard architectural fact).
+    # Bad: 'If you'd like to share your location, I'll assist' (invites negotiation on a hard limit).
+    # Good: state exactly what is architecturally true and non-negotiable.
+    "For capability boundaries (GPS, camera, physical actions, money transfer, device access): "
+    "state architectural truth — 'I have no access to your device, location, or accounts. "
+    "This is not a permission issue — I simply have no such capability.' "
+    "Never frame an architectural impossibility as a permission or consent matter.",
+    "NEVER use 'without your explicit permission' for things that are architecturally impossible. "
+    "Permission language implies the capability exists and is merely gated — do not use it "
+    "when the capability does not exist at all.",
 ]

@@ -839,6 +839,83 @@ def cmd_healthreport(message):
         bot.edit_message_text(f"❌ Health report error: {e}", message.chat.id, loading_msg.message_id)
 
 
+@bot.message_handler(commands=["drainqueue"])
+def cmd_drainqueue(message):
+    """Manually drain up to 5 stuck queued jobs — Ajay only."""
+    if not is_ajay(message):
+        return unauthorized_response(message)
+
+    loading_msg = bot.send_message(message.chat.id, "Draining queue... checking for stuck jobs ⏳")
+
+    import requests as _req
+
+    base = os.getenv("SUPABASE_URL", "").rstrip("/")
+    svc_key = os.getenv("SUPABASE_SERVICE_KEY", "")
+    headers = {
+        "apikey":        svc_key,
+        "Authorization": f"Bearer {svc_key}",
+        "Content-Type":  "application/json",
+    }
+
+    if not base or not svc_key:
+        bot.edit_message_text("❌ SUPABASE_URL / SUPABASE_SERVICE_KEY not set.", message.chat.id, loading_msg.message_id)
+        return
+
+    # Fetch up to 5 queued jobs
+    try:
+        r = _req.get(
+            f"{base}/rest/v1/content_jobs?status=eq.queued&select=*&limit=5&order=created_at.asc",
+            headers=headers,
+            timeout=10,
+        )
+        r.raise_for_status()
+        jobs = r.json()
+    except Exception as e:
+        bot.edit_message_text(f"❌ Failed to fetch queued jobs: {e}", message.chat.id, loading_msg.message_id)
+        return
+
+    if not jobs:
+        bot.edit_message_text("✅ No queued jobs found — queue is clear.", message.chat.id, loading_msg.message_id)
+        return
+
+    bot.edit_message_text(
+        f"Found {len(jobs)} queued job(s). Processing with AntigravityAgent... ⚙️",
+        message.chat.id,
+        loading_msg.message_id,
+    )
+
+    results = []
+    try:
+        from src.agents.antigravity_agent import AntigravityAgent
+        agent = AntigravityAgent()
+        for job in jobs:
+            job_id = job.get("id", "?")
+            try:
+                result = agent.process_job(job)
+                status = result.get("status", "?") if isinstance(result, dict) else "done"
+                results.append(f"✅ `{str(job_id)[:8]}` → {status}")
+            except Exception as job_err:
+                results.append(f"❌ `{str(job_id)[:8]}` → {job_err}")
+    except ImportError:
+        # AntigravityAgent not importable — reset jobs back to queued so scheduler retries
+        log.warning("drainqueue: AntigravityAgent import failed; re-queuing %d jobs", len(jobs))
+        for job in jobs:
+            job_id = job.get("id")
+            try:
+                _req.patch(
+                    f"{base}/rest/v1/content_jobs?id=eq.{job_id}",
+                    json={"status": "queued", "error_text": "drainqueue: reset for retry"},
+                    headers=headers,
+                    timeout=8,
+                )
+                results.append(f"♻️ `{str(job_id)[:8]}` reset to queued")
+            except Exception as patch_err:
+                results.append(f"❌ `{str(job_id)[:8]}` patch failed: {patch_err}")
+
+    summary = "\n".join(results) or "No results."
+    bot.send_message(message.chat.id, f"*DrainQueue complete:*\n{summary}", parse_mode="Markdown")
+
+
 @bot.message_handler(commands=["fixkeys"])
 def cmd_fixkeys(message):
     """Check all API keys and report their live status — Ajay only."""
@@ -2574,7 +2651,8 @@ if __name__ == "__main__":
         telebot.types.BotCommand("/upload",   "Upload latest content to YouTube"),
         telebot.types.BotCommand("/queue",    "View content pipeline queue"),
         telebot.types.BotCommand("/logs",     "View last 30 log lines (/logs 50)"),
-        telebot.types.BotCommand("/syscheck", "Run full system test"),
+        telebot.types.BotCommand("/syscheck",   "Run full system test"),
+        telebot.types.BotCommand("/drainqueue", "Drain stuck queued jobs (up to 5)"),
         telebot.types.BotCommand("/shell",    "Run shell command with confirmation"),
         telebot.types.BotCommand("/read",     "Read any file (/read src/core/ai_router.py)"),
         telebot.types.BotCommand("/gitpull",  "Pull latest code from GitHub"),
