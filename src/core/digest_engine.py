@@ -52,7 +52,7 @@ class DigestEngine:
             log.info("event=daily_digest_done", chars=len(text))
             return text
         except Exception as e:
-            log.error("event=daily_digest_failed", error=str(e))
+            log.error("event=daily_digest_failed — %s", str(e))
             return self._fallback_daily(stats)
 
     def generate_weekly_digest(self) -> str:
@@ -70,7 +70,7 @@ class DigestEngine:
             log.info("event=weekly_digest_done", chars=len(text))
             return text
         except Exception as e:
-            log.error("event=weekly_digest_failed", error=str(e))
+            log.error("event=weekly_digest_failed — %s", str(e))
             return self._fallback_weekly(this_week, last_week)
 
     # ── Data Collection ─────────────────────────────────────────────────────

@@ -127,7 +127,7 @@ class NotificationEngine:
                 self.send_telegram(text)
                 log.info("event=inactivity_check_sent", hours_silent=int(hours_silent))
         except Exception as e:
-            log.error("event=inactivity_check_failed", error=str(e))
+            log.error("event=inactivity_check_failed — %s", str(e))
 
     def check_task_reminders(self) -> None:
         """
@@ -165,7 +165,7 @@ class NotificationEngine:
                 except Exception:
                     continue
         except Exception as e:
-            log.error("event=task_reminder_poll_failed", error=str(e))
+            log.error("event=task_reminder_poll_failed — %s", str(e))
 
     def send_telegram(self, message: str, parse_mode: str = "") -> bool:
         """
@@ -182,7 +182,7 @@ class NotificationEngine:
             bot.send_message(self._ajay_id, message, **kwargs)
             return True
         except Exception as e:
-            log.error("event=telegram_send_failed", error=str(e))
+            log.error("event=telegram_send_failed — %s", str(e))
             # Retry once
             try:
                 import time

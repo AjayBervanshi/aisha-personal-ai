@@ -66,7 +66,7 @@ class HealthTracker:
             log.info("event=water_logged", glasses=glasses, today=today)
             return True
         except Exception as e:
-            log.error("event=water_log_failed", error=str(e))
+            log.error("event=water_log_failed — %s", str(e))
             return False
 
     def log_sleep(self, hours: float, quality: str = "okay") -> bool:
@@ -94,7 +94,7 @@ class HealthTracker:
             log.info("event=sleep_logged", hours=hours, quality=quality)
             return True
         except Exception as e:
-            log.error("event=sleep_log_failed", error=str(e))
+            log.error("event=sleep_log_failed — %s", str(e))
             return False
 
     def log_workout(self, workout_type: str, details: str = "") -> bool:
@@ -127,7 +127,7 @@ class HealthTracker:
             log.info("event=workout_logged", type=workout_type, duration=duration_mins)
             return True
         except Exception as e:
-            log.error("event=workout_log_failed", error=str(e))
+            log.error("event=workout_log_failed — %s", str(e))
             return False
 
     # ── Retrieval ─────────────────────────────────────────────────────────
@@ -144,7 +144,7 @@ class HealthTracker:
                 return rows[0]
             return {"date": target_date, "water_glasses": 0, "note": "No data logged today"}
         except Exception as e:
-            log.error("event=health_summary_failed", error=str(e))
+            log.error("event=health_summary_failed — %s", str(e))
             return {"error": str(e)}
 
     def generate_health_nudge(self) -> Optional[str]:

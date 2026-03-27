@@ -58,12 +58,12 @@ class MemoryCompressor:
         try:
             stats["duplicates_removed"] = self.deduplicate_memories()
         except Exception as e:
-            log.error("event=dedup_failed", error=str(e))
+            log.error("event=dedup_failed — %s", str(e))
             stats["errors"] += 1
         try:
             stats["memories_decayed"] = self.decay_old_memories()
         except Exception as e:
-            log.error("event=decay_failed", error=str(e))
+            log.error("event=decay_failed — %s", str(e))
             stats["errors"] += 1
         log.info("event=weekly_cleanup_done", **stats)
         return stats
@@ -82,7 +82,7 @@ class MemoryCompressor:
                 .execute()
             ).data or []
         except Exception as e:
-            log.error("event=dedup_fetch_failed", error=str(e))
+            log.error("event=dedup_fetch_failed — %s", str(e))
             return 0
 
         # Only process memories that have embeddings
@@ -134,7 +134,7 @@ class MemoryCompressor:
                 .execute()
             ).data or []
         except Exception as e:
-            log.error("event=decay_fetch_failed", error=str(e))
+            log.error("event=decay_fetch_failed — %s", str(e))
             return 0
 
         decayed = 0

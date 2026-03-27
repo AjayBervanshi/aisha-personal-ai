@@ -103,7 +103,7 @@ class AutonomousLoop:
         try:
             self.notif.evening_wrapup()
         except Exception as e:
-            log.error("event=evening_wrapup_failed", error=str(e))
+            log.error("event=evening_wrapup_failed — %s", str(e))
 
     def run_daily_digest(self):
         """Generate and send daily digest at 9 PM IST."""
@@ -113,7 +113,7 @@ class AutonomousLoop:
             if self.telegram and self.ajay_id:
                 self.telegram.send_message(self.ajay_id, digest_text)
         except Exception as e:
-            log.error("event=daily_digest_send_failed", error=str(e))
+            log.error("event=daily_digest_send_failed — %s", str(e))
 
     def run_weekly_digest(self):
         """Generate and send weekly digest every Sunday."""
@@ -123,21 +123,21 @@ class AutonomousLoop:
             if self.telegram and self.ajay_id:
                 self.telegram.send_message(self.ajay_id, digest_text)
         except Exception as e:
-            log.error("event=weekly_digest_send_failed", error=str(e))
+            log.error("event=weekly_digest_send_failed — %s", str(e))
 
     def run_task_reminder_poll(self):
         """Poll for tasks due in 30 minutes and send reminders."""
         try:
             self.notif.check_task_reminders()
         except Exception as e:
-            log.error("event=task_reminder_poll_failed", error=str(e))
+            log.error("event=task_reminder_poll_failed — %s", str(e))
 
     def run_inactivity_check(self):
         """Check if Ajay has been silent for 18+ hours."""
         try:
             self.notif.inactivity_check()
         except Exception as e:
-            log.error("event=inactivity_check_failed", error=str(e))
+            log.error("event=inactivity_check_failed — %s", str(e))
 
     def run_memory_cleanup(self):
         """Weekly memory deduplication and decay (Sunday 3 AM)."""
@@ -146,7 +146,7 @@ class AutonomousLoop:
             stats = self.compressor.run_weekly_cleanup()
             log.info("event=memory_cleanup_done", **stats)
         except Exception as e:
-            log.error("event=memory_cleanup_failed", error=str(e))
+            log.error("event=memory_cleanup_failed — %s", str(e))
 
     def run_morning_checkin(self):
         """Proactively message Ajay in the morning based on his schedule & memory."""
@@ -160,7 +160,7 @@ class AutonomousLoop:
             "Be highly contextual — reference his actual tasks, goals, or mood if relevant. "
             "You are starting the conversation, not replying to him."
         )
-        morning_text = self.brain.think(prompt, platform="autonomous")
+        morning_text = self.brain.think(prompt, platform="telegram")
 
         log.info(f"[Aisha] Morning message: {morning_text[:100]}...")
 
