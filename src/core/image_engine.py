@@ -141,8 +141,8 @@ def _generate_pollinations(prompt: str, width: int = 1280, height: int = 720) ->
     # Keep prompt short and clean — Pollinations rejects very long URLs
     clean_prompt = prompt[:200].replace('\n', ' ').strip()
     encoded = urllib.parse.quote(clean_prompt)
-    # Use model=flux for best quality; nologo requires token on newer API
-    url = f"https://image.pollinations.ai/prompt/{encoded}?width={width}&height={height}&model=flux&seed={abs(hash(clean_prompt)) % 9999}"
+    # Use default model (flux requires token on newer API — omit model param)
+    url = f"https://image.pollinations.ai/prompt/{encoded}?width={width}&height={height}&seed={abs(hash(clean_prompt)) % 9999}"
     try:
         resp = requests.get(url, timeout=90, allow_redirects=True,
                             headers={"User-Agent": "Mozilla/5.0"})
@@ -154,19 +154,30 @@ def _generate_pollinations(prompt: str, width: int = 1280, height: int = 720) ->
 
 
 def _generate_unsplash_background(prompt: str, width: int = 1280, height: int = 720) -> bytes:
-    """Unsplash Source — free stock photos as scene backgrounds."""
-    # Extract key theme words for search
-    keywords = ' '.join(prompt.lower().split()[:5])
+    """LoremFlickr — free keyword-based stock photos (source.unsplash.com deprecated)."""
     import urllib.parse
+    # Use top 3 keywords for LoremFlickr search
+    keywords = ','.join(prompt.lower().split()[:3])
     encoded = urllib.parse.quote(keywords)
-    url = f"https://source.unsplash.com/{width}x{height}/?{encoded}"
+    # Try loremflickr first (keyword-based, truly free)
     try:
+        url = f"https://loremflickr.com/{width}/{height}/{encoded}"
+        resp = requests.get(url, timeout=30, allow_redirects=True,
+                            headers={"User-Agent": "Mozilla/5.0"})
+        if resp.status_code == 200 and len(resp.content) > 5000:
+            return resp.content
+    except Exception:
+        pass
+    # Fallback: picsum.photos (random but always works)
+    try:
+        seed = abs(hash(prompt)) % 1000
+        url = f"https://picsum.photos/seed/{seed}/{width}/{height}"
         resp = requests.get(url, timeout=30, allow_redirects=True)
         if resp.status_code == 200 and len(resp.content) > 5000:
             return resp.content
-        raise Exception(f"Unsplash returned {resp.status_code}")
-    except Exception as e:
-        raise Exception(f"Unsplash failed: {e}")
+    except Exception:
+        pass
+    raise Exception(f"LoremFlickr/Picsum both failed")
 
 
 def _generate_placeholder(prompt: str, width: int = 1280, height: int = 720) -> bytes:
