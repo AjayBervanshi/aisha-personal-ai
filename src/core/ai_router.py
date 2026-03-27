@@ -9,6 +9,7 @@ Aisha never goes down because one API is tired.
 """
 
 import os
+import re
 import time
 import logging
 from pathlib import Path
@@ -45,6 +46,68 @@ def _log_to_db(level: str, module: str, message: str, details=None):
         )
     except Exception:
         pass  # Never crash the main flow for logging
+
+
+# Module-level alert timestamps — survive across AIRouter instances within a process
+_last_all_down_alert: float = 0.0       # Rate-limit all-down email to once per 1 hour
+_last_quota_alert: dict = {}            # Per-provider quota alert: once per 24 hours
+
+# Patterns for discovering alternative keys per provider from .env
+_PROVIDER_KEY_PATTERNS: dict = {
+    "gemini":    ["GEMINI_API_KEY", "GEMINI_KEY_", "GOOGLE_API_KEY"],
+    "groq":      ["GROQ_API_KEY", "GROQ_KEY_"],
+    "openai":    ["OPENAI_API_KEY", "OPENAI_KEY_"],
+    "xai":       ["XAI_API_KEY", "XAI_KEY_"],
+    "anthropic": ["ANTHROPIC_API_KEY", "ANTHROPIC_KEY_"],
+    # nvidia: handled by nvidia_pool.py — skip
+}
+
+_PLACEHOLDER_MARKERS = ("your_", "placeholder", "xxxxxxx", "example", "test_key", "hf_fKAS")
+
+
+def _find_backup_key(provider: str, current_key: str) -> "str | None":
+    """
+    Scan the .env file directly for alternative keys for the given provider.
+    Returns the first key that differs from current_key and is not a placeholder.
+    Returns None if no backup found or provider is not in the pattern map.
+    """
+    patterns = _PROVIDER_KEY_PATTERNS.get(provider)
+    if not patterns:
+        return None
+
+    env_path = Path(__file__).parent.parent.parent / ".env"
+    if not env_path.exists():
+        return None
+
+    try:
+        env_text = env_path.read_text(encoding="utf-8")
+    except Exception:
+        return None
+
+    found_keys: list = []
+    for line in env_text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        var_name, _, var_value = line.partition("=")
+        var_name = var_name.strip()
+        var_value = var_value.strip()
+
+        if not var_value:
+            continue
+        if any(m in var_value.lower() for m in _PLACEHOLDER_MARKERS):
+            continue
+
+        # Check if this var matches any pattern for the provider
+        for pat in patterns:
+            if var_name == pat or var_name.startswith(pat):
+                if var_value != current_key:
+                    found_keys.append(var_value)
+                break
+
+    return found_keys[0] if found_keys else None
 
 
 @dataclass
@@ -289,10 +352,46 @@ class AIRouter:
                     or "permission" in error_str.lower()
                 )
 
+                # ── Auto-discover backup key on 401/403 and retry once ──────
+                if is_key_expired and provider != "nvidia":
+                    current_key = getattr(self, f"_{provider}_key", None) or os.getenv(
+                        f"{provider.upper()}_API_KEY", ""
+                    )
+                    backup_key = _find_backup_key(provider, current_key)
+                    if backup_key:
+                        log.info(f"[{provider}] Auth error — found backup key, retrying once.")
+                        try:
+                            # Swap in the backup key temporarily for this call
+                            _orig_key_attr = f"_{provider}_key"
+                            _had_attr = hasattr(self, _orig_key_attr)
+                            _orig_val = getattr(self, _orig_key_attr, None) if _had_attr else None
+                            if _had_attr:
+                                setattr(self, _orig_key_attr, backup_key)
+                            start = time.time()
+                            result = self._call_provider(
+                                provider, system_prompt, user_message, history, image_bytes,
+                                nvidia_task_type=nvidia_task_type
+                            )
+                            latency = int((time.time() - start) * 1000)
+                            stats.mark_success()
+                            log.info(f"[{provider}] ✅ Backup key worked — response in {latency}ms")
+                            _log_to_db("INFO", "ai_router", f"{provider} backup key success in {latency}ms")
+                            return AIResult(
+                                text=result,
+                                provider=provider,
+                                model=self._model_name(provider),
+                                latency_ms=latency
+                            )
+                        except Exception as backup_err:
+                            log.warning(f"[{provider}] Backup key also failed: {backup_err}")
+                            # Restore original key attribute
+                            if _had_attr and _orig_val is not None:
+                                setattr(self, _orig_key_attr, _orig_val)
+                            # Fall through to mark_failure below
+
                 # Try to extract retry_delay from error
                 retry_after = 0
                 if is_rate_limit:
-                    import re
                     # Check for explicit retry_after=N in error message
                     explicit_match = re.search(r'retry_after=(\d+)', error_str)
                     if explicit_match:
@@ -311,17 +410,25 @@ class AIRouter:
                     is_auth_error=is_key_expired
                 )
 
-                # Send alert email — key expired or quota hit (rate-limited to once per 6h)
+                # ── Alert emails — key expired or quota hit ──────────────────
                 if is_key_expired:
-                    # Determine next working provider for the email body
                     remaining = [p for p in order if p != provider and p in self._clients and not self._stats[p].is_cooling_down()]
                     next_provider = remaining[0] if remaining else "NVIDIA fallback pool"
                     self._notify_provider_failure(provider, "key_expired", next_provider)
                 elif is_rate_limit and retry_after > 3600:
-                    # Only alert for long outages (quota exhausted for the day), not brief rate limits
+                    # Long-duration quota exhaustion alert
                     remaining = [p for p in order if p != provider and p in self._clients and not self._stats[p].is_cooling_down()]
                     next_provider = remaining[0] if remaining else "NVIDIA fallback pool"
                     self._notify_provider_failure(provider, "quota_exhausted", next_provider)
+                elif is_rate_limit and provider == order[0]:
+                    # Primary provider hit quota (even brief) — send 24h-rate-limited warning
+                    global _last_quota_alert
+                    last_sent = _last_quota_alert.get(provider, 0.0)
+                    if (time.time() - last_sent) > 86400:
+                        _last_quota_alert[provider] = time.time()
+                        remaining = [p for p in order if p != provider and p in self._clients and not self._stats[p].is_cooling_down()]
+                        next_provider = remaining[0] if remaining else "NVIDIA fallback pool"
+                        self._notify_provider_failure(provider, "quota_exhausted", next_provider)
 
                 continue  # Try next provider
 
@@ -339,8 +446,13 @@ class AIRouter:
                 except Exception:
                     continue
 
-        # Truly all providers exhausted — send critical alert and return fallback message
-        self._notify_provider_failure("all", "all_down", "none")
+        # Truly all providers exhausted — send critical alert (rate-limited to once per 1 hour)
+        global _last_all_down_alert
+        if (time.time() - _last_all_down_alert) > 3600:
+            _last_all_down_alert = time.time()
+            self._notify_provider_failure("all", "all_down", "none")
+        else:
+            log.warning("[AIRouter] All providers down — all-down alert suppressed (sent < 1h ago)")
         return AIResult(
             text=self._fallback_message(),
             provider="fallback",
