@@ -14,8 +14,10 @@ PROJECT_ROOT = Path(__file__).parent.parent
 ENV_PATH     = PROJECT_ROOT / ".env"
 TOKEN_PATH   = PROJECT_ROOT / "tokens" / "instagram_token.json"
 
-APP_ID     = "4289462031294666"   # Story With Aisha (original, properly configured)
-APP_SECRET = "62833d10182f2bdb42a136b74646392c"
+APP_ID     = "4335568243361662"   # Story With Aisha (Facebook App — updated 2026-03-26)
+APP_SECRET = "502835b09707b7c47899d0e367bd5f3c"
+IG_APP_ID  = "1486907126134254"  # Instagram App (Story With Aisha-IG)
+IG_SECRET  = "62833d10182f2bdb42a136b74646392c"
 
 OAUTH_URL = (
     f"https://www.facebook.com/dialog/oauth"

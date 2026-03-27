@@ -52,9 +52,10 @@ class ProviderStats:
             self.cooldown_until = time.time() + 86400
             log.warning(f"[{self.name}] Auth error (401/403) — key dead. Cooling down 24h.")
         elif is_rate_limit and retry_after > 0:
-            # For rate limits: wait exactly what the API tells us (usually 18-60s)
-            self.cooldown_until = time.time() + min(retry_after, 90)
-            log.warning(f"[{self.name}] Rate limited. Waiting {retry_after}s.")
+            # For rate limits: honour the retry_after value (can be 30s for brief limits
+            # or 3600s for daily quota exhaustion)
+            self.cooldown_until = time.time() + min(retry_after, 7200)  # cap at 2h
+            log.warning(f"[{self.name}] Rate limited. Cooling down {retry_after}s.")
         else:
             # For real errors: shorter backoff (30s → 60s → 120s max)
             backoff = min(30 * (2 ** min(self.failures - 1, 2)), 120)
@@ -269,11 +270,16 @@ class AIRouter:
                 retry_after = 0
                 if is_rate_limit:
                     import re
-                    delay_match = re.search(r'seconds:\s*(\d+)', error_str)
-                    if delay_match:
-                        retry_after = int(delay_match.group(1))
+                    # Check for explicit retry_after=N in error message
+                    explicit_match = re.search(r'retry_after=(\d+)', error_str)
+                    if explicit_match:
+                        retry_after = int(explicit_match.group(1))
                     else:
-                        retry_after = 30  # Default 30s for rate limits
+                        delay_match = re.search(r'seconds:\s*(\d+)', error_str)
+                        if delay_match:
+                            retry_after = int(delay_match.group(1))
+                        else:
+                            retry_after = 30  # Default 30s for brief rate limits
 
                 log.warning(f"[{provider}] Failed: {type(e).__name__}: {error_str[:150]}")
                 stats.mark_failure(
@@ -393,7 +399,7 @@ class AIRouter:
             except requests.exceptions.ConnectionError as e:
                 raise Exception(f"Gemini network error: {e}")
 
-        raise Exception("All Gemini models exhausted quota.")
+        raise Exception("All Gemini models exhausted quota. retry_after=3600")
 
     def _call_anthropic(self, system_prompt, user_message, history, image_bytes: bytes = None) -> str:
         """

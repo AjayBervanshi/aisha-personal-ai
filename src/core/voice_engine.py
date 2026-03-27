@@ -92,6 +92,27 @@ async def _generate_voice_async(
 # ── ElevenLabs Key Pool ───────────────────────────────────────
 _EL_KEYS = []
 _EL_INDEX = 0
+_EL_QUOTA_CACHE: dict = {}   # {key: chars_left}  — refreshed once per session
+_EL_QUOTA_MIN = 1000          # Disable ElevenLabs below this threshold
+
+
+def _get_elevenlabs_chars_left(api_key: str) -> int:
+    """Return remaining characters on this ElevenLabs key (cached per session)."""
+    if api_key in _EL_QUOTA_CACHE:
+        return _EL_QUOTA_CACHE[api_key]
+    try:
+        import requests as _req
+        r = _req.get("https://api.elevenlabs.io/v1/user",
+                     headers={"xi-api-key": api_key}, timeout=8)
+        if r.status_code == 200:
+            sub = r.json().get("subscription", {})
+            left = sub.get("character_limit", 0) - sub.get("character_count", 0)
+            _EL_QUOTA_CACHE[api_key] = left
+            return left
+    except Exception:
+        pass
+    _EL_QUOTA_CACHE[api_key] = 0
+    return 0
 
 def _get_next_el_key():
     global _EL_KEYS, _EL_INDEX
@@ -212,8 +233,14 @@ def generate_voice(text: str, language: str = "English", mood: str = "casual", c
         text = _transliterate_hinglish(text)
 
     xi_api_key = os.getenv("ELEVENLABS_API_KEY")
-    # Guard: skip ElevenLabs for long content scripts to protect quota (178 chars left)
+    # Guard 1: skip for long scripts
     el_quota_guard = len(text) > 500 and not force_elevenlabs
+    # Guard 2: skip if remaining quota is critically low (< _EL_QUOTA_MIN chars)
+    if xi_api_key and not el_quota_guard and not force_elevenlabs:
+        chars_left = _get_elevenlabs_chars_left(xi_api_key.split(",")[0].strip())
+        if chars_left < _EL_QUOTA_MIN:
+            print(f"[ElevenLabs] Quota too low ({chars_left} chars left) — using Edge-TTS")
+            el_quota_guard = True
     if xi_api_key and "your_" not in xi_api_key and not el_quota_guard:
         result = _generate_elevenlabs(text, language, mood, channel=channel)
         if result:

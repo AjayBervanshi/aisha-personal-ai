@@ -62,20 +62,52 @@ and improves her own code via GitHub PRs.
 
 ## Skills Claude Should Auto-Use When Working on Aisha
 
+**RULE: ALL matching skills fire simultaneously — never stop at first match.**
+
+### Core Development
 | When working on... | Auto-use skill |
 |--------------------|---------------|
-| Any new Python file or function | `superpowers:test-driven-development` |
+| Any new Python file or function | `superpowers:test-driven-development` + `sc:implement` |
 | Any DB migration or Supabase query | `supabase-postgres-best-practices` |
-| Before committing code | `superpowers:verification-before-completion` then `commit` |
-| After implementing a module | `coderabbit:code-review` + `owasp-security` |
-| Voice/audio generation code | `elevenlabs` skill |
-| Thumbnail/image generation code | `imagen` skill |
-| YouTube competitor analysis | `youtube-transcript` skill |
-| Content scripts (Hindi stories) | `content-creator` + `avoid-ai-writing` |
-| Architecture decisions | `architecture-diagram-creator` |
+| Before committing code | `superpowers:verification-before-completion` → `commit` → `git-pushing` |
+| After implementing a module | `coderabbit:code-review` + `owasp-security` + `sc:troubleshoot` (parallel) |
+| Architecture decisions | `architecture-diagram-creator` + `sc:design` |
 | Complex multi-file changes | `superpowers:dispatching-parallel-agents` |
-| Release / deploy | `release` + `owasp-security` |
+| Bug or broken behavior | `superpowers:systematic-debugging` + `sc:troubleshoot` |
+| Release / deploy | `owasp-security` + `release` + `verification-before-completion` |
 | Documentation updates | `update-docs` + `sc:document` |
+| Code quality improvement | `sc:improve` + `simplify` + `code-auditor` |
+
+### Video & Content Pipeline
+| When working on... | Auto-use skill |
+|--------------------|---------------|
+| YouTube video creation end-to-end | `remotion-production` + `content-creator` + `elevenlabs` + `imagen` |
+| Voice narration (voice_engine.py) | `elevenlabs` + `remotion-production` |
+| Thumbnail/image (image_engine.py) | `imagen` + `remotion-production` |
+| YouTube upload (social_media_engine.py) | `remotion-production` (youtube upload mode) |
+| Hindi story scripts | `content-creator` + `avoid-ai-writing` + `studio-producer` |
+| YouTube SEO, titles, tags | `remotion-production` + `youtube-transcript` |
+| Competitor research | `youtube-transcript` + `trend-researcher` |
+| Instagram reel/post | `instagram-curator` + `content-creator` |
+| TikTok content | `tiktok-strategist` + `create-viral-content` |
+| Making content go viral | `create-viral-content` + `trend-researcher` + `growth-hacker` |
+| Full video production session | `video-director` agent + `media-scout` agent + `post-producer` agent |
+
+### AI Routing & Multi-Model
+| When working on... | Auto-use skill |
+|--------------------|---------------|
+| ai_router.py changes | `claude-api` + `owasp-security` |
+| Adding new AI provider | `claude-api` + `sc:design` + TDD |
+| NVIDIA NIM pool (nvidia_pool.py) | `claude-api` (NVIDIA NIM mode) |
+| Multi-model routing optimization | `claude-code-router` skill (if installed) |
+
+### Autonomous Systems
+| When working on... | Auto-use skill |
+|--------------------|---------------|
+| autonomous_loop.py (scheduler) | `sc:troubleshoot` + `superpowers:systematic-debugging` |
+| self_editor.py / self_improvement.py | `owasp-security` + `coderabbit:code-review` |
+| New autonomous job / pipeline | `superpowers:brainstorming` + `ln-400-story-executor` |
+| Agent orchestration | `superpowers:dispatching-parallel-agents` + `loki-mode` |
 
 ---
 
@@ -127,27 +159,51 @@ Key tables: `aisha_conversations`, `aisha_memories`, `aisha_expenses`,
 
 ---
 
-## Slash Commands Available
+## Slash Commands Available (All Auto-Activate — Use ALL Matching)
 
-| Command | Description |
-|---------|-------------|
-| `/commit` | Stage + conventional commit + push |
-| `/ultrathink` | Deep analysis mode for complex problems |
-| `/pr-review` | Review open GitHub PRs before merging |
+### Core Workflow
+| Command | When to Auto-Use |
+|---------|-----------------|
+| `/commit` | Ready to commit changes |
+| `/ultrathink` | Complex multi-step problem |
+| `/pr-review` | Before merging any PR |
 | `/analyze-codebase` | Full structural + security analysis |
-| `/content-creator` | Generate YouTube/Instagram content |
-| `/growth-hacker` | Growth strategy for channels |
+| `/plan` | Feature needs planning |
+| `/implement` | Implementing from plan |
+| `/implement-tests` | Writing tests |
+| `/execute` | Executing plan steps |
+| `/cycle` | Full TDD cycle |
+| `/review` | Code review vs acceptance |
+| `/update-docs` | Docs need syncing |
+| `/release` | Full release process |
+| `/skip` | Skip current step |
+| `/debug` | Something broken |
+| `/refactor` | Cleanup existing code |
+| `/security-audit` | Before any production deploy |
+| `/ship` | Full PR pipeline: lint, commit, push |
+| `/audit-project` | Full project health check |
+
+### Content & Video
+| Command | When to Auto-Use |
+|---------|-----------------|
+| `/content-creator` | YouTube/Instagram Hindi content |
+| `/growth-hacker` | Channel growth strategy |
 | `/instagram-curator` | Instagram content calendar |
 | `/tiktok-strategist` | TikTok content strategy |
-| `/plan` | Doc-driven feature planning |
-| `/implement` | Implement from plan doc |
-| `/implement-tests` | Write tests for a feature |
-| `/execute` | Execute next plan steps |
-| `/cycle` | Full TDD cycle (plan→test→implement→verify→commit) |
-| `/review` | Comprehensive code review |
-| `/update-docs` | Sync documentation with code |
-| `/release` | Full release process |
-| `/skip` | Skip current plan step |
+
+### SuperClaude (sc:*)
+| Command | When to Auto-Use |
+|---------|-----------------|
+| `/sc:analyze` | Deep code analysis |
+| `/sc:improve` | Quality improvement |
+| `/sc:cleanup` | Remove dead code |
+| `/sc:troubleshoot` | Diagnose runtime issues |
+| `/sc:design` | Architecture design |
+| `/sc:implement` | Feature implementation |
+| `/sc:test` | Run tests with coverage |
+| `/sc:document` | Generate docs |
+| `/sc:spawn` | Multi-agent orchestration |
+| `/sc:pm` | Full project manager mode |
 
 ---
 

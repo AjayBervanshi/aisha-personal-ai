@@ -138,11 +138,14 @@ def _generate_via_huggingface(prompt: str) -> bytes | None:
 def _generate_pollinations(prompt: str, width: int = 1280, height: int = 720) -> bytes:
     """Pollinations.ai — completely free, no API key needed."""
     import urllib.parse
-    clean_prompt = prompt[:500].replace('\n', ' ')
+    # Keep prompt short and clean — Pollinations rejects very long URLs
+    clean_prompt = prompt[:200].replace('\n', ' ').strip()
     encoded = urllib.parse.quote(clean_prompt)
-    url = f"https://image.pollinations.ai/prompt/{encoded}?width={width}&height={height}&nologo=true&seed={hash(prompt) % 9999}"
+    # Use model=flux for best quality; nologo requires token on newer API
+    url = f"https://image.pollinations.ai/prompt/{encoded}?width={width}&height={height}&model=flux&seed={abs(hash(clean_prompt)) % 9999}"
     try:
-        resp = requests.get(url, timeout=90)
+        resp = requests.get(url, timeout=90, allow_redirects=True,
+                            headers={"User-Agent": "Mozilla/5.0"})
         if resp.status_code == 200 and len(resp.content) > 1000:
             return resp.content
         raise Exception(f"Pollinations returned {resp.status_code}, size={len(resp.content)}")
@@ -240,7 +243,16 @@ def generate_image(prompt: str, width: int = 1280, height: int = 720) -> bytes:
     if result:
         return result
 
-    # 4. Try Pollinations.ai — completely free, no API key needed
+    # 4. Try Unsplash Source (free stock photos — very reliable)
+    try:
+        log.info("[Image] Using Unsplash (free)")
+        result = _generate_unsplash_background(prompt, width, height)
+        if result:
+            return result
+    except Exception as e:
+        log.warning(f"Unsplash failed: {e}")
+
+    # 5. Try Pollinations.ai — completely free, no API key needed
     try:
         log.info("[Image] Using Pollinations.ai (free)")
         result = _generate_pollinations(prompt, width, height)
@@ -249,7 +261,7 @@ def generate_image(prompt: str, width: int = 1280, height: int = 720) -> bytes:
     except Exception as e:
         log.warning(f"Pollinations.ai failed: {e}")
 
-    # 5. Pillow placeholder — always works, keeps video pipeline alive
+    # 6. Pillow placeholder — always works, keeps video pipeline alive
     log.warning("All image APIs failed — using placeholder")
     return _generate_placeholder(prompt, width, height)
 

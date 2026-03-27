@@ -277,10 +277,10 @@ def render_video(
 
 def _make_ken_burns_clip(image_path: str, duration: float, index: int):
     """
-    Creates an ImageClip with Ken Burns effect (slow zoom in/out, slight pan).
+    Creates a VideoClip with Ken Burns effect (slow zoom in/out, slight pan).
     Alternates zoom direction for visual variety.
+    Compatible with MoviePy v1.x and v2.x.
     """
-    from moviepy import ImageClip
     import numpy as np
     from PIL import Image as PILImage
 
@@ -297,7 +297,7 @@ def _make_ken_burns_clip(image_path: str, duration: float, index: int):
     zoom_end = 1.08 if index % 2 == 0 else 1.0
 
     def make_frame(t):
-        progress = t / duration
+        progress = t / duration if duration > 0 else 0
         zoom = zoom_start + (zoom_end - zoom_start) * progress
         h, w = img_array.shape[:2]
 
@@ -313,7 +313,17 @@ def _make_ken_burns_clip(image_path: str, duration: float, index: int):
         pil_crop = PILImage.fromarray(cropped).resize((w, h), PILImage.LANCZOS)
         return np.array(pil_crop)
 
-    clip = ImageClip(img_array, duration=duration).with_make_frame(make_frame)
+    try:
+        # MoviePy v2.x: use VideoClip with make_frame callable
+        from moviepy import VideoClip
+        clip = VideoClip(make_frame, duration=duration)
+    except Exception:
+        try:
+            # MoviePy v1.x fallback
+            from moviepy.video.VideoClip import VideoClip as VideoClipV1
+            clip = VideoClipV1(make_frame, duration=duration)
+        except Exception:
+            return None
 
     return clip
 
