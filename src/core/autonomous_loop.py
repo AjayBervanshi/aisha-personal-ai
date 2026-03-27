@@ -366,10 +366,10 @@ class AutonomousLoop:
             _log_to_db("ERROR", "autonomous_loop", f"job_failed: studio_session: {e}")
             # Fallback path: launch production script directly (no agent available)
             try:
-                import subprocess, random as _rand
+                import subprocess, random as _rand, sys as _sys
                 _ch = _rand.choice(["Story With Aisha", "Aisha & Him"])
                 subprocess.Popen([
-                    "python", "-m", "src.agents.run_youtube",
+                    _sys.executable, "-m", "src.agents.run_youtube",
                     "--channel", _ch,
                 ], cwd=str(PROJECT_ROOT))
                 log.info(f"[Studio] Production crew launched via fallback for: {_ch}")

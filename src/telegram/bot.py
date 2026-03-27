@@ -304,9 +304,9 @@ def cmd_selfaudit(message):
     """Trigger Aisha's self-improvement engine."""
     if not is_ajay(message): return unauthorized_response(message)
     bot.send_message(message.chat.id, "Starting self-audit now, Ajju! Reading my own code, finding bugs, fixing what I can. I'll report back in a few minutes. 💜🧠")
-    import subprocess
+    import subprocess, sys as _sys
     project_root = str(Path(__file__).parent.parent.parent)
-    subprocess.Popen(["python", "-c",
+    subprocess.Popen([_sys.executable, "-c",
         f"import sys; sys.path.insert(0,'{project_root}'); from src.core.self_editor import SelfEditor; e=SelfEditor(); e.run_improvement_session()"
     ], cwd=project_root)
 
@@ -537,10 +537,10 @@ def cmd_produce(message):
 
     bot.send_message(message.chat.id, f"Got it Ajju! Starting production for *{channel}*... Give me a few minutes! 💜🎬", parse_mode="Markdown")
     
-    import subprocess
+    import subprocess, sys as _sys
     project_root = str(Path(__file__).parent.parent.parent)
     fmt = "Short/Reel" if channel == "Aisha & Him" else "Long Form"
-    subprocess.Popen(["python", "-m", "src.agents.run_youtube", "--channel", channel, "--format", fmt], cwd=project_root)
+    subprocess.Popen([_sys.executable, "-m", "src.agents.run_youtube", "--channel", channel, "--format", fmt], cwd=project_root)
 
 
 @bot.message_handler(commands=["upload"])
@@ -837,6 +837,25 @@ def cmd_healthreport(message):
         bot.send_message(message.chat.id, report, parse_mode="Markdown")
     except Exception as e:
         bot.edit_message_text(f"❌ Health report error: {e}", message.chat.id, loading_msg.message_id)
+
+
+@bot.message_handler(commands=["dbrepair"])
+def cmd_dbrepair(message):
+    """Manually trigger Aisha's DB self-repair — creates any missing Supabase tables."""
+    if not is_ajay(message): return unauthorized_response(message)
+    loading_msg = bot.send_message(message.chat.id, "Running DB self-repair... ⏳")
+    try:
+        from src.core.self_db import check_and_repair
+        results = check_and_repair()
+        lines = []
+        for table, status in results.items():
+            icon = "✅" if status == "ok" else "🆕" if status == "created" else "❌"
+            lines.append(f"{icon} `{table}` — {status}")
+        report = "*DB Self-Repair Report*\n\n" + "\n".join(lines)
+        bot.delete_message(message.chat.id, loading_msg.message_id)
+        bot.send_message(message.chat.id, report, parse_mode="Markdown")
+    except Exception as e:
+        bot.edit_message_text(f"❌ DB repair error: {e}", message.chat.id, loading_msg.message_id)
 
 
 @bot.message_handler(commands=["drainqueue"])
@@ -1294,9 +1313,9 @@ def cmd_studio(message):
     if not is_ajay(message): return unauthorized_response(message)
     bot.send_message(message.chat.id, "Starting my creative session! I'll pick the best channel and topic myself. Check your email in a few minutes! 💜🎬")
 
-    import subprocess
+    import subprocess, sys as _sys
     project_root = str(Path(__file__).parent.parent.parent)
-    subprocess.Popen(["python", "-m", "src.core.autonomous_loop", "--once"], cwd=project_root)
+    subprocess.Popen([_sys.executable, "-m", "src.core.autonomous_loop", "--once"], cwd=project_root)
 
 
 @bot.message_handler(commands=["testpipeline"])
@@ -2653,6 +2672,7 @@ if __name__ == "__main__":
         telebot.types.BotCommand("/logs",     "View last 30 log lines (/logs 50)"),
         telebot.types.BotCommand("/syscheck",   "Run full system test"),
         telebot.types.BotCommand("/drainqueue", "Drain stuck queued jobs (up to 5)"),
+        telebot.types.BotCommand("/dbrepair",   "Create any missing Supabase tables"),
         telebot.types.BotCommand("/shell",    "Run shell command with confirmation"),
         telebot.types.BotCommand("/read",     "Read any file (/read src/core/ai_router.py)"),
         telebot.types.BotCommand("/gitpull",  "Pull latest code from GitHub"),

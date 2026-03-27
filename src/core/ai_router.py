@@ -48,9 +48,12 @@ def _log_to_db(level: str, module: str, message: str, details=None):
         pass  # Never crash the main flow for logging
 
 
-# Module-level alert timestamps — survive across AIRouter instances within a process
+# Module-level alert timestamps — survive across AIRouter instances within a process.
+# IMPORTANT: these are module-level so Render redeploys/restarts do NOT reset the
+# 24-hour cooldown and re-send quota emails on every boot.
 _last_all_down_alert: float = 0.0       # Rate-limit all-down email to once per 1 hour
 _last_quota_alert: dict = {}            # Per-provider quota alert: once per 24 hours
+_alert_notified: dict = {}             # Per event-key alert timestamps (module-level, not per-instance)
 
 # Patterns for discovering alternative keys per provider from .env
 _PROVIDER_KEY_PATTERNS: dict = {
@@ -183,9 +186,9 @@ class AIRouter:
             "ollama":    ProviderStats("Ollama"),
         }
         self._clients = {}
-        # Alert tracking — keys are "provider:error_type", values are last notify timestamps
-        self._alert_notified: dict = {}
-        self._alert_cooldown_secs = 6 * 3600  # Re-alert max once per 6 hours per event
+        # Alert tracking — use module-level dict so Render restarts don't reset 24h cooldown
+        # self._alert_notified is intentionally NOT defined here; _notify_provider_failure
+        # accesses the module-level _alert_notified directly.
         # Gemini defaults (set before _init_clients so AttributeError never happens)
         self._gemini_key: "str | None" = None
         self._gemini_model_name: str = "gemini-2.5-flash"
@@ -746,22 +749,30 @@ class AIRouter:
 
     # ── Alert system ──────────────────────────────────────────
 
-    def _should_alert(self, key: str) -> bool:
-        """True if enough time has passed since last alert for this event key."""
-        return (time.time() - self._alert_notified.get(key, 0)) > self._alert_cooldown_secs
+    def _should_alert(self, key: str, error_type: str = "") -> bool:
+        """True if enough time has passed since last alert for this event key.
+        Cooldowns: quota_exhausted=24h (Gemini daily quota resets at midnight),
+                   key_expired=6h, all_down=1h."""
+        cooldown = {
+            "quota_exhausted": 86400,   # 24 hours — Gemini quota resets daily
+            "key_expired":     21600,   # 6 hours
+            "all_down":        3600,    # 1 hour
+        }.get(error_type, 21600)
+        return (time.time() - _alert_notified.get(key, 0)) > cooldown
 
     def _notify_provider_failure(self, provider: str, error_type: str, current_fallback: str):
         """
         Send an email alert when a provider key expires, quota is hit, or all providers are down.
-        Rate-limited to once per 6 hours per event to avoid inbox spam.
+        Uses module-level _alert_notified so Render restarts don't reset the cooldown.
+        quota_exhausted: once per 24h (Gemini daily limit resets at midnight UTC).
         """
         alert_key = f"{provider}:{error_type}"
         _log_to_db("ERROR", "ai_router", f"{provider} failed: {error_type}",
                    details={"provider": provider, "error_type": error_type, "fallback": current_fallback})
-        if not self._should_alert(alert_key):
+        if not self._should_alert(alert_key, error_type):
             log.debug(f"[Alert] Suppressed duplicate alert: {alert_key}")
             return
-        self._alert_notified[alert_key] = time.time()
+        _alert_notified[alert_key] = time.time()
 
         provider_upper = provider.upper()
         subjects = {
