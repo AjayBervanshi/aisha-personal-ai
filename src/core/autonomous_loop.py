@@ -20,6 +20,7 @@ from src.core.config import TIMEZONE
 from src.core.aisha_brain import AishaBrain
 from src.core.logger import get_logger
 from src.core.token_manager import run_token_health_check
+from src.core.ai_router import _log_to_db
 import os
 import telebot
 
@@ -100,30 +101,39 @@ class AutonomousLoop:
     def run_evening_wrapup(self):
         """Send evening summary at 9 PM IST."""
         log.info("event=evening_wrapup_start")
+        _log_to_db("INFO", "autonomous_loop", "job_started: evening_wrapup")
         try:
             self.notif.evening_wrapup()
+            _log_to_db("INFO", "autonomous_loop", "job_completed: evening_wrapup")
         except Exception as e:
             log.error("event=evening_wrapup_failed — %s", str(e))
+            _log_to_db("ERROR", "autonomous_loop", f"job_failed: evening_wrapup: {e}")
 
     def run_daily_digest(self):
         """Generate and send daily digest at 9 PM IST."""
         log.info("event=daily_digest_trigger")
+        _log_to_db("INFO", "autonomous_loop", "job_started: daily_digest")
         try:
             digest_text = self.digest.generate_daily_digest()
             if self.telegram and self.ajay_id:
                 self.telegram.send_message(self.ajay_id, digest_text)
+            _log_to_db("INFO", "autonomous_loop", "job_completed: daily_digest")
         except Exception as e:
             log.error("event=daily_digest_send_failed — %s", str(e))
+            _log_to_db("ERROR", "autonomous_loop", f"job_failed: daily_digest: {e}")
 
     def run_weekly_digest(self):
         """Generate and send weekly digest every Sunday."""
         log.info("event=weekly_digest_trigger")
+        _log_to_db("INFO", "autonomous_loop", "job_started: weekly_digest")
         try:
             digest_text = self.digest.generate_weekly_digest()
             if self.telegram and self.ajay_id:
                 self.telegram.send_message(self.ajay_id, digest_text)
+            _log_to_db("INFO", "autonomous_loop", "job_completed: weekly_digest")
         except Exception as e:
             log.error("event=weekly_digest_send_failed — %s", str(e))
+            _log_to_db("ERROR", "autonomous_loop", f"job_failed: weekly_digest: {e}")
 
     def run_task_reminder_poll(self):
         """Poll for tasks due in 30 minutes and send reminders."""
@@ -142,15 +152,19 @@ class AutonomousLoop:
     def run_memory_cleanup(self):
         """Weekly memory deduplication and decay (Sunday 3 AM)."""
         log.info("event=memory_cleanup_trigger")
+        _log_to_db("INFO", "autonomous_loop", "job_started: memory_cleanup")
         try:
             stats = self.compressor.run_weekly_cleanup()
             log.info("event=memory_cleanup_done", **stats)
+            _log_to_db("INFO", "autonomous_loop", "job_completed: memory_cleanup")
         except Exception as e:
             log.error("event=memory_cleanup_failed — %s", str(e))
+            _log_to_db("ERROR", "autonomous_loop", f"job_failed: memory_cleanup: {e}")
 
     def run_morning_checkin(self):
         """Proactively message Ajay in the morning based on his schedule & memory."""
         log.info(f"[{datetime.now()}] Waking up for Morning Check-in...")
+        _log_to_db("INFO", "autonomous_loop", "job_started: morning_checkin")
 
         # Use brain.think() so full context pipeline runs (memory, mood, tasks, profile)
         prompt = (
@@ -170,10 +184,12 @@ class AutonomousLoop:
                 log.info("Sent morning check-in to Ajay on Telegram.")
             except Exception as e:
                 log.error(f"Failed to send Telegram message: {e}")
+        _log_to_db("INFO", "autonomous_loop", "job_completed: morning_checkin")
 
     def run_memory_consolidation(self):
         """Runs at 3 AM: Analyzes all talks from the day and updates deep profile."""
         log.info(f"[{datetime.now()}] Running deep memory consolidation sleep cycle...")
+        _log_to_db("INFO", "autonomous_loop", "job_started: memory_consolidation")
         
         # 1. Pull recent conversations (past 24h)
         chats = self.brain.memory.get_recent_conversation(limit=50)
@@ -216,13 +232,16 @@ class AutonomousLoop:
                 self.brain.memory.save_skill_memory(skill, f"Auto-learned during conversation: {skill}")
                 
             log.info("✅ Consolidation complete. Memories stored.")
-            
+            _log_to_db("INFO", "autonomous_loop", "job_completed: memory_consolidation")
+
         except Exception as e:
             log.error(f"Consolidation failed: {e}")
+            _log_to_db("ERROR", "autonomous_loop", f"job_failed: memory_consolidation: {e}")
 
     def run_studio_session(self):
         """Aisha autonomously decides which channel needs content and starts the crew."""
         log.info(f"[{datetime.now()}] Aisha entering Studio for proactive session...")
+        _log_to_db("INFO", "autonomous_loop", "job_started: studio_session")
         
         import random
         
@@ -363,6 +382,32 @@ class AutonomousLoop:
             log.info("event=key_expiry_check all_keys_ok")
 
 
+def run_weekly_analytics_sync(loop: AutonomousLoop):
+    """
+    Performance feedback loop — runs every Sunday at 06:00 IST.
+    1. Syncs YouTube view/like/CTR stats for all published episodes into aisha_episodes.
+    2. Sends a formatted performance report to Ajay via Telegram.
+    """
+    log.info("[PerformanceTracker] Starting weekly analytics sync...")
+    try:
+        from src.core.performance_tracker import run_weekly_performance_sync, generate_performance_report
+        updated = run_weekly_performance_sync()
+        log.info(f"[PerformanceTracker] Sync complete: {updated} episodes updated")
+        report = generate_performance_report()
+        if loop.telegram and loop.ajay_id:
+            try:
+                loop.telegram.send_message(loop.ajay_id, report, parse_mode="Markdown")
+            except Exception as tg_err:
+                log.warning(f"[PerformanceTracker] Telegram send failed: {tg_err}")
+                try:
+                    plain = report.replace("*", "").replace("_", "")
+                    loop.telegram.send_message(loop.ajay_id, plain)
+                except Exception:
+                    pass
+    except Exception as e:
+        log.error(f"[PerformanceTracker] Weekly analytics sync failed: {e}")
+
+
 def run_self_improvement(loop: AutonomousLoop):
     """Aisha audits and improves her own code every night."""
     log.info("[SelfEditor] Starting nightly self-improvement session...")
@@ -442,6 +487,8 @@ def start_loop(once: bool = False):
     # ── Weekly Schedule ────────────────────────────────────────────────
     schedule.every().sunday.at("19:00").do(bot.run_weekly_digest)
     schedule.every().sunday.at("03:00").do(bot.run_memory_cleanup)
+    # Performance feedback loop — sync YouTube stats & send report every Sunday 6 AM IST
+    schedule.every().sunday.at("06:00").do(run_weekly_analytics_sync, bot)
 
     # ── High-frequency Polls ──────────────────────────────────────────
     # Task reminders — check every 5 min
