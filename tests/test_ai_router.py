@@ -17,9 +17,9 @@ class TestAIRouter(unittest.TestCase):
             "groq": MagicMock()
         }
 
-        # Make Gemini fail
-        def mock_call_provider(provider, system, user, history, image):
-            if provider == "gemini":
+        # Make Gemini and Groq fail — router order is gemini→groq→anthropic
+        def mock_call_provider(provider, system, user, history, image, **kwargs):
+            if provider in ("gemini", "groq"):
                 raise Exception("Rate limit exceeded")
             if provider == "anthropic":
                 return "Claude response"
@@ -29,7 +29,7 @@ class TestAIRouter(unittest.TestCase):
 
         result = router.generate("system", "user")
 
-        # Should fallback to anthropic
+        # Should fallback to anthropic (gemini + groq both fail first)
         self.assertEqual(result.provider, "anthropic")
         self.assertEqual(result.text, "Claude response")
 
@@ -48,7 +48,8 @@ class TestAIRouter(unittest.TestCase):
         result = router.generate("system", "user")
 
         self.assertEqual(result.provider, "fallback")
-        self.assertIn("all my AI brains are taking a nap", result.text)
+        # Fallback message for non-owner — generic connection issue wording
+        self.assertIn("temporary", result.text.lower())
 
 if __name__ == '__main__':
     unittest.main()
