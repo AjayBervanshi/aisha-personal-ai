@@ -158,7 +158,7 @@ def _get_next_el_key():
 def _mark_key_failed():
     global _EL_KEYS, _EL_INDEX
     if _EL_KEYS:
-        print(f"[ElevenLabs] Key failed or exhausted: {_EL_KEYS[_EL_INDEX][:6]}...")
+        print(f"[ElevenLabs] Key failed or exhausted (index {_EL_INDEX}) — rotating to next key.")
         _EL_INDEX = (_EL_INDEX + 1) % len(_EL_KEYS)
 
 def _generate_elevenlabs(text: str, language: str = "English", mood: str = "casual", channel: str = None) -> str:

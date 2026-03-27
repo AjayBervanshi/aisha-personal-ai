@@ -163,9 +163,16 @@ load_approved_users_from_db()
 # ─── Security: Only Ajay can use Aisha ────────────────────────────────────────
 
 def is_ajay(message) -> bool:
-    """Allow Ajay or any user Ajay has approved this session."""
+    """Allow Ajay or any user Ajay has approved this session.
+
+    SECURITY: When AJAY_TELEGRAM_ID is not configured (AUTHORIZED_ID == 0),
+    access is DENIED to everyone. This prevents accidental public exposure
+    if the env var is missing on first deploy. Use ALLOW_PUBLIC_ACCESS=true
+    in .env only for explicit local testing of unauthenticated flows.
+    """
     if AUTHORIZED_ID == 0:
-        return True  # Not configured — allow all (dev mode)
+        # Env var missing — deny all unless operator explicitly opted into dev mode
+        return os.getenv("ALLOW_PUBLIC_ACCESS", "").lower() == "true"
     uid = getattr(message.from_user, "id", None) or getattr(message, "id", None)
     return uid == AUTHORIZED_ID or uid in _approved_users
 
@@ -1222,10 +1229,18 @@ def handle_shell_callback(call):
     bot.answer_callback_query(call.id, "Running...")
     bot.edit_message_text(f"⚡ Running: `{cmd}`...", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
     try:
-        import subprocess
+        import subprocess, shlex
         project_root = str(Path(__file__).parent.parent.parent)
+        # SECURITY: split into args list and do NOT use shell=True.
+        # shlex.split() tokenises safely; shell=False prevents shell injection
+        # (e.g. "ls; rm -rf /") because the OS receives a raw argv array.
+        try:
+            cmd_args = shlex.split(cmd)
+        except ValueError as _e:
+            bot.send_message(call.message.chat.id, f"❌ Invalid command syntax: {_e}")
+            return
         result = subprocess.run(
-            cmd, shell=True, cwd=project_root,
+            cmd_args, shell=False, cwd=project_root,
             capture_output=True, text=True, timeout=120
         )
         output = (result.stdout + result.stderr).strip()
@@ -1248,21 +1263,41 @@ def cmd_read(message):
     """Read a file and send its contents."""
     if not is_ajay(message): return unauthorized_response(message)
     filepath = message.text.replace("/read", "").strip().splitlines()[0].strip()
-    if filepath in (".env", ".env.local", ".env.production"):
-        bot.send_message(message.chat.id, "🔒 `.env` is protected — I don't send secrets over chat.", parse_mode="Markdown")
-        return
     if not filepath:
         bot.send_message(message.chat.id,
             "Usage: `/read <filepath>`\n"
             "Examples:\n"
             "`/read src/core/ai_router.py`\n"
-            "`/read .env`\n"
             "`/read docs/AISHA_STATE_HANDOFF_2026-03-18.md`",
             parse_mode="Markdown")
         return
     try:
-        project_root = Path(__file__).parent.parent.parent
-        full_path = project_root / filepath
+        project_root = Path(__file__).parent.parent.parent.resolve()
+        full_path = (project_root / filepath).resolve()
+
+        # SECURITY: Ensure the resolved path is still inside the project root.
+        # This blocks path traversal attacks like /read ../../etc/passwd or
+        # /read ../../.env.  We use is_relative_to() (Python 3.9+) with a
+        # fallback for older interpreters.
+        try:
+            _inside = full_path.is_relative_to(project_root)
+        except AttributeError:
+            _inside = str(full_path).startswith(str(project_root))
+        if not _inside:
+            bot.send_message(message.chat.id,
+                "🔒 Access denied: path is outside the project directory.",
+                parse_mode="Markdown")
+            return
+
+        # Block sensitive files regardless of location inside project root.
+        _blocked_names = {".env", ".env.local", ".env.production", ".env.backup",
+                          ".env.staging", ".env.test", "id_rsa", "id_ed25519"}
+        if full_path.name in _blocked_names or full_path.suffix in (".pem", ".key", ".pfx", ".p12"):
+            bot.send_message(message.chat.id,
+                "🔒 This file type is protected — secrets are never sent over chat.",
+                parse_mode="Markdown")
+            return
+
         if not full_path.exists():
             bot.send_message(message.chat.id, f"❌ File not found: `{filepath}`", parse_mode="Markdown")
             return
@@ -2354,6 +2389,15 @@ def _fire_in_thread(fn):
 def _apply_key_update(chat_id: int, key_name: str, new_value: str):
     """Validate a new API key value and save it to Supabase api_keys table."""
     import requests as _req
+    from urllib.parse import quote as _url_quote
+
+    # SECURITY: Validate key_name is a safe identifier before using it in URLs.
+    # Blocks filter-bypass payloads like "GROQ_API_KEY&name=eq.OTHER_KEY".
+    import re as _re
+    if not _re.fullmatch(r"[A-Z0-9_]{1,64}", key_name):
+        bot.send_message(chat_id, "Invalid key name format. Only uppercase letters, digits, and underscores are allowed.", parse_mode="Markdown")
+        return
+
     try:
         supabase_url = os.getenv("SUPABASE_URL", "")
         supabase_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
@@ -2363,9 +2407,12 @@ def _apply_key_update(chat_id: int, key_name: str, new_value: str):
             "Content-Type": "application/json",
             "Prefer": "return=minimal",
         }
+        # SECURITY: URL-encode key_name when embedding in query strings to prevent
+        # filter injection (e.g., a crafted name with & could add extra query params).
+        safe_name = _url_quote(key_name, safe="")
         # Check if key exists in DB
         r = _req.get(
-            f"{supabase_url}/rest/v1/api_keys?name=eq.{key_name}&select=name",
+            f"{supabase_url}/rest/v1/api_keys?name=eq.{safe_name}&select=name",
             headers=headers, timeout=10,
         )
         if not r.json():
@@ -2373,7 +2420,7 @@ def _apply_key_update(chat_id: int, key_name: str, new_value: str):
             return
         # Save to DB
         patch = _req.patch(
-            f"{supabase_url}/rest/v1/api_keys?name=eq.{key_name}",
+            f"{supabase_url}/rest/v1/api_keys?name=eq.{safe_name}",
             json={"secret": new_value, "active": True},
             headers=headers, timeout=10,
         )
