@@ -36,16 +36,24 @@ def _check_ai_providers() -> list:
             info = statuses[name]
             available = info.get("available", False)
             cooling   = info.get("cooling_down", False)
+            secs_left = info.get("cooldown_secs_left", 0)
             if available and not cooling:
                 icon  = "✅"
                 state = "ready"
             elif cooling:
                 icon  = "⏳"
-                state = "cooling down"
+                if secs_left >= 3600:
+                    state = f"cooling down ({secs_left // 3600}h {(secs_left % 3600) // 60}m)"
+                elif secs_left >= 60:
+                    state = f"cooling down ({secs_left // 60}m {secs_left % 60}s)"
+                else:
+                    state = f"cooling down ({secs_left}s)"
             else:
                 icon  = "❌"
                 state = "unavailable"
-            lines.append(f"{icon} `{name}` — {state}")
+            calls    = info.get("calls", 0)
+            failures = info.get("failures", 0)
+            lines.append(f"{icon} `{name}` — {state} | calls: {calls}, failures: {failures}")
     except Exception as e:
         lines.append(f"❌ AI provider check failed: {e}")
     return lines

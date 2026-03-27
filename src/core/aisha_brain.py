@@ -483,6 +483,7 @@ class AishaBrain:
                 image_bytes=image_bytes,
                 preferred_provider=preferred_provider,
                 nvidia_task_type=nvidia_task_type,
+                is_owner=is_owner,
             )
             response_text = result.text
 
