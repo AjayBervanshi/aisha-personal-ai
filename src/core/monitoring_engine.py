@@ -1,194 +1,166 @@
-"""
-monitoring_engine.py — Aisha System Health Monitor
-Checks all critical systems and reports status to Ajay.
-"""
 import os
 import logging
-from datetime import datetime, timedelta
-from typing import Dict, List
+import requests
+from datetime import datetime, timezone
 
-log = logging.getLogger(__name__)
+log = logging.getLogger("Aisha.MonitoringEngine")
 
-# ── Supabase ─────────────────────────────────────────────────────────────────
-try:
-    from supabase import create_client
-    _SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-    _SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_ANON_KEY", "")
-    _db = create_client(_SUPABASE_URL, _SUPABASE_KEY) if _SUPABASE_URL else None
-except Exception:
-    _db = None
+_RENDER_HEALTH_URL = "https://aisha-bot-yudp.onrender.com/health"
 
 
-def check_ai_providers() -> Dict[str, str]:
-    """Test each AI provider with a quick ping."""
-    import requests
-    results = {}
-
-    # Gemini
-    try:
-        key = os.getenv("GEMINI_API_KEY", "")
-        if key:
-            r = requests.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={key}",
-                json={"contents": [{"parts": [{"text": "ping"}]}]},
-                timeout=10
-            )
-            results["gemini"] = "✅ OK" if r.status_code == 200 else f"❌ {r.status_code}"
-        else:
-            results["gemini"] = "⚠️ No key"
-    except Exception as e:
-        results["gemini"] = f"❌ {str(e)[:30]}"
-
-    # Groq
-    try:
-        key = os.getenv("GROQ_API_KEY", "")
-        if key:
-            from groq import Groq
-            client = Groq(api_key=key)
-            client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[{"role": "user", "content": "ping"}],
-                max_tokens=1
-            )
-            results["groq"] = "✅ OK"
-        else:
-            results["groq"] = "⚠️ No key"
-    except Exception as e:
-        err = str(e)
-        # Parse clean status code + message instead of raw dict truncation
-        if "401" in err:
-            results["groq"] = "❌ 401 Invalid API Key — renew at console.groq.com"
-        elif "429" in err:
-            results["groq"] = "❌ 429 Rate Limited / Quota exhausted"
-        elif "403" in err:
-            results["groq"] = "❌ 403 Forbidden — check plan/permissions"
-        else:
-            results["groq"] = f"❌ {err[:60]}"
-
-    # ElevenLabs
-    try:
-        key = os.getenv("ELEVENLABS_API_KEY", "")
-        if key:
-            r = requests.get(
-                "https://api.elevenlabs.io/v1/user",
-                headers={"xi-api-key": key},
-                timeout=10
-            )
-            results["elevenlabs"] = "✅ OK" if r.status_code == 200 else f"❌ {r.status_code}"
-        else:
-            results["elevenlabs"] = "⚠️ No key"
-    except Exception as e:
-        results["elevenlabs"] = f"❌ {str(e)[:30]}"
-
-    # xAI
-    try:
-        key = os.getenv("XAI_API_KEY", "")
-        if key:
-            r = requests.get(
-                "https://api.x.ai/v1/models",
-                headers={"Authorization": f"Bearer {key}"},
-                timeout=10
-            )
-            results["xai"] = "✅ OK" if r.status_code == 200 else f"❌ {r.status_code}"
-        else:
-            results["xai"] = "⚠️ No key"
-    except Exception as e:
-        results["xai"] = f"❌ {str(e)[:30]}"
-
-    return results
+def _supabase_base() -> str:
+    return os.getenv("SUPABASE_URL", "").rstrip("/")
 
 
-def check_database() -> Dict[str, str]:
-    """Check Supabase tables and recent activity."""
-    results = {}
-    if not _db:
-        return {"supabase": "❌ Not configured"}
-
-    tables_to_check = [
-        "content_jobs", "aisha_memory", "aisha_schedule",
-        "aisha_mood_tracker", "api_keys"
-    ]
-
-    for table in tables_to_check:
-        try:
-            r = _db.table(table).select("id", count="exact").limit(1).execute()
-            count = r.count if hasattr(r, 'count') and r.count is not None else len(r.data)
-            results[table] = f"✅ {count} rows"
-        except Exception as e:
-            results[table] = f"❌ {str(e)[:40]}"
-
-    return results
+def _supabase_headers() -> dict:
+    key = os.getenv("SUPABASE_SERVICE_KEY", "")
+    return {
+        "apikey":        key,
+        "Authorization": f"Bearer {key}",
+        "Content-Type":  "application/json",
+    }
 
 
-def check_recent_jobs() -> List[Dict]:
-    """Get last 5 content jobs and their statuses."""
-    if not _db:
-        return []
-    try:
-        r = _db.table("content_jobs").select(
-            "topic,channel,status,created_at,completed_at,error_text"
-        ).order("created_at", desc=True).limit(5).execute()
-        return r.data or []
-    except Exception:
-        return []
-
-
-def check_render_health() -> str:
-    """Ping Render bot health endpoint."""
-    import requests
-    render_url = os.getenv("RENDER_BOT_URL", "").rstrip("/")
-    if not render_url:
-        return "⚠️ RENDER_BOT_URL not set"
-    try:
-        r = requests.get(f"{render_url}/health", timeout=10)
-        return f"✅ {r.status_code}" if r.status_code == 200 else f"❌ {r.status_code}"
-    except Exception as e:
-        return f"❌ {str(e)[:40]}"
-
-
-def full_health_report() -> str:
-    """Generate complete system health report as Telegram-formatted string."""
-    lines = ["*🏥 Aisha System Health Report*", f"_{datetime.now().strftime('%d %b %Y %H:%M IST')}_\n"]
-
-    # Active AI provider
+def _check_ai_providers() -> list:
+    lines = []
     try:
         try:
             from src.core.ai_router import AIRouter
         except ImportError:
             from core.ai_router import AIRouter
-        _router = AIRouter()
-        active = _router.get_active_provider()
-        lines.append(f"🤖 *Active AI:* {active}\n")
+        router = AIRouter()
+        statuses = router.status()
+        for name in ("gemini", "nvidia", "groq", "openai", "xai"):
+            if name not in statuses:
+                continue
+            info = statuses[name]
+            available = info.get("available", False)
+            cooling   = info.get("cooling_down", False)
+            if available and not cooling:
+                icon  = "✅"
+                state = "ready"
+            elif cooling:
+                icon  = "⏳"
+                state = "cooling down"
+            else:
+                icon  = "❌"
+                state = "unavailable"
+            lines.append(f"{icon} `{name}` — {state}")
     except Exception as e:
-        lines.append(f"🤖 *Active AI:* ⚠️ Could not determine ({str(e)[:40]})\n")
+        lines.append(f"❌ AI provider check failed: {e}")
+    return lines
 
-    # AI Providers
-    ai_results = check_ai_providers()
-    lines.append("*AI Providers:*")
-    for provider, status in ai_results.items():
-        lines.append(f"  • {provider}: {status}")
-        # Add fix hint for known invalid key errors
-        if provider == "groq" and "401 Invalid API Key" in status:
-            lines.append("    ↳ ⚠️ Get new key: console.groq.com → API Keys → Create")
 
-    # Database
-    lines.append("\n*Database Tables:*")
-    for table, status in check_database().items():
-        lines.append(f"  • {table}: {status}")
+def _check_supabase_tables() -> list:
+    lines = []
+    base = _supabase_base()
+    if not base:
+        return ["❌ SUPABASE_URL not set"]
+    headers = _supabase_headers()
 
-    # Render
-    lines.append(f"\n*Render Bot:* {check_render_health()}")
+    # content_jobs — group by status
+    try:
+        r = requests.get(
+            f"{base}/rest/v1/content_jobs?select=status",
+            headers=headers, timeout=10
+        )
+        if r.status_code == 200:
+            counts: dict = {}
+            for row in r.json():
+                s = row.get("status", "unknown")
+                counts[s] = counts.get(s, 0) + 1
+            summary = ", ".join(f"{s}:{n}" for s, n in sorted(counts.items())) or "empty"
+            lines.append(f"✅ `content_jobs` — {summary}")
+        else:
+            lines.append(f"⚠️ `content_jobs` — HTTP {r.status_code}")
+    except Exception as e:
+        lines.append(f"❌ `content_jobs` — {e}")
 
-    # Recent jobs
-    lines.append("\n*Recent Content Jobs:*")
-    jobs = check_recent_jobs()
-    if jobs:
-        for job in jobs:
-            icon = "✅" if job.get("status") == "completed" else ("❌" if job.get("status") == "failed" else "⏳")
-            lines.append(f"  {icon} [{job.get('channel','?')[:12]}] {job.get('topic','?')[:25]}")
-            if job.get("error_text"):
-                lines.append(f"     └ Error: {job['error_text'][:50]}")
-    else:
-        lines.append("  No jobs yet")
+    # plain count tables
+    for table in ("aisha_memories", "aisha_conversations", "aisha_mood_tracker"):
+        try:
+            r = requests.get(
+                f"{base}/rest/v1/{table}?select=id",
+                headers={**headers, "Prefer": "count=exact"},
+                timeout=10
+            )
+            if r.status_code in (200, 206):
+                count = r.headers.get("content-range", "?/?").split("/")[-1]
+                lines.append(f"✅ `{table}` — {count} rows")
+            else:
+                lines.append(f"⚠️ `{table}` — HTTP {r.status_code}")
+        except Exception as e:
+            lines.append(f"❌ `{table}` — {e}")
 
-    return "\n".join(lines)
+    return lines
+
+
+def _check_render() -> str:
+    try:
+        r = requests.get(_RENDER_HEALTH_URL, timeout=10)
+        if r.status_code == 200:
+            return f"✅ Render — online ({r.elapsed.total_seconds():.1f}s)"
+        return f"⚠️ Render — HTTP {r.status_code}"
+    except requests.Timeout:
+        return "❌ Render — timeout (>10s)"
+    except Exception as e:
+        return f"❌ Render — {e}"
+
+
+def _check_elevenlabs() -> str:
+    try:
+        try:
+            from src.core.voice_engine import _get_next_el_key, _get_elevenlabs_chars_left
+        except ImportError:
+            from core.voice_engine import _get_next_el_key, _get_elevenlabs_chars_left
+        key = _get_next_el_key()
+        if not key:
+            return "⚠️ ElevenLabs — no key configured"
+        chars_left = _get_elevenlabs_chars_left(key)
+        icon = "✅" if chars_left > 5000 else "⚠️" if chars_left > 0 else "❌"
+        return f"{icon} ElevenLabs — {chars_left:,} chars left"
+    except Exception as e:
+        return f"❌ ElevenLabs — {e}"
+
+
+def _write_system_log(summary: str) -> None:
+    base = _supabase_base()
+    if not base:
+        return
+    payload = {
+        "event":      "health_check",
+        "level":      "info",
+        "message":    summary[:500],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        requests.post(
+            f"{base}/rest/v1/aisha_system_log",
+            json=payload,
+            headers=_supabase_headers(),
+            timeout=8,
+        )
+    except Exception:
+        pass
+
+
+def run_health_check() -> str:
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M UTC")
+    sections = [f"*Aisha — Health Report*\n_{ts}_\n"]
+
+    sections.append("*AI Providers:*")
+    sections.extend(_check_ai_providers())
+
+    sections.append("\n*Supabase Tables:*")
+    sections.extend(_check_supabase_tables())
+
+    sections.append("\n*Services:*")
+    sections.append(_check_render())
+    sections.append(_check_elevenlabs())
+
+    report = "\n".join(sections)
+    _write_system_log(report)
+    return report
+
+
+full_health_report = run_health_check

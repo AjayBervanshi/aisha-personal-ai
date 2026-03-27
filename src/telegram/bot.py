@@ -778,6 +778,20 @@ def cmd_syscheck(message):
         bot.edit_message_text(f"❌ System check error: {e}", message.chat.id, loading_msg.message_id)
 
 
+@bot.message_handler(commands=["healthreport"])
+def cmd_healthreport(message):
+    """Run health check via monitoring_engine.run_health_check() and send result."""
+    if not is_ajay(message): return unauthorized_response(message)
+    loading_msg = bot.send_message(message.chat.id, "Running health report... ⏳")
+    try:
+        from src.core.monitoring_engine import run_health_check
+        report = run_health_check()
+        bot.delete_message(message.chat.id, loading_msg.message_id)
+        bot.send_message(message.chat.id, report, parse_mode="Markdown")
+    except Exception as e:
+        bot.edit_message_text(f"❌ Health report error: {e}", message.chat.id, loading_msg.message_id)
+
+
 @bot.message_handler(commands=["shell", "run"])
 def cmd_shell(message):
     """Run a shell command with confirmation before execution."""
