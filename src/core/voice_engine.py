@@ -2,11 +2,13 @@
 voice_engine.py
 ===============
 Aisha's Voice Engine — converts text responses to natural-sounding speech.
-Uses Microsoft Edge-TTS (100% free, unlimited, no API key needed).
+Primary: Microsoft Edge-TTS (100% free, unlimited, no API key needed).
+Optional upgrade: ElevenLabs (only if quota >= 500 chars AND force_elevenlabs=True).
 
 Voices:
   - English:  en-IN-NeerjaExpressiveNeural (warm, soothing Indian female)
-  - Hindi:    hi-IN-SwaraNeural (natural Hindi female)
+  - Hindi:    hi-IN-SwaraNeural (natural Hindi female — Aisha)
+  - Hindi:    hi-IN-MadhurNeural (dark, bold Hindi female — Riya)
   - Marathi:  mr-IN-AarohiNeural (natural Marathi female)
 
 The voice adapts based on detected language and mood — slower and deeper
@@ -18,12 +20,22 @@ import os
 import uuid
 import edge_tts
 
-# ── Voice Map ─────────────────────────────────────────────────
+# ── Voice Map — language-based defaults ──────────────────────
 VOICE_MAP = {
     "English":  "en-IN-NeerjaExpressiveNeural",
-    "Hindi":    "hi-IN-SwaraNeural",
+    "Hindi":    "hi-IN-SwaraNeural",        # Aisha default: warm, natural Hindi
     "Marathi":  "mr-IN-AarohiNeural",
     "Hinglish": "en-IN-NeerjaExpressiveNeural",  # Hinglish uses English voice
+}
+
+# ── Channel → Edge-TTS voice mapping ─────────────────────────
+# Aisha channels: hi-IN-SwaraNeural  (warm, gentle, emotional)
+# Riya channels:  hi-IN-MadhurNeural (darker, bolder tone)
+CHANNEL_EDGE_TTS_VOICES: dict = {
+    "Story With Aisha":            "hi-IN-SwaraNeural",
+    "Riya's Dark Whisper":         "hi-IN-MadhurNeural",
+    "Riya's Dark Romance Library": "hi-IN-MadhurNeural",
+    "Aisha & Him":                 "hi-IN-SwaraNeural",
 }
 
 # ── Mood-based voice tuning ───────────────────────────────────
@@ -49,21 +61,27 @@ os.makedirs(VOICE_DIR, exist_ok=True)
 async def _generate_voice_async(
     text: str,
     language: str = "English",
-    mood: str = "casual"
+    mood: str = "casual",
+    channel: str = None
 ) -> str:
     """
-    Generate voice audio from text. Returns path to the .mp3 file.
-    
+    Generate voice audio from text using Edge-TTS. Returns path to the .mp3 file.
+
     Args:
         text: The text to convert to speech
         language: Detected language (English/Hindi/Marathi/Hinglish)
         mood: Current conversation mood for voice tuning
-    
+        channel: YouTube channel name — drives character-specific voice selection
+
     Returns:
         Absolute path to the generated .mp3 file
     """
-    # Select voice based on language
-    voice = VOICE_MAP.get(language, VOICE_MAP["English"])
+    # Channel takes priority: use character-specific Edge-TTS voice
+    if channel and channel in CHANNEL_EDGE_TTS_VOICES:
+        voice = CHANNEL_EDGE_TTS_VOICES[channel]
+    else:
+        # Select voice based on language
+        voice = VOICE_MAP.get(language, VOICE_MAP["English"])
     
     # Get mood-specific rate and pitch
     settings = MOOD_VOICE_SETTINGS.get(mood, MOOD_VOICE_SETTINGS["casual"])
@@ -225,45 +243,56 @@ def generate_voice(text: str, language: str = "English", mood: str = "casual", c
     """
     Synchronous wrapper for voice generation.
     Returns path to the generated .mp3 file.
-    When channel is provided, uses ElevenLabs with the channel-specific voice ID.
-    ElevenLabs is only used for short replies (<=500 chars) to protect quota.
-    Pass force_elevenlabs=True to override this guard for priority use cases.
+
+    PRIMARY: Edge-TTS (free, unlimited, full Hindi Devanagari support).
+    OPTIONAL UPGRADE: ElevenLabs — only when ALL of these are true:
+      1. force_elevenlabs=True is passed explicitly, AND
+      2. ElevenLabs key is present and not a placeholder, AND
+      3. Remaining quota >= 500 characters.
+
+    Channel-aware Edge-TTS voices:
+      - Aisha channels → hi-IN-SwaraNeural (warm, emotional)
+      - Riya channels  → hi-IN-MadhurNeural (dark, bold)
     """
     if language in ["Hinglish", "Hindi"]:
         text = _transliterate_hinglish(text)
 
-    xi_api_key = os.getenv("ELEVENLABS_API_KEY")
-    # Guard 1: skip for long scripts
-    el_quota_guard = len(text) > 500 and not force_elevenlabs
-    # Guard 2: skip if remaining quota is critically low (< _EL_QUOTA_MIN chars)
-    if xi_api_key and not el_quota_guard and not force_elevenlabs:
-        chars_left = _get_elevenlabs_chars_left(xi_api_key.split(",")[0].strip())
-        if chars_left < _EL_QUOTA_MIN:
-            print(f"[ElevenLabs] Quota too low ({chars_left} chars left) — using Edge-TTS")
-            el_quota_guard = True
-    if xi_api_key and "your_" not in xi_api_key and not el_quota_guard:
-        result = _generate_elevenlabs(text, language, mood, channel=channel)
-        if result:
-            return result
-        # If ElevenLabs fails, fallback to edge-tts
+    # ── Optional ElevenLabs upgrade path ──────────────────────
+    # Only attempt if caller explicitly opts in via force_elevenlabs=True.
+    # Even then, skip if key is missing/placeholder OR quota < 500 chars.
+    if force_elevenlabs:
+        xi_api_key = os.getenv("ELEVENLABS_API_KEY", "")
+        key_valid = xi_api_key and "your_" not in xi_api_key
+        if key_valid:
+            chars_left = _get_elevenlabs_chars_left(xi_api_key.split(",")[0].strip())
+            if chars_left >= 500:
+                result = _generate_elevenlabs(text, language, mood, channel=channel)
+                if result:
+                    print(f"[Voice Engine] ElevenLabs used ({chars_left} chars remaining)")
+                    return result
+                print("[Voice Engine] ElevenLabs failed — falling back to Edge-TTS")
+            else:
+                print(f"[Voice Engine] ElevenLabs quota too low ({chars_left} chars) — using Edge-TTS")
+        else:
+            print("[Voice Engine] ElevenLabs key missing/invalid — using Edge-TTS")
 
+    # ── Primary: Edge-TTS ──────────────────────────────────────
     try:
-        # Use existing event loop if available, otherwise create new one
         try:
             loop = asyncio.get_running_loop()
-            # If we're already in an async context, create a new thread
+            # Already inside an async context — run in a thread to avoid nested loop
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor() as pool:
                 future = pool.submit(
                     asyncio.run,
-                    _generate_voice_async(text, language, mood)
+                    _generate_voice_async(text, language, mood, channel=channel)
                 )
-                return future.result(timeout=30)
+                return future.result(timeout=60)
         except RuntimeError:
-            # No running event loop — safe to use asyncio.run
-            return asyncio.run(_generate_voice_async(text, language, mood))
+            # No running event loop — safe to call asyncio.run directly
+            return asyncio.run(_generate_voice_async(text, language, mood, channel=channel))
     except Exception as e:
-        print(f"[Voice Engine] Error: {e}")
+        print(f"[Voice Engine] Edge-TTS error: {e}")
         return None
 
 
