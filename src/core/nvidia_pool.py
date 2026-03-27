@@ -4,90 +4,76 @@ nvidia_pool.py
 NVIDIA NIM Pool Orchestrator — 22 keys × 1,000 credits/month = 22,000 total credits.
 
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║  KEY MAP — Name, Model, Purpose                                             ║
+║  KEY MAP — Descriptive env var → Model → Purpose                            ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  KEY_01  Qwen-122B General         qwen/qwen3.5-122b-a10b                  ║
-║          → Massive 122B MoE model. Best for long-form content, reasoning   ║
-║                                                                             ║
-║  KEY_02  Mistral-Large-3 Writer A  mistralai/mistral-large-3-675b          ║
-║          → 675B param writing giant. Best for Hindi stories, scripts       ║
-║                                                                             ║
-║  KEY_03  Gemma-3 27B General       google/gemma-3-27b-it                   ║
-║          → Google's latest 27B. Good for structured tasks, SEO, summaries  ║
-║                                                                             ║
-║  KEY_04  Phi-4 Vision              microsoft/phi-4-multimodal-instruct     ║
-║          → Reads images/screenshots. Use for image analysis, OCR, review   ║
-║                                                                             ║
-║  KEY_05  LLaMA-3.3 Chat A          meta/llama-3.3-70b-instruct             ║
-║          → Meta's 70B chat model. Fast, sharp, great for conversation      ║
-║                                                                             ║
-║  KEY_06  LLaMA-3.3 Chat B          meta/llama-3.3-70b-instruct             ║
-║          → Same model, second key. Doubles throughput for chat             ║
-║                                                                             ║
-║  KEY_07  LLaMA-4 Scout             meta/llama-4-scout-17b-16e-instruct     ║
-║          → MoE 17B×16E multimodal. Fast vision+text (404 — auto-fallback)  ║
-║                                                                             ║
-║  KEY_08  Falcon3 Fast Chat         tiiuae/falcon3-7b-instruct              ║
-║          → UAE's 7B model. Lightweight chat, casual responses              ║
-║                                                                             ║
-║  KEY_09  NVIDIA USD Code           nvidia/usdcode-llama-3.1-70b-instruct   ║
-║          → Specialised 3D/USD scene code generation (404 — auto-fallback)  ║
-║                                                                             ║
-║  KEY_10  Phi-3.5 Mini General      microsoft/phi-3.5-mini-instruct         ║
-║          → Small but capable. Good for classification, quick responses     ║
-║                                                                             ║
-║  KEY_11  Gemma-2 2B Speed          google/gemma-2-2b-it                    ║
-║          → Tiny 2B model. Fastest possible response, minimal credits       ║
-║                                                                             ║
-║  KEY_12  ChatGLM3 6B Fast          thudm/chatglm3-6b                       ║
-║          → Chinese/English bilingual 6B. Good for quick tasks              ║
-║                                                                             ║
-║  KEY_13  Mamba Codestral           mistralai/mamba-codestral-7b-v0.1       ║
-║          → Mistral's code model. Python, JS, SQL generation & review       ║
-║                                                                             ║
-║  KEY_14  Phi-3 Medium 128K         microsoft/phi-3-medium-128k-instruct    ║
-║          → 128K context window. Best for reading long docs, full scripts   ║
-║                                                                             ║
-║  KEY_15  Gemma-2 27B General       google/gemma-2-27b-it                   ║
-║          → Google 27B. Strong reasoning, good fallback for writing         ║
-║                                                                             ║
-║  KEY_16  Phi-3 Small Fast          microsoft/phi-3-small-8k-instruct       ║
-║          → Compact & fast. Good for SEO tags, metadata, short tasks        ║
-║                                                                             ║
-║  KEY_17  Mistral-Large-3 Writer B  mistralai/mistral-large-3-675b          ║
-║          → Same giant writer, second key. Full backup for story writing    ║
-║                                                                             ║
-║  KEY_18  ⛔ DISABLED                 403 Forbidden — key blocked by NVIDIA  ║
-║          → Do not use. Will be skipped automatically via failure counter   ║
-║                                                                             ║
-║  KEY_19  LLaMA-3.3 Chat D          meta/llama-3.3-70b-instruct             ║
-║          → Fourth key. Aisha's autonomous loop uses this for decisions     ║
-║                                                                             ║
-║  KEY_20  LLaMA-3.3 Chat E          meta/llama-3.3-70b-instruct             ║
-║          → Fifth key. Telegram bot responses use this pool                 ║
-║                                                                             ║
-║  KEY_21  LLaMA-3.3 Chat F          meta/llama-3.3-70b-instruct             ║
-║          → Sixth key. Reserved for content pipeline secondary tasks        ║
-║                                                                             ║
-║  KEY_22  LLaMA-3.3 Chat G          meta/llama-3.3-70b-instruct             ║
-║          → Seventh key. Last resort chat fallback before switching provider║
+║  NVIDIA_QWEN_122B          qwen/qwen3.5-122b-a10b                           ║
+║  → Massive 122B MoE model. Best for long-form content, reasoning            ║
+║                                                                              ║
+║  NVIDIA_MISTRAL_LARGE_A    mistralai/mistral-large-3-675b                   ║
+║  → 675B param writing giant. Best for Hindi stories, scripts                ║
+║                                                                              ║
+║  NVIDIA_GEMMA3_27B         google/gemma-3-27b-it                            ║
+║  → Google's latest 27B. Good for structured tasks, SEO, summaries           ║
+║                                                                              ║
+║  NVIDIA_PHI4_VISION        microsoft/phi-4-multimodal-instruct              ║
+║  → Reads images/screenshots. Use for image analysis, OCR, review            ║
+║                                                                              ║
+║  NVIDIA_LLAMA33_A          meta/llama-3.3-70b-instruct                      ║
+║  NVIDIA_LLAMA33_B          meta/llama-3.3-70b-instruct                      ║
+║  NVIDIA_LLAMA33_C          meta/llama-3.3-70b-instruct  (re-enabled 03-26)  ║
+║  NVIDIA_LLAMA33_D          meta/llama-3.3-70b-instruct                      ║
+║  NVIDIA_LLAMA33_E          meta/llama-3.3-70b-instruct                      ║
+║  NVIDIA_LLAMA33_F          meta/llama-3.3-70b-instruct                      ║
+║  NVIDIA_LLAMA33_G          meta/llama-3.3-70b-instruct                      ║
+║  → 7-key LLaMA-3.3 chat pool. Fast, sharp, great for conversation           ║
+║                                                                              ║
+║  NVIDIA_LLAMA4_SCOUT       meta/llama-4-scout-17b-16e-instruct              ║
+║  → MoE 17B×16E multimodal. Fast vision+text (404 on some regions)           ║
+║                                                                              ║
+║  NVIDIA_FALCON3_7B         tiiuae/falcon3-7b-instruct                       ║
+║  → UAE's 7B model. Lightweight chat, casual responses                       ║
+║                                                                              ║
+║  NVIDIA_USDCODE            nvidia/usdcode-llama-3.1-70b-instruct            ║
+║  → Specialised 3D/USD scene code generation (404 on some regions)           ║
+║                                                                              ║
+║  NVIDIA_PHI35_MINI         microsoft/phi-3.5-mini-instruct                  ║
+║  → Small but capable. Good for classification, quick responses              ║
+║                                                                              ║
+║  NVIDIA_GEMMA2_2B          google/gemma-2-2b-it                             ║
+║  → Tiny 2B model. Fastest possible response, minimal credits                ║
+║                                                                              ║
+║  NVIDIA_CHATGLM3           thudm/chatglm3-6b                                ║
+║  → Chinese/English bilingual 6B. Good for quick tasks                       ║
+║                                                                              ║
+║  NVIDIA_CODESTRAL          mistralai/mamba-codestral-7b-v0.1                ║
+║  → Mistral's code model. Python, JS, SQL generation & review                ║
+║                                                                              ║
+║  NVIDIA_PHI3_128K          microsoft/phi-3-medium-128k-instruct             ║
+║  → 128K context window. Best for reading long docs, full scripts            ║
+║                                                                              ║
+║  NVIDIA_GEMMA2_27B         google/gemma-2-27b-it                            ║
+║  → Google 27B. Strong reasoning, good fallback for writing                  ║
+║                                                                              ║
+║  NVIDIA_PHI3_SMALL         microsoft/phi-3-small-8k-instruct                ║
+║  → Compact & fast. Good for SEO tags, metadata, short tasks                 ║
+║                                                                              ║
+║  NVIDIA_MISTRAL_LARGE_B    mistralai/mistral-large-3-675b                   ║
+║  → Same giant writer, second key. Full backup for story writing             ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
-Task → Pool routing:
-  "writing" → KEY_02, KEY_17 (Mistral-Large-3, best for Hindi stories/scripts)
-  "chat"    → KEY_05..22 LLaMA-3.3 pool + Falcon3 (fast conversation)
-  "code"    → KEY_09 USD-Code, KEY_13 Mamba-Codestral (code generation/review)
-  "vision"  → KEY_04 Phi-4 Multimodal (image analysis, screenshot reading)
-  "image"   → KEY_04 Phi-4 (image understanding) + general pool for prompts
-  "video"   → KEY_01 Qwen-122B + KEY_14 Phi-3-128K (script/storyboard for video)
-  "fast"    → KEY_11 Gemma-2-2B, KEY_12 ChatGLM3, KEY_16 Phi-3-Small
-  "general" → KEY_01 Qwen-122B, KEY_03 Gemma-3-27B, KEY_10 Phi-3.5-Mini,
-               KEY_14 Phi-3-128K, KEY_15 Gemma-2-27B
+Task -> Pool routing:
+  "writing" -> NVIDIA_MISTRAL_LARGE_A/B (Mistral-Large-3, best for Hindi stories/scripts)
+  "chat"    -> NVIDIA_LLAMA33_A..G + NVIDIA_FALCON3_7B (fast conversation, 8 keys)
+  "code"    -> NVIDIA_CODESTRAL, NVIDIA_USDCODE (code generation/review)
+  "vision"  -> NVIDIA_PHI4_VISION, NVIDIA_LLAMA4_SCOUT (image analysis, screenshot reading)
+  "video"   -> NVIDIA_PHI3_128K (128K context for full video scripts)
+  "fast"    -> NVIDIA_GEMMA2_2B, NVIDIA_CHATGLM3, NVIDIA_PHI3_SMALL, NVIDIA_FALCON3_7B
+  "general" -> NVIDIA_QWEN_122B, NVIDIA_GEMMA3_27B, NVIDIA_PHI35_MINI, NVIDIA_GEMMA2_27B
 
 Total credits: 22,000/month. Aisha uses credits conservatively:
-  - Fast tasks (SEO, metadata) → fast pool (cheapest)
-  - Stories/scripts → writing pool (quality)
-  - Chat → chat pool (balanced)
+  - Fast tasks (SEO, metadata) -> fast pool (cheapest)
+  - Stories/scripts -> writing pool (quality)
+  - Chat -> chat pool (balanced)
 """
 
 import os
@@ -109,34 +95,32 @@ log = logging.getLogger("Aisha.NvidiaPool")
 
 # ── Key pool definition ────────────────────────────────────────────────────────
 # Format: (env_var_name, model, pool_category)
-# Key 07 = llama-4-scout (404 in test — model may be region-locked or deprecated)
-# Key 09 = usdcode-llama (404 in test — same issue; will auto-fail and skip)
+# Keys with 404 models auto-fail and skip to fallback pool on first use.
 
 _KEY_DEFINITIONS = [
-    # env_var,         model,                                               pool,      label
-    ("NVIDIA_KEY_01", "qwen/qwen3.5-122b-a10b",                           "general"), # Qwen-122B General
-    ("NVIDIA_KEY_02", "mistralai/mistral-large-3-675b-instruct-2512",     "writing"), # Mistral-Large-3 Writer A
-    ("NVIDIA_KEY_03", "google/gemma-3-27b-it",                            "general"), # Gemma-3 27B General
-    ("NVIDIA_KEY_04", "microsoft/phi-4-multimodal-instruct",              "vision"),  # Phi-4 Vision (image/screenshot analysis)
-    ("NVIDIA_KEY_05", "meta/llama-3.3-70b-instruct",                      "chat"),    # LLaMA-3.3 Chat A
-    ("NVIDIA_KEY_06", "meta/llama-3.3-70b-instruct",                      "chat"),    # LLaMA-3.3 Chat B
-    ("NVIDIA_KEY_07", "meta/llama-4-scout-17b-16e-instruct",              "vision"),  # LLaMA-4 Scout (multimodal, 404→fallback)
-    ("NVIDIA_KEY_08", "tiiuae/falcon3-7b-instruct",                       "fast"),    # Falcon3 Fast Chat
-    ("NVIDIA_KEY_09", "nvidia/usdcode-llama-3.1-70b-instruct",            "code"),    # NVIDIA USD Code (404→fallback)
-    ("NVIDIA_KEY_10", "microsoft/phi-3.5-mini-instruct",                  "general"), # Phi-3.5 Mini General
-    ("NVIDIA_KEY_11", "google/gemma-2-2b-it",                             "fast"),    # Gemma-2 2B Speed (cheapest)
-    ("NVIDIA_KEY_12", "thudm/chatglm3-6b",                                "fast"),    # ChatGLM3 6B Fast
-    ("NVIDIA_KEY_13", "mistralai/mamba-codestral-7b-v0.1",                "code"),    # Mamba Codestral (Python/JS/SQL)
-    ("NVIDIA_KEY_14", "microsoft/phi-3-medium-128k-instruct",             "video"),   # Phi-3 Medium 128K (long video scripts)
-    ("NVIDIA_KEY_15", "google/gemma-2-27b-it",                            "general"), # Gemma-2 27B General
-    ("NVIDIA_KEY_16", "microsoft/phi-3-small-8k-instruct",                "fast"),    # Phi-3 Small Fast (SEO, metadata)
-    ("NVIDIA_KEY_17", "mistralai/mistral-large-3-675b-instruct-2512",     "writing"), # Mistral-Large-3 Writer B
-    # KEY_18 is 403 FORBIDDEN (key blocked by NVIDIA) — excluded from pool
-    # ("NVIDIA_KEY_18", "meta/llama-3.3-70b-instruct",                   "chat"),
-    ("NVIDIA_KEY_19", "meta/llama-3.3-70b-instruct",                      "chat"),    # LLaMA-3.3 Chat D (autonomous loop)
-    ("NVIDIA_KEY_20", "meta/llama-3.3-70b-instruct",                      "chat"),    # LLaMA-3.3 Chat E (Telegram bot)
-    ("NVIDIA_KEY_21", "meta/llama-3.3-70b-instruct",                      "chat"),    # LLaMA-3.3 Chat F (content pipeline)
-    ("NVIDIA_KEY_22", "meta/llama-3.3-70b-instruct",                      "chat"),    # LLaMA-3.3 Chat G (last resort)
+    # env_var,                  model,                                               pool
+    ("NVIDIA_QWEN_122B",        "qwen/qwen3.5-122b-a10b",                           "general"), # Massive 122B MoE
+    ("NVIDIA_MISTRAL_LARGE_A",  "mistralai/mistral-large-3-675b-instruct-2512",     "writing"), # 675B Writer A
+    ("NVIDIA_GEMMA3_27B",       "google/gemma-3-27b-it",                            "general"), # Gemma-3 27B
+    ("NVIDIA_PHI4_VISION",      "microsoft/phi-4-multimodal-instruct",              "vision"),  # Vision/OCR
+    ("NVIDIA_LLAMA33_A",        "meta/llama-3.3-70b-instruct",                      "chat"),    # Chat A
+    ("NVIDIA_LLAMA33_B",        "meta/llama-3.3-70b-instruct",                      "chat"),    # Chat B
+    ("NVIDIA_LLAMA4_SCOUT",     "meta/llama-4-scout-17b-16e-instruct",              "vision"),  # Multimodal Scout
+    ("NVIDIA_FALCON3_7B",       "tiiuae/falcon3-7b-instruct",                       "fast"),    # Falcon3 Fast
+    ("NVIDIA_USDCODE",          "nvidia/usdcode-llama-3.1-70b-instruct",            "code"),    # 3D/USD Code
+    ("NVIDIA_PHI35_MINI",       "microsoft/phi-3.5-mini-instruct",                  "general"), # Phi-3.5 Mini
+    ("NVIDIA_GEMMA2_2B",        "google/gemma-2-2b-it",                             "fast"),    # Tiny/cheapest
+    ("NVIDIA_CHATGLM3",         "thudm/chatglm3-6b",                                "fast"),    # Bilingual 6B
+    ("NVIDIA_CODESTRAL",        "mistralai/mamba-codestral-7b-v0.1",                "code"),    # Python/JS/SQL
+    ("NVIDIA_PHI3_128K",        "microsoft/phi-3-medium-128k-instruct",             "video"),   # 128K long docs
+    ("NVIDIA_GEMMA2_27B",       "google/gemma-2-27b-it",                            "general"), # Gemma-2 27B
+    ("NVIDIA_PHI3_SMALL",       "microsoft/phi-3-small-8k-instruct",                "fast"),    # SEO/metadata
+    ("NVIDIA_MISTRAL_LARGE_B",  "mistralai/mistral-large-3-675b-instruct-2512",     "writing"), # 675B Writer B
+    ("NVIDIA_LLAMA33_C",        "meta/llama-3.3-70b-instruct",                      "chat"),    # Chat C (re-enabled 2026-03-26)
+    ("NVIDIA_LLAMA33_D",        "meta/llama-3.3-70b-instruct",                      "chat"),    # Chat D
+    ("NVIDIA_LLAMA33_E",        "meta/llama-3.3-70b-instruct",                      "chat"),    # Chat E
+    ("NVIDIA_LLAMA33_F",        "meta/llama-3.3-70b-instruct",                      "chat"),    # Chat F
+    ("NVIDIA_LLAMA33_G",        "meta/llama-3.3-70b-instruct",                      "chat"),    # Chat G
 ]
 
 # Fallback chain: if primary pool exhausted, try these pools in order
@@ -144,16 +128,16 @@ _FALLBACK_CHAINS: Dict[str, List[str]] = {
     "writing":  ["general", "chat"],
     "chat":     ["general", "fast"],
     "code":     ["general", "chat"],
-    "vision":   ["general", "chat"],       # vision → general → chat if phi-4 down
-    "image":    ["vision", "general"],     # image prompts → vision model → general
-    "video":    ["writing", "general"],    # video scripts → writing pool → general
+    "vision":   ["general", "chat"],
+    "image":    ["vision", "general"],
+    "video":    ["writing", "general"],
     "fast":     ["general", "chat"],
     "general":  ["chat", "fast"],
 }
 
 _NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
-_COOLDOWN_SECONDS = 60       # Seconds to cool down a key after failure
-_MAX_FAILURES_BEFORE_SKIP = 3  # Mark key as dead after 3 consecutive failures
+_COOLDOWN_SECONDS = 60
+_MAX_FAILURES_BEFORE_SKIP = 3
 
 
 class NvidiaPool:
@@ -211,7 +195,6 @@ class NvidiaPool:
                 log.info(f"  {name}: {len(entries)} keys")
 
     def _is_key_available(self, entry: dict) -> bool:
-        """Return True if this key is not in cooldown and not dead."""
         if entry["failures"] >= _MAX_FAILURES_BEFORE_SKIP:
             return False
         if time.time() < entry["cooldown_until"]:
@@ -219,10 +202,6 @@ class NvidiaPool:
         return True
 
     def _get_key(self, task_type: str) -> Optional[dict]:
-        """
-        Round-robin pick from the given pool.
-        Returns the next available key entry, or None if pool is exhausted.
-        """
         with self._lock:
             pool = self._pools.get(task_type, [])
             if not pool:
@@ -235,11 +214,10 @@ class NvidiaPool:
                 idx = (start_idx + i) % n
                 entry = pool[idx]
                 if self._is_key_available(entry):
-                    # Advance round-robin pointer
                     self._pool_indices[task_type] = (idx + 1) % n
                     return entry
 
-            return None  # All keys in this pool are cooling down or dead
+            return None
 
     def _mark_success(self, entry: dict):
         with self._lock:
@@ -257,7 +235,7 @@ class NvidiaPool:
                 entry["cooldown_until"] = time.time() + backoff
             log.warning(
                 f"[NvidiaPool] {entry['env_var']} failure #{entry['failures']} "
-                f"— cooldown until +{int(entry['cooldown_until'] - time.time())}s"
+                f"— cooldown +{int(entry['cooldown_until'] - time.time())}s"
             )
 
     def _call_key(
@@ -269,7 +247,6 @@ class NvidiaPool:
         max_tokens: int = 16384,
         temperature: float = 0.7,
     ) -> str:
-        """Make a single API call using one key entry."""
         messages = [{"role": "system", "content": system_prompt}]
         for msg in history[-8:]:
             role = "assistant" if msg.get("role") in ("model", "assistant") else "user"
@@ -299,7 +276,6 @@ class NvidiaPool:
         elif resp.status_code == 429:
             raise Exception(f"NVIDIA rate limit 429 for {entry['env_var']}")
         elif resp.status_code == 404:
-            # Model not available — treat as permanent failure for this key
             entry["failures"] = _MAX_FAILURES_BEFORE_SKIP
             raise Exception(f"NVIDIA 404 model not found: {entry['model']} ({entry['env_var']})")
         else:
@@ -316,55 +292,33 @@ class NvidiaPool:
         max_tokens: int = 16384,
         temperature: float = 0.7,
     ) -> str:
-        """
-        Generate a response using the best available key for the given task type.
-
-        Args:
-            task_type:     One of: "writing", "chat", "code", "vision", "image", "video", "fast", "general"
-            system_prompt: System/persona instructions
-            user_message:  The user's message
-            history:       Optional list of {"role": ..., "content": ...} dicts
-            max_tokens:    Max tokens to generate (default 16384)
-            temperature:   Sampling temperature (default 0.7)
-
-        Returns:
-            Generated text string
-
-        Raises:
-            Exception: "All NVIDIA pools exhausted" if every key fails
-        """
         history = history or []
 
         if task_type not in self._pools:
             log.warning(f"[NvidiaPool] Unknown task_type '{task_type}', defaulting to 'general'")
             task_type = "general"
 
-        # Build the sequence of pools to try: primary + fallback chain
         pools_to_try = [task_type] + _FALLBACK_CHAINS.get(task_type, ["general"])
-
         attempted_keys = set()
 
         for pool_name in pools_to_try:
             while True:
                 entry = self._get_key(pool_name)
                 if entry is None:
-                    break  # No available keys in this pool — move to next pool
+                    break
 
                 key_id = entry["env_var"]
                 if key_id in attempted_keys:
-                    break  # Already tried all keys in this pool this call
+                    break
                 attempted_keys.add(key_id)
 
                 try:
-                    log.info(
-                        f"[NvidiaPool] {pool_name}/{key_id} → {entry['model'][:40]}"
-                    )
+                    log.info(f"[NvidiaPool] {pool_name}/{key_id} -> {entry['model'][:40]}")
                     result = self._call_key(
                         entry, system_prompt, user_message, history,
                         max_tokens=max_tokens, temperature=temperature
                     )
                     self._mark_success(entry)
-                    log.info(f"[NvidiaPool] {key_id} OK — {result[:60]!r}")
                     return result
 
                 except Exception as e:
@@ -373,12 +327,11 @@ class NvidiaPool:
                     is_credits = "402" in err or "credits" in err.lower()
                     is_404 = "404" in err
 
-                    # 404 = model permanently gone — already marked dead inside _call_key
                     if not is_404:
                         self._mark_failure(entry, is_rate_limit=is_rate or is_credits)
 
                     log.warning(f"[NvidiaPool] {key_id} failed: {err[:100]}")
-                    continue  # Try next key in same pool
+                    continue
 
         raise Exception(
             "All NVIDIA pools exhausted — no working keys available. "
@@ -386,20 +339,6 @@ class NvidiaPool:
         )
 
     def get_stats(self) -> Dict[str, dict]:
-        """
-        Returns a dict of all pools with their key stats.
-
-        Example:
-            {
-                "chat": {
-                    "total_keys": 8,
-                    "available": 7,
-                    "total_calls": 42,
-                    "keys": [{"env_var": ..., "model": ..., "calls": ..., ...}]
-                },
-                ...
-            }
-        """
         with self._lock:
             stats = {}
             now = time.time()
@@ -409,11 +348,11 @@ class NvidiaPool:
                 key_details = []
                 for e in entries:
                     key_details.append({
-                        "env_var":    e["env_var"],
-                        "model":      e["model"],
-                        "calls":      e["calls"],
-                        "failures":   e["failures"],
-                        "available":  self._is_key_available(e),
+                        "env_var":            e["env_var"],
+                        "model":              e["model"],
+                        "calls":              e["calls"],
+                        "failures":           e["failures"],
+                        "available":          self._is_key_available(e),
                         "cooldown_remaining": max(0, int(e["cooldown_until"] - now)),
                     })
                 stats[pool_name] = {
@@ -425,10 +364,6 @@ class NvidiaPool:
             return stats
 
     def reset_failures(self, env_var: str = None):
-        """
-        Reset failure counters — useful after fixing a model issue.
-        Pass env_var to reset a specific key, or None to reset all.
-        """
         with self._lock:
             for entries in self._pools.values():
                 for e in entries:
