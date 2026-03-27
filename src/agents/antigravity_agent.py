@@ -158,13 +158,13 @@ class AntigravityAgent:
                     mime = mimetypes.guess_type(thumbnail_path)[0] or "image/png"
                     storage_path = f"thumbnails/{job_id}_{os.path.basename(thumbnail_path)}"
                     with open(thumbnail_path, "rb") as f:
-                        self.db.storage.from_("content-media").upload(
+                        self.db.storage.from_("content-videos").upload(
                             storage_path, f.read(),
                             file_options={"content-type": mime, "upsert": "true"}
                         )
                     public_url = (
                         f"{os.getenv('SUPABASE_URL', '').rstrip('/')}"
-                        f"/storage/v1/object/public/content-media/{storage_path}"
+                        f"/storage/v1/object/public/content-videos/{storage_path}"
                     )
                     thumbnail_url = public_url
                     result["thumbnail_url"] = public_url
