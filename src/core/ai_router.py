@@ -44,10 +44,14 @@ class ProviderStats:
     def is_cooling_down(self) -> bool:
         return time.time() < self.cooldown_until
 
-    def mark_failure(self, is_rate_limit=False, retry_after=0):
+    def mark_failure(self, is_rate_limit=False, retry_after=0, is_auth_error=False):
         self.failures += 1
         self.last_failure = time.time()
-        if is_rate_limit and retry_after > 0:
+        if is_auth_error:
+            # Dead key (401/403) — don't retry for 24h, it won't fix itself
+            self.cooldown_until = time.time() + 86400
+            log.warning(f"[{self.name}] Auth error (401/403) — key dead. Cooling down 24h.")
+        elif is_rate_limit and retry_after > 0:
             # For rate limits: wait exactly what the API tells us (usually 18-60s)
             self.cooldown_until = time.time() + min(retry_after, 90)
             log.warning(f"[{self.name}] Rate limited. Waiting {retry_after}s.")
@@ -210,9 +214,10 @@ class AIRouter:
         if image_bytes:
             order = ["gemini", "anthropic", "openai"]  # Only providers with Vision
         else:
-            # NVIDIA NIM is primary (21 active keys, 188 models, 21,000 credits/month)
-            # All other providers currently have invalid/expired keys — NVIDIA is first
-            order = ["nvidia", "gemini", "groq", "anthropic", "xai", "openai", "mistral", "ollama"]
+            # Gemini 2.5-flash is working (verified 2026-03-26) — best quality for Hindi content
+            # NVIDIA NIM is the reliable backstop (22k credits/month, never fails)
+            # Dead providers (Groq/OAI/Anthropic/xAI) get 24h cooldown on first 401 and are skipped
+            order = ["gemini", "nvidia", "groq", "anthropic", "xai", "openai", "mistral", "ollama"]
             
         if preferred_provider and preferred_provider in self._clients:
             # Move preferred to the front if it's not already there
@@ -251,10 +256,13 @@ class AIRouter:
                 is_rate_limit = "429" in error_str or "RATE_LIMIT" in error_str.upper() or "quota" in error_str.lower()
                 is_key_expired = (
                     "401" in error_str
+                    or "403" in error_str
                     or "invalid_api_key" in error_str.lower()
                     or "invalid x-api-key" in error_str.lower()
                     or "Incorrect API key" in error_str
                     or "unpaid invoice" in error_str.lower()
+                    or "authentication_error" in error_str.lower()
+                    or "permission" in error_str.lower()
                 )
 
                 # Try to extract retry_delay from error
@@ -267,8 +275,12 @@ class AIRouter:
                     else:
                         retry_after = 30  # Default 30s for rate limits
 
-                log.warning(f"[{provider}] ❌ Failed: {type(e).__name__}: {error_str[:150]}")
-                stats.mark_failure(is_rate_limit=is_rate_limit, retry_after=retry_after)
+                log.warning(f"[{provider}] Failed: {type(e).__name__}: {error_str[:150]}")
+                stats.mark_failure(
+                    is_rate_limit=is_rate_limit,
+                    retry_after=retry_after,
+                    is_auth_error=is_key_expired
+                )
 
                 # Send alert email — key expired or quota hit (rate-limited to once per 6h)
                 if is_key_expired:
@@ -675,20 +687,20 @@ class AIRouter:
         Walks the default order and returns the first provider that is configured
         and not cooling down.
         """
-        order = ["nvidia", "gemini", "groq", "anthropic", "xai", "openai", "mistral", "ollama"]
+        order = ["gemini", "nvidia", "groq", "anthropic", "xai", "openai", "mistral", "ollama"]
         provider_labels = {
-            "nvidia":    "NVIDIA NIM Pool (21 keys, 188 models)",
             "gemini":    f"Gemini {getattr(self, '_gemini_model_name', '2.5-flash')}",
+            "nvidia":    "NVIDIA NIM Pool (22 keys, 22k credits/month)",
             "groq":      "Groq llama-3.3-70b",
             "anthropic": "Claude (Anthropic)",
-            "xai":       "xAI Grok-2",
+            "xai":       "xAI Grok",
             "openai":    "OpenAI GPT-4o",
             "mistral":   "Mistral",
             "ollama":    "Ollama (local)",
         }
         role_labels = {
-            "nvidia":    "primary",
-            "gemini":    "fallback #1",
+            "gemini":    "primary",
+            "nvidia":    "fallback #1",
             "groq":      "fallback #2",
             "anthropic": "fallback #3",
             "xai":       "fallback #4",
