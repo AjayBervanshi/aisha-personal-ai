@@ -44,3 +44,4 @@ supabase/.temp/
 # Claude Code
 .claude/memory/write_log.txt
 .claude/memory/session_*.md
+secrets.json
