@@ -438,10 +438,11 @@ class AishaBrain:
 
         # 2. Load context — only load Ajay's private data when Ajay is talking
         context = self.memory.load_context(user_message) if is_owner else {}
-        context["language"]    = language
-        context["mood"]        = mood
-        context["caller_name"] = caller_name
-        context["is_owner"]    = is_owner
+        context["language"]     = language
+        context["mood"]         = mood
+        context["caller_name"]  = caller_name
+        context["is_owner"]     = is_owner
+        context["user_message"] = user_message  # for format constraint detection
 
         # 3. Build dynamic system prompt
         system_prompt = build_system_prompt(context)

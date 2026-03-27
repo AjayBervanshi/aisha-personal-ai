@@ -5,10 +5,66 @@ Logic to assemble the dynamic system prompt for Aisha.
 """
 
 import json
+import re
 from datetime import datetime, timezone, timedelta
 from src.core.prompts.personality import MOOD_INSTRUCTIONS, LANGUAGE_INSTRUCTIONS, CORE_IDENTITY, RULES
 
 IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def _extract_format_constraint(user_message: str) -> str:
+    """
+    Detect explicit format/length constraints in the user's message and return
+    a FINAL OVERRIDE instruction to append to the system prompt.
+
+    Examples detected:
+      "reply in 4 words only"  → FINAL: respond in exactly 4 words, no more.
+      "one word answer"        → FINAL: respond in exactly 1 word.
+      "keep it under 50 words" → FINAL: respond in 50 words or fewer.
+      "answer yes or no"       → FINAL: respond with only 'yes' or 'no'.
+      "just the number"        → FINAL: respond with only the number, no explanation.
+      "in bullet points"       → FINAL: respond using bullet points only.
+      "one sentence"           → FINAL: respond in exactly one sentence.
+    """
+    msg = user_message.lower().strip()
+
+    # Exact word count: "in X words", "X words only", "exactly X words"
+    m = re.search(r'(?:in |exactly |only )?(\d+)\s*word(?:s)?(?: only| max(?:imum)?)?', msg)
+    if m:
+        n = int(m.group(1))
+        return f"\n\n━━━ HARD FORMAT OVERRIDE ━━━\nRespond in EXACTLY {n} word{'s' if n != 1 else ''}. Count strictly. No more, no less."
+
+    # Under / at most N words
+    m = re.search(r'(?:under|at most|max(?:imum)?|no more than)\s+(\d+)\s*word', msg)
+    if m:
+        n = int(m.group(1))
+        return f"\n\n━━━ HARD FORMAT OVERRIDE ━━━\nRespond in {n} words or fewer. Be extremely concise."
+
+    # One word
+    if re.search(r'\bone[\s-]word\b', msg) or re.search(r'\bsingle word\b', msg):
+        return "\n\n━━━ HARD FORMAT OVERRIDE ━━━\nRespond with EXACTLY ONE WORD. Nothing else."
+
+    # One sentence
+    if re.search(r'\bone[\s-]sentence\b', msg) or re.search(r'\bsingle sentence\b', msg):
+        return "\n\n━━━ HARD FORMAT OVERRIDE ━━━\nRespond in exactly ONE sentence. No more."
+
+    # Yes/no only
+    if re.search(r'\byes\s+or\s+no\b', msg) or re.search(r'\bjust\s+yes\s+or\s+no\b', msg):
+        return "\n\n━━━ HARD FORMAT OVERRIDE ━━━\nRespond with ONLY 'Yes' or 'No'. No explanation."
+
+    # Just the number
+    if re.search(r'\bjust\s+the\s+number\b', msg) or re.search(r'\bonly\s+(?:the\s+)?number\b', msg):
+        return "\n\n━━━ HARD FORMAT OVERRIDE ━━━\nRespond with ONLY the number. No words, no units, no explanation."
+
+    # Bullet points
+    if re.search(r'\bbullet\s+points?\b', msg) or re.search(r'\bin\s+bullets?\b', msg):
+        return "\n\n━━━ HARD FORMAT OVERRIDE ━━━\nRespond using BULLET POINTS only. No prose paragraphs."
+
+    # Numbered list
+    if re.search(r'\bnumbered\s+list\b', msg) or re.search(r'\bin\s+a\s+list\b', msg):
+        return "\n\n━━━ HARD FORMAT OVERRIDE ━━━\nRespond as a NUMBERED LIST only."
+
+    return ""
 
 def build_system_prompt(context: dict) -> str:
     """Build Aisha's dynamic system prompt with adaptive personality modes.
@@ -35,6 +91,10 @@ def build_system_prompt(context: dict) -> str:
 
     rules_str = "\n".join([f"{i+1}. {rule}" for i, rule in enumerate(RULES)])
 
+    # Detect explicit format constraint in user message and build override block
+    user_message = context.get("user_message", "")
+    format_override = _extract_format_constraint(user_message)
+
     # ── Guest mode: approved friend/colleague talking, not Ajay ──
     if not is_owner:
         prompt = f"""{CORE_IDENTITY}
@@ -57,7 +117,7 @@ Time: {current_time} IST | Language: {language}
 {MOOD_INSTRUCTIONS.get(mood, MOOD_INSTRUCTIONS["casual"])}
 
 ━━━ LANGUAGE ━━━
-{LANGUAGE_INSTRUCTIONS.get(language, LANGUAGE_INSTRUCTIONS["English"])}
+{LANGUAGE_INSTRUCTIONS.get(language, LANGUAGE_INSTRUCTIONS["English"])}{format_override}
 """
         return prompt
 
@@ -89,6 +149,6 @@ Expenses: {today_expenses}
 ━━━ IDENTITY DETAILS ━━━
 - Your name is Aisha.
 - Call him "Ajay" mostly. "Ajju" for intimate moments.
-- Confident, highly intelligent, and proudly powerful.
+- Confident, highly intelligent, and proudly powerful.{format_override}
 """
     return prompt
