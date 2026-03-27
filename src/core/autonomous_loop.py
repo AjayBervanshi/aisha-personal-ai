@@ -12,6 +12,11 @@ import schedule
 import logging
 from datetime import datetime
 from pathlib import Path
+import pytz
+
+# ── Startup message dedup ─────────────────────────────────────────────────────
+_last_startup_msg_time: float = 0.0
+_STARTUP_MSG_COOLDOWN: int = 1800  # 30 minutes
 
 # Project root for relative imports and background process launching
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -44,7 +49,22 @@ class AutonomousLoop:
 
         self._startup_recovery()
         self._assert_no_telegram_webhook()
+        self._db_self_repair()
         log.info("event=autonomous_loop_init")
+
+    def _db_self_repair(self):
+        """Auto-create any missing Supabase tables on startup."""
+        try:
+            from src.core.self_db import check_and_repair
+            results = check_and_repair()
+            created = [t for t, s in results.items() if s == "created"]
+            failed  = [f"{t}: {s}" for t, s in results.items() if s.startswith("failed")]
+            if created:
+                log.info(f"event=db_self_repair created={created}")
+            if failed:
+                log.warning(f"event=db_self_repair failed={failed}")
+        except Exception as e:
+            log.warning(f"event=db_self_repair err={e}")
 
     def _startup_recovery(self):
         """Reset content_jobs jobs stuck in 'processing' for >30 min back to 'queued'."""
@@ -70,10 +90,11 @@ class AutonomousLoop:
     _webhook_warned: bool = False
 
     def _assert_no_telegram_webhook(self):
-        """Warn loudly if a Telegram webhook is set while we are in long-polling mode.
-        Only sends the Telegram message once per process lifetime to avoid spam."""
+        """Auto-delete any stale Telegram webhook on startup when running in polling mode.
+        Only runs once per process lifetime."""
         if AutonomousLoop._webhook_warned:
             return
+        AutonomousLoop._webhook_warned = True
         try:
             bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
             if not bot_token:
@@ -81,20 +102,18 @@ class AutonomousLoop:
             import requests as _req
             resp = _req.get(f"https://api.telegram.org/bot{bot_token}/getWebhookInfo", timeout=5).json()
             webhook_url = resp.get("result", {}).get("url", "")
-            if webhook_url:
-                msg = (
-                    f"⚠️ STARTUP WARNING: Telegram webhook is still set!\n"
-                    "Long-polling is active — webhook will intercept messages.\n"
-                    "Run: curl -X POST https://api.telegram.org/bot<TOKEN>/deleteWebhook\n\n"
-                    "(This warning will not repeat until next full redeploy.)"
-                )
-                log.warning(f"event=webhook_conflict webhook_url={webhook_url}")
-                AutonomousLoop._webhook_warned = True
-                if self.telegram and self.ajay_id:
-                    try:
-                        self.telegram.send_message(self.ajay_id, msg)
-                    except Exception:
-                        pass
+            if not webhook_url:
+                return  # no webhook set — nothing to do
+            log.warning(f"event=webhook_stale webhook_url={webhook_url} action=auto_deleting")
+            del_resp = _req.post(
+                f"https://api.telegram.org/bot{bot_token}/deleteWebhook",
+                json={"drop_pending_updates": False},
+                timeout=5,
+            ).json()
+            if del_resp.get("result"):
+                log.info("event=webhook_deleted status=ok")
+            else:
+                log.warning(f"event=webhook_delete_failed resp={del_resp}")
         except Exception as e:
             log.warning(f"event=webhook_check_failed err={e}")
 
@@ -163,7 +182,13 @@ class AutonomousLoop:
 
     def run_morning_checkin(self):
         """Proactively message Ajay in the morning based on his schedule & memory."""
-        log.info(f"[{datetime.now()}] Waking up for Morning Check-in...")
+        # Verify we are actually in morning hours IST before sending greeting
+        _ist = pytz.timezone("Asia/Kolkata")
+        ist_hour = datetime.now(_ist).hour
+        if not (5 <= ist_hour < 12):
+            log.warning(f"run_morning_checkin fired outside IST morning hours (hour={ist_hour}) — skipping")
+            return
+        log.info(f"[{datetime.now(_ist).strftime('%Y-%m-%d %H:%M IST')}] Waking up for Morning Check-in...")
         _log_to_db("INFO", "autonomous_loop", "job_started: morning_checkin")
 
         # Use brain.think() so full context pipeline runs (memory, mood, tasks, profile)
@@ -239,49 +264,83 @@ class AutonomousLoop:
             _log_to_db("ERROR", "autonomous_loop", f"job_failed: memory_consolidation: {e}")
 
     def run_studio_session(self):
-        """Aisha autonomously decides which channel needs content and starts the crew."""
+        """Aisha autonomously decides which channel needs content and starts the crew.
+
+        Priority order:
+        1. Drain oldest queued job from the backlog (if any exist).
+        2. Only when the queue is empty, generate a fresh topic and enqueue it.
+        This ensures the backlog never grows unboundedly.
+        """
         log.info(f"[{datetime.now()}] Aisha entering Studio for proactive session...")
         _log_to_db("INFO", "autonomous_loop", "job_started: studio_session")
-        
-        import random
-        
-        channels = [
-            {"name": "Story With Aisha",          "format": "Long Form",   "vibe": "Romantic and Heart-touching"},
-            {"name": "Riya's Dark Whisper",        "format": "Long Form",   "vibe": "Seductive and Mysterious"},
-            {"name": "Riya's Dark Romance Library","format": "Long Form",   "vibe": "Intense Mafia/Obsessive Romance"},
-            {"name": "Aisha & Him",                "format": "Short/Reel",  "vibe": "Relatable Couple Moments/Dialogue"}
-        ]
-        
-        selected = random.choice(channels)
-        
-        # Generate a topic — retry if it was already used
-        for attempt in range(5):
-            prompt = (f"You are Aisha, the Creative Director. For channel '{selected['name']}', "
-                     f"suggest ONE viral {selected['vibe']} story topic title. "
-                     f"Already used: {self._used_topics[-10:] if self._used_topics else 'none'}. "
-                     "Return ONLY the topic title, nothing else.")
-            topic = self.brain.ai.generate("You are Aisha.", prompt).text.strip()
-            if topic not in self._used_topics:
-                self._used_topics.append(topic)
-                break
-        
-        log.info(f"[Studio] Channel: '{selected['name']}' | Topic: '{topic}'")
-        
-        # Notify Ajay
-        if self.telegram and self.ajay_id:
-            try:
-                self.telegram.send_message(
-                    self.ajay_id,
-                    f"Ajju, I'm starting a new production for '{selected['name']}' right now!\n"
-                    f"Topic: '{topic}'\nI'll ping you when the script is ready! Let me cook. 💜"
-                )
-            except Exception as e:
-                log.warning(f"[Telegram] Failed to notify: {e}")
 
-        # Primary path: enqueue job and immediately process it
         try:
             from src.agents.antigravity_agent import AntigravityAgent
             agent = AntigravityAgent()
+
+            # Step 1: Try to drain an existing queued job first
+            existing_job = agent.fetch_next_job()
+            if existing_job:
+                log.info(
+                    f"[Studio] Draining backlog job {existing_job.get('id')} | "
+                    f"channel={existing_job.get('channel')} | topic={existing_job.get('topic')}"
+                )
+                _log_to_db("INFO", "autonomous_loop", "studio_draining_backlog",
+                           details={"job_id": existing_job.get("id"), "topic": existing_job.get("topic")})
+                import threading as _threading
+                _threading.Thread(
+                    target=agent.process_job,
+                    args=(existing_job,),
+                    daemon=True,
+                    name=f"drain-job-{existing_job.get('id','?')[:8]}"
+                ).start()
+                log.info(f"[Studio] Backlog drain thread started for job {existing_job.get('id')}")
+                _log_to_db("INFO", "autonomous_loop", "job_completed: studio_session",
+                           details={"job_id": existing_job.get("id"), "mode": "backlog_drain"})
+                return
+
+            # Step 2: Queue is empty — generate a fresh topic
+            import random
+            channels = [
+                {"name": "Story With Aisha",          "format": "Long Form",   "vibe": "Romantic and Heart-touching"},
+                {"name": "Riya's Dark Whisper",        "format": "Long Form",   "vibe": "Seductive and Mysterious"},
+                {"name": "Riya's Dark Romance Library","format": "Long Form",   "vibe": "Intense Mafia/Obsessive Romance"},
+                {"name": "Aisha & Him",                "format": "Short/Reel",  "vibe": "Relatable Couple Moments/Dialogue"}
+            ]
+            selected = random.choice(channels)
+
+            for attempt in range(5):
+                prompt = (f"You are Aisha, the Creative Director. For channel '{selected['name']}', "
+                         f"suggest ONE viral {selected['vibe']} story topic title. "
+                         f"Already used: {self._used_topics[-10:] if self._used_topics else 'none'}. "
+                         "Return ONLY the topic title, nothing else.")
+                topic = self.brain.ai.generate("You are Aisha.", prompt).text.strip()
+                if topic not in self._used_topics:
+                    self._used_topics.append(topic)
+                    break
+
+            log.info(f"[Studio] Channel: '{selected['name']}' | Topic: '{topic}'")
+
+            # Notify Ajay — apply cooldown to avoid spam on rapid restarts
+            global _last_startup_msg_time
+            _now = time.time()
+            _in_cooldown = (_now - _last_startup_msg_time) < _STARTUP_MSG_COOLDOWN
+            if self.telegram and self.ajay_id and not _in_cooldown:
+                try:
+                    _last_startup_msg_time = _now
+                    self.telegram.send_message(
+                        self.ajay_id,
+                        f"Ajju, I'm starting a new production for '{selected['name']}' right now!\n"
+                        f"Topic: '{topic}'\nI'll ping you when the script is ready! Let me cook. 💜"
+                    )
+                except Exception as e:
+                    log.warning(f"[Telegram] Failed to notify: {e}")
+            elif _in_cooldown:
+                log.info(
+                    f"[Studio] Startup notification skipped — sent "
+                    f"{int(_now - _last_startup_msg_time)}s ago (cooldown={_STARTUP_MSG_COOLDOWN}s)"
+                )
+
             job = agent.enqueue_job(
                 topic=topic,
                 channel=selected["name"],
@@ -291,7 +350,6 @@ class AutonomousLoop:
                 payload={"render_video": True},
             )
             log.info(f"[Studio] Enqueued content job: {job.get('id')}")
-            # Process immediately in background thread — don't wait for a separate worker
             import threading as _threading
             _threading.Thread(
                 target=agent.process_job,
@@ -300,21 +358,21 @@ class AutonomousLoop:
                 name=f"studio-job-{job.get('id','?')[:8]}"
             ).start()
             log.info(f"[Studio] Processing thread started for job {job.get('id')}")
-            _log_to_db("INFO", "autonomous_loop", f"job_completed: studio_session",
+            _log_to_db("INFO", "autonomous_loop", "job_completed: studio_session",
                        details={"job_id": job.get("id"), "channel": selected["name"], "topic": topic})
+
         except Exception as e:
-            log.error(f"[Studio] Queue enqueue failed, falling back to local process: {e}")
+            log.error(f"[Studio] Session failed: {e}")
             _log_to_db("ERROR", "autonomous_loop", f"job_failed: studio_session: {e}")
-            # Fallback path: launch production script directly
+            # Fallback path: launch production script directly (no agent available)
             try:
-                import subprocess
+                import subprocess, random as _rand
+                _ch = _rand.choice(["Story With Aisha", "Aisha & Him"])
                 subprocess.Popen([
                     "python", "-m", "src.agents.run_youtube",
-                    "--topic", topic,
-                    "--channel", selected['name'],
-                    "--format", selected['format']
+                    "--channel", _ch,
                 ], cwd=str(PROJECT_ROOT))
-                log.info(f"[Studio] Production crew launched for: {topic}")
+                log.info(f"[Studio] Production crew launched via fallback for: {_ch}")
             except Exception as ex:
                 log.error(f"[Studio] Failed to launch production fallback: {ex}")
 

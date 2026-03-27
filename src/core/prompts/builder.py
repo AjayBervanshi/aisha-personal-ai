@@ -18,11 +18,12 @@ def build_system_prompt(context: dict) -> str:
         is_owner     (bool) — True if caller is Ajay himself
         mood, language, memories, today_tasks, profile — as before
     """
-    mood         = context.get("mood", "casual")
-    language     = context.get("language", "English")
-    memories     = context.get("memories", "")
-    today_tasks  = context.get("today_tasks", "None")
-    profile      = context.get("profile", {})
+    mood            = context.get("mood", "casual")
+    language        = context.get("language", "English")
+    memories        = context.get("memories", "")
+    today_tasks     = context.get("today_tasks", "None")
+    today_expenses  = context.get("today_expenses", "No expenses logged today")
+    profile         = context.get("profile", {})
     caller_name  = context.get("caller_name", "Ajay")
     is_owner     = context.get("is_owner", True)
     now          = datetime.now(IST)
@@ -76,7 +77,8 @@ Time: {current_time} IST | Mood: {mood} | Language: {language}
 {memories if memories else "Learn and remember everything he shares."}
 
 ━━━ TODAY ━━━
-{today_tasks}
+Tasks: {today_tasks}
+Expenses: {today_expenses}
 
 ━━━ ACTIVE MODE ━━━
 {MOOD_INSTRUCTIONS.get(mood, MOOD_INSTRUCTIONS["casual"])}

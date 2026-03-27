@@ -127,18 +127,21 @@ class MemoryManager:
                     return None
 
     def save_memory(self, category: str, title: str, content: str, importance: int = 3, tags: Optional[List[str]] = None):
-        """Save a new memory to Supabase with embeddings."""
+        """Save a new memory to Supabase. Embedding is best-effort — memory saves even if embedding fails."""
         embedding = self._generate_embedding(content)
+        row: Dict[str, Any] = {
+            "category": category,
+            "title": title,
+            "content": content,
+            "importance": importance,
+            "tags": tags or [],
+            "source": "conversation",
+        }
+        if embedding is not None:
+            row["embedding"] = embedding
         try:
-            self.db.table("aisha_memory").insert({
-                "category": category,
-                "title": title,
-                "content": content,
-                "importance": importance,
-                "tags": tags or [],
-                "source": "conversation",
-                "embedding": embedding
-            }).execute()
+            self.db.table("aisha_memory").insert(row).execute()
+            print(f"[Memory] Saved: [{category}] {title}")
         except Exception as e:
             print(f"[Memory] Error saving memory: {e}")
 
@@ -276,10 +279,33 @@ class MemoryManager:
                 for t in (tasks_res.data or [])
             ) or "No tasks for today"
 
+            # Get today's expenses (from aisha_finance, date-filtered to today)
+            today_expenses_text = "No expenses logged today"
+            try:
+                exp_res = (
+                    self.db.table("aisha_finance")
+                    .select("amount, category, description, date")
+                    .eq("type", "expense")
+                    .eq("date", today)
+                    .order("id", desc=True)
+                    .limit(20)
+                    .execute()
+                )
+                if exp_res.data:
+                    total = sum(r.get("amount", 0) for r in exp_res.data)
+                    lines = [
+                        f"  ₹{r['amount']} — {r.get('description','?')} ({r.get('category','misc')})"
+                        for r in exp_res.data
+                    ]
+                    today_expenses_text = f"Total today: ₹{total:.0f}\n" + "\n".join(lines)
+            except Exception:
+                pass
+
             return {
                 "profile": profile,
                 "memories": memories_text,
                 "today_tasks": tasks_text,
+                "today_expenses": today_expenses_text,
             }
         except Exception as e:
             print(f"[Memory] Error loading context: {e}")

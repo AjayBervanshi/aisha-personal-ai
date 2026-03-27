@@ -1,7 +1,7 @@
 import os
 import logging
 import requests
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 log = logging.getLogger("Aisha.MonitoringEngine")
 
@@ -77,7 +77,7 @@ def _check_supabase_tables() -> list:
         lines.append(f"❌ `content_jobs` — {e}")
 
     # plain count tables
-    for table in ("aisha_memories", "aisha_conversations", "aisha_mood_tracker"):
+    for table in ("aisha_memory", "aisha_conversations", "aisha_mood_tracker"):
         try:
             r = requests.get(
                 f"{base}/rest/v1/{table}?select=id",
@@ -123,6 +123,63 @@ def _check_elevenlabs() -> str:
         return f"❌ ElevenLabs — {e}"
 
 
+def _get_reliability_stats() -> dict:
+    """Query aisha_system_log for reliability metrics and content queue depth."""
+    base = _supabase_base()
+    key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    if not base or not key:
+        return {}
+
+    headers = {
+        "apikey":        key,
+        "Authorization": f"Bearer {key}",
+    }
+    now = datetime.now(timezone.utc)
+
+    # Last 1h errors
+    since_1h = (now - timedelta(hours=1)).isoformat()
+    errors_1h = 0
+    try:
+        r1 = requests.get(
+            f"{base}/rest/v1/aisha_system_log?level=eq.ERROR&created_at=gte.{since_1h}&select=id",
+            headers={**headers, "Prefer": "count=exact"},
+            timeout=5,
+        )
+        if r1.ok:
+            errors_1h = int(r1.headers.get("Content-Range", "0/0").split("/")[-1])
+    except Exception:
+        pass
+
+    # Last 24h errors
+    since_24h = (now - timedelta(hours=24)).isoformat()
+    errors_24h = 0
+    try:
+        r2 = requests.get(
+            f"{base}/rest/v1/aisha_system_log?level=eq.ERROR&created_at=gte.{since_24h}&select=id",
+            headers={**headers, "Prefer": "count=exact"},
+            timeout=5,
+        )
+        if r2.ok:
+            errors_24h = int(r2.headers.get("Content-Range", "0/0").split("/")[-1])
+    except Exception:
+        pass
+
+    # Content queue depth (queued jobs)
+    queue_depth = 0
+    try:
+        r3 = requests.get(
+            f"{base}/rest/v1/content_jobs?status=eq.queued&select=id",
+            headers={**headers, "Prefer": "count=exact"},
+            timeout=5,
+        )
+        if r3.ok:
+            queue_depth = int(r3.headers.get("Content-Range", "0/0").split("/")[-1])
+    except Exception:
+        pass
+
+    return {"errors_1h": errors_1h, "errors_24h": errors_24h, "queue_depth": queue_depth}
+
+
 def _write_system_log(summary: str) -> None:
     base = _supabase_base()
     if not base:
@@ -157,6 +214,16 @@ def run_health_check() -> str:
     sections.append("\n*Services:*")
     sections.append(_check_render())
     sections.append(_check_elevenlabs())
+
+    reliability = _get_reliability_stats()
+    if reliability:
+        sections.append("\n*📊 Reliability (last 24h):*")
+        sections.append(
+            f"  Errors 1h: {reliability['errors_1h']} | 24h: {reliability['errors_24h']}"
+        )
+        sections.append(
+            f"  Queue depth: {reliability['queue_depth']} jobs pending"
+        )
 
     report = "\n".join(sections)
     _write_system_log(report)

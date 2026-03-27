@@ -548,18 +548,28 @@ class AishaBrain:
             if is_owner:
                 self.memory.update_mood(mood, mood_res.score)
 
-            # 8. Auto-extract long-term memories (every 5th message to reduce cost/latency)
+            # 8. Auto-extract long-term memories (every 3rd message to reduce cost/latency)
             # Skip for guest users — we never store their data in Ajay's memory tables.
             if is_owner:
                 self._message_count += 1
-                _memory_triggers = ["my goal", "i want", "i spend", "remind me", "i earn",
-                                     "save", "budget", "dream", "plan", "habit", "afraid", "fear"]
+                _memory_triggers = [
+                    "my goal", "i want", "i spend", "remind me", "i earn",
+                    "save", "budget", "dream", "plan", "habit", "afraid", "fear",
+                    "i like", "i hate", "i love", "i prefer", "my name", "my age",
+                    "i work", "my job", "my salary", "i live", "my family",
+                    "important", "remember this", "don't forget",
+                ]
                 _should_extract = (
-                    self._message_count % 5 == 0
+                    self._message_count % 3 == 0
                     or any(t in user_message.lower() for t in _memory_triggers)
                 )
                 if _should_extract:
-                    self._auto_extract_memory(user_message, response_text)
+                    import threading as _mt
+                    _mt.Thread(
+                        target=self._auto_extract_memory,
+                        args=(user_message, response_text),
+                        daemon=True,
+                    ).start()
 
             return response_text
 

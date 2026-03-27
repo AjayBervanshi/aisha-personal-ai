@@ -1,0 +1,122 @@
+{
+  "created_at": "2026-03-27T04:48:26.803703",
+  "used_test_ids": [
+    "I001",
+    "I002",
+    "I003",
+    "I004",
+    "I005",
+    "I006",
+    "I007",
+    "I008",
+    "I009",
+    "I010",
+    "I011",
+    "I012",
+    "M001",
+    "M002",
+    "M003",
+    "M004",
+    "M005",
+    "M006",
+    "M007",
+    "M008",
+    "M009",
+    "M010",
+    "M011",
+    "M012"
+  ],
+  "runs": [
+    {
+      "run_id": "run_20260327_044826",
+      "path": "records\\telegram_maturity_20260327_044826.json",
+      "completed_at": "2026-03-27T04:50:16.083705",
+      "summary": {
+        "total": 6,
+        "fallback_like": 0,
+        "too_short": 1,
+        "encoding_suspect": 0
+      },
+      "tests": [
+        "M001",
+        "M002",
+        "M003",
+        "I001",
+        "I002",
+        "I003"
+      ]
+    },
+    {
+      "run_id": "run_20260327_045111",
+      "path": "records\\telegram_maturity_20260327_045111.json",
+      "completed_at": "2026-03-27T04:53:44.048706",
+      "summary": {
+        "total": 6,
+        "fallback_like": 0,
+        "too_short": 2,
+        "encoding_suspect": 0
+      },
+      "tests": [
+        "M004",
+        "M005",
+        "M006",
+        "I004",
+        "I005",
+        "I006"
+      ]
+    },
+    {
+      "run_id": "run_20260327_045429",
+      "path": "records\\telegram_maturity_20260327_045429.json",
+      "completed_at": "2026-03-27T04:56:53.422930",
+      "summary": {
+        "total": 4,
+        "fallback_like": 0,
+        "too_short": 3,
+        "encoding_suspect": 0
+      },
+      "tests": [
+        "M007",
+        "M008",
+        "I007",
+        "I008"
+      ]
+    },
+    {
+      "run_id": "run_20260327_045808",
+      "path": "records\\telegram_maturity_20260327_045808.json",
+      "completed_at": "2026-03-27T05:01:18.933430",
+      "summary": {
+        "total": 6,
+        "fallback_like": 0,
+        "too_short": 0,
+        "voice_note_only": 0,
+        "encoding_suspect": 0
+      },
+      "tests": [
+        "M009",
+        "M010",
+        "M011",
+        "I009",
+        "I010",
+        "I011"
+      ]
+    },
+    {
+      "run_id": "run_20260327_050431",
+      "path": "records\\telegram_maturity_20260327_050431.json",
+      "completed_at": "2026-03-27T05:05:54.897433",
+      "summary": {
+        "total": 2,
+        "fallback_like": 0,
+        "too_short": 1,
+        "voice_note_only": 1,
+        "encoding_suspect": 0
+      },
+      "tests": [
+        "M012",
+        "I012"
+      ]
+    }
+  ]
+}

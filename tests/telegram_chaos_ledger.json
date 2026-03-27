@@ -1,0 +1,33 @@
+{
+  "created_at": "2026-03-27T05:12:58.668565",
+  "used_ids": [
+    "E002",
+    "E004",
+    "I004",
+    "I005",
+    "M002",
+    "M004",
+    "U002",
+    "U006",
+    "X002",
+    "X005"
+  ],
+  "runs": [
+    {
+      "run_id": "chaos_20260327_051258",
+      "path": "records\\telegram_chaos_20260327_051258.json",
+      "completed_at": "2026-03-27T05:20:10.121113",
+      "summary": {
+        "total": 10,
+        "behavior_ok": 2,
+        "behavior_fail": 8,
+        "success_rate": 20.0,
+        "avg_score_100": 48.0,
+        "fallback_like": 0,
+        "voice_note_only": 7,
+        "too_short": 7,
+        "mismatch_suspect": 2
+      }
+    }
+  ]
+}

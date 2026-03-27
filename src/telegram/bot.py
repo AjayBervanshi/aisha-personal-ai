@@ -32,8 +32,58 @@ from src.core.voice_engine import generate_voice, cleanup_voice_file
 
 load_dotenv()
 
+# Ensure UTF-8 output on Windows (prevents encoding errors with Hindi/Devanagari text)
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
+# ─── Rate-limited fallback message (max once per 10 min per chat) ─────────────
+import time as _time
+_last_fallback: dict[int, float] = {}
+
+def _get_fallback_msg(chat_id: int) -> str | None:
+    """Returns fallback message string, or None if rate-limited."""
+    now = _time.time()
+    if now - _last_fallback.get(chat_id, 0) < 600:  # 10 min cooldown
+        return None
+    _last_fallback[chat_id] = now
+    return (
+        "Ek second Ajay... mujhe kuch technical dikkat aa rahi hai. "
+        "Ek baar aur try karo? Agar problem rahe toh /syscheck se check karo. 🔧"
+    )
+
+# ─── IST timezone helpers ─────────────────────────────────────────────────────
+import pytz as _pytz
+_IST = _pytz.timezone("Asia/Kolkata")
+
+def get_ist_hour() -> int:
+    """Returns current hour in IST (0-23)."""
+    return datetime.now(_IST).hour
+
+def get_greeting() -> str:
+    h = get_ist_hour()
+    if 5 <= h < 12:   return "Good morning"
+    if 12 <= h < 17:  return "Good afternoon"
+    if 17 <= h < 21:  return "Good evening"
+    return "Good night"
+
 # ─── Voice Mode State ─────────────────────────────────────────────────────────
 VOICE_MODE_ENABLED = True   # Voice ON — toggle with /voice command
+
+# ─── Per-chat processing lock + message correlation ───────────────────────────
+# Prevents reply bleed when async/threaded tasks from previous messages
+# finish late and send their replies into the current conversation turn.
+_chat_locks: dict[int, threading.Lock] = {}
+_chat_locks_mutex = threading.Lock()
+_last_message_id: dict[int, int] = {}  # chat_id → most-recent message_id
+
+
+def _get_chat_lock(chat_id: int) -> threading.Lock:
+    """Return (creating if needed) the per-chat serialisation lock."""
+    with _chat_locks_mutex:
+        if chat_id not in _chat_locks:
+            _chat_locks[chat_id] = threading.Lock()
+        return _chat_locks[chat_id]
+
 
 # ─── Pending shell commands (for confirmation) ────────────────────────────────
 _pending_shell: dict = {}  # message_id → command string
@@ -176,10 +226,7 @@ def mood_keyboard():
 def cmd_start(message):
     if not is_ajay(message): return unauthorized_response(message)
     
-    hour = datetime.now().hour
-    greeting = "Good morning" if 5 <= hour < 12 else \
-               "Good afternoon" if 12 <= hour < 17 else \
-               "Good evening" if 17 <= hour < 22 else "Hey"
+    greeting = get_greeting()  # IST-aware greeting
     
     welcome = (
         f"💜 *{greeting}, Ajay!*\n\n"
@@ -1661,71 +1708,104 @@ def handle_quick_action(message):
 @bot.message_handler(content_types=["voice"])
 def handle_voice(message):
     if not is_ajay(message): return unauthorized_response(message)
-    
-    # Download voice file
-    file_info = bot.get_file(message.voice.file_id)
-    downloaded = bot.download_file(file_info.file_path)
-    
-    with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as f:
-        f.write(downloaded)
-        voice_path = f.name
-    
-    # Transcribe with Groq Whisper (reliable on Windows venv)
+
+    chat_id    = message.chat.id
+    message_id = message.message_id
+
+    # Track the latest message per chat (voice counts as a message turn)
+    _last_message_id[chat_id] = message_id
+
+    # Acquire the per-chat lock — serialise against text messages in the same chat
+    lock = _get_chat_lock(chat_id)
+    if not lock.acquire(timeout=120):
+        log.warning(f"handle_voice lock_timeout chat_id={chat_id} msg_id={message_id}")
+        return
+
+    voice_path = None
     try:
-        from groq import Groq
-        from src.core.mood_detector import detect_mood
-        from src.core.language_detector import detect_language
+        # Drop if a newer message arrived while waiting for the lock
+        if _last_message_id.get(chat_id) != message_id:
+            log.info(f"handle_voice dropped_stale chat_id={chat_id} msg_id={message_id}")
+            return
 
-        groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-        with open(voice_path, "rb") as audio_file:
-            transcript = groq_client.audio.transcriptions.create(
-                model="whisper-large-v3",
-                file=("voice.ogg", audio_file),
-            )
-        transcribed_text = transcript.text.strip()
+        # Download voice file
+        file_info  = bot.get_file(message.voice.file_id)
+        downloaded = bot.download_file(file_info.file_path)
 
-        bot.send_message(message.chat.id,
-            f"Heard: \"{transcribed_text}\"",
-            parse_mode="Markdown")
+        with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as f:
+            f.write(downloaded)
+            voice_path = f.name
 
-        bot.send_chat_action(message.chat.id, "typing")
-        voice_caller_id   = message.from_user.id
-        voice_caller_name = message.from_user.first_name or "Guest"
-        voice_is_owner    = (voice_caller_id == AUTHORIZED_ID)
-        response = aisha.think(
-            transcribed_text,
-            platform="telegram",
-            caller_name=voice_caller_name,
-            caller_id=voice_caller_id,
-            is_owner=voice_is_owner,
-        )
-        bot.send_message(message.chat.id, response)
-
-        # Send voice reply back (voice-in = voice-out, respects VOICE_MODE_ENABLED)
-        if VOICE_MODE_ENABLED and len(response) < 1000:
-            try:
-                bot.send_chat_action(message.chat.id, "record_voice")
-                mood_res = detect_mood(transcribed_text)
-                mood = mood_res.mood if hasattr(mood_res, "mood") else str(mood_res)
-                lang_tuple = detect_language(transcribed_text)
-                language = lang_tuple[0] if isinstance(lang_tuple, tuple) else "English"
-                voice_reply = generate_voice(response, language=language, mood=mood)
-                if voice_reply:
-                    with open(voice_reply, "rb") as vf:
-                        bot.send_voice(message.chat.id, vf)
-                    cleanup_voice_file(voice_reply)
-            except Exception as ve:
-                log.warning(f"Voice reply skipped: {ve}")
-
-    except Exception as e:
-        log.error(f"Voice transcription failed: {e}")
-        bot.send_message(message.chat.id,
-            "Arre Ajay, I couldn't catch that voice message. Try typing it out?")
-    finally:
+        # Transcribe with Groq Whisper (reliable on Windows venv)
         try:
-            os.unlink(voice_path)
-        except Exception:
-            pass
+            from groq import Groq
+            from src.core.mood_detector import detect_mood
+            from src.core.language_detector import detect_language
+
+            groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+            with open(voice_path, "rb") as audio_file:
+                transcript = groq_client.audio.transcriptions.create(
+                    model="whisper-large-v3",
+                    file=("voice.ogg", audio_file),
+                )
+            transcribed_text = transcript.text.strip()
+
+            # Guard: still the current message?
+            if _last_message_id.get(chat_id) != message_id:
+                log.info(f"handle_voice reply_dropped_stale chat_id={chat_id} msg_id={message_id}")
+                return
+
+            bot.send_message(chat_id,
+                f"Heard: \"{transcribed_text}\"",
+                parse_mode="Markdown")
+
+            bot.send_chat_action(chat_id, "typing")
+            voice_caller_id   = message.from_user.id
+            voice_caller_name = message.from_user.first_name or "Guest"
+            voice_is_owner    = (voice_caller_id == AUTHORIZED_ID)
+            response = aisha.think(
+                transcribed_text,
+                platform="telegram",
+                caller_name=voice_caller_name,
+                caller_id=voice_caller_id,
+                is_owner=voice_is_owner,
+            )
+
+            # Guard before sending reply
+            if _last_message_id.get(chat_id) != message_id:
+                log.info(f"handle_voice think_reply_dropped chat_id={chat_id} msg_id={message_id}")
+                return
+
+            bot.send_message(chat_id, response)
+
+            # Send voice reply back (voice-in = voice-out, respects VOICE_MODE_ENABLED)
+            if VOICE_MODE_ENABLED and len(response) < 1000:
+                try:
+                    bot.send_chat_action(chat_id, "record_voice")
+                    mood_res = detect_mood(transcribed_text)
+                    mood = mood_res.mood if hasattr(mood_res, "mood") else str(mood_res)
+                    lang_tuple = detect_language(transcribed_text)
+                    language = lang_tuple[0] if isinstance(lang_tuple, tuple) else "English"
+                    voice_reply = generate_voice(response, language=language, mood=mood)
+                    if voice_reply:
+                        if _last_message_id.get(chat_id) == message_id:
+                            with open(voice_reply, "rb") as vf:
+                                bot.send_voice(chat_id, vf)
+                        cleanup_voice_file(voice_reply)
+                except Exception as ve:
+                    log.warning(f"Voice reply skipped: {ve}")
+
+        except Exception as e:
+            log.error(f"Voice transcription failed: {e}")
+            bot.send_message(chat_id,
+                "Arre Ajay, I couldn't catch that voice message. Try typing it out?")
+    finally:
+        lock.release()
+        if voice_path:
+            try:
+                os.unlink(voice_path)
+            except Exception:
+                pass
 
 
 # ─── Photo Message Handler ─────────────────────────────────────────────────────
@@ -1791,79 +1871,107 @@ def handle_text(message, override_text=None):
     if not user_text or not user_text.strip():
         return
 
-    # Identify who is talking so Aisha addresses them correctly
-    caller_id   = message.from_user.id
-    caller_name = message.from_user.first_name or "Guest"
-    owner       = (caller_id == AUTHORIZED_ID)
+    chat_id    = message.chat.id
+    message_id = message.message_id
 
-    # ── "Share with owner" intent ─────────────────────────────────────────
-    # If an approved non-owner user says "share this with Ajay/owner", forward it.
-    if not owner and any(kw in user_text.lower() for kw in [
-        "share with", "tell ajay", "tell your owner", "tell the owner",
-        "forward to", "send to ajay", "notify ajay", "let ajay know"
-    ]):
-        forward_msg = (
-            f"📨 *{caller_name}* wants you to know:\n\n"
-            f"_{user_text[:800]}_"
-        )
-        try:
-            bot.send_message(AUTHORIZED_ID, forward_msg, parse_mode="Markdown")
-        except Exception:
-            pass
-        bot.send_message(
-            message.chat.id,
-            f"Done! I've flagged that for Ajay, {caller_name}. He'll see it shortly."
-        )
+    # Track the latest message for this chat so we can detect stale replies
+    _last_message_id[chat_id] = message_id
+
+    # Acquire the per-chat lock — only one message processed at a time per chat
+    lock = _get_chat_lock(chat_id)
+    if not lock.acquire(timeout=120):
+        # Could not acquire within 2 min — give up silently
+        log.warning(f"handle_text lock_timeout chat_id={chat_id} msg_id={message_id}")
         return
 
-    # Show typing indicator
-    bot.send_chat_action(message.chat.id, "typing")
-
     try:
-        log.info(f"[{caller_name}] {user_text[:80]}")
-        response = aisha.think(
-            user_text,
-            platform="telegram",
-            caller_name=caller_name,
-            caller_id=caller_id,
-            is_owner=owner,
-        )
-        
-        # Send text response
-        if len(response) > 4000:
-            chunks = [response[i:i+4000] for i in range(0, len(response), 4000)]
-            for chunk in chunks:
-                bot.send_message(message.chat.id, chunk)
-        else:
-            bot.send_message(message.chat.id, response)
-        
-        # Send voice note if voice mode is enabled
-        if VOICE_MODE_ENABLED and len(response) < 1000:
+        # After acquiring the lock, check whether this message is still current.
+        # If a newer message arrived while we were waiting, drop this one.
+        if _last_message_id.get(chat_id) != message_id:
+            log.info(f"handle_text dropped_stale chat_id={chat_id} msg_id={message_id}")
+            return
+
+        # Identify who is talking so Aisha addresses them correctly
+        caller_id   = message.from_user.id
+        caller_name = message.from_user.first_name or "Guest"
+        owner       = (caller_id == AUTHORIZED_ID)
+
+        # ── "Share with owner" intent ─────────────────────────────────────────
+        # If an approved non-owner user says "share this with Ajay/owner", forward it.
+        if not owner and any(kw in user_text.lower() for kw in [
+            "share with", "tell ajay", "tell your owner", "tell the owner",
+            "forward to", "send to ajay", "notify ajay", "let ajay know"
+        ]):
+            forward_msg = (
+                f"📨 *{caller_name}* wants you to know:\n\n"
+                f"_{user_text[:800]}_"
+            )
             try:
-                bot.send_chat_action(message.chat.id, "record_voice")
-                
-                # Detect language and mood for voice tuning
-                from src.core.mood_detector import detect_mood
-                from src.core.language_detector import detect_language
-                mood_res = detect_mood(user_text)
-                mood = mood_res.mood if hasattr(mood_res, "mood") else str(mood_res)
-                lang_tuple = detect_language(user_text)
-                language = lang_tuple[0] if isinstance(lang_tuple, tuple) else "English"
-                
-                voice_path = generate_voice(response, language=language, mood=mood)
-                if voice_path:
-                    with open(voice_path, "rb") as voice_file:
-                        bot.send_voice(message.chat.id, voice_file)
-                    cleanup_voice_file(voice_path)
-            except Exception as ve:
-                log.warning(f"Voice generation skipped: {ve}")
-            
-    except Exception as e:
-        log.error(f"Error processing message: {e}")
-        bot.send_message(
-            message.chat.id,
-            f"Something went wrong on my end, {caller_name}. Please try again in a moment!"
-        )
+                bot.send_message(AUTHORIZED_ID, forward_msg, parse_mode="Markdown")
+            except Exception:
+                pass
+            bot.send_message(
+                chat_id,
+                f"Done! I've flagged that for Ajay, {caller_name}. He'll see it shortly."
+            )
+            return
+
+        # Show typing indicator
+        bot.send_chat_action(chat_id, "typing")
+
+        try:
+            log.info(f"[{caller_name}] {user_text[:80]}")
+            response = aisha.think(
+                user_text,
+                platform="telegram",
+                caller_name=caller_name,
+                caller_id=caller_id,
+                is_owner=owner,
+            )
+
+            # Guard: don't send if a newer message has already arrived
+            if _last_message_id.get(chat_id) != message_id:
+                log.info(f"handle_text reply_dropped_stale chat_id={chat_id} msg_id={message_id}")
+                return
+
+            # Send text response
+            if len(response) > 4000:
+                chunks = [response[i:i+4000] for i in range(0, len(response), 4000)]
+                for chunk in chunks:
+                    bot.send_message(chat_id, chunk)
+            else:
+                bot.send_message(chat_id, response)
+
+            # Send voice note if voice mode is enabled
+            if VOICE_MODE_ENABLED and len(response) < 1000:
+                try:
+                    bot.send_chat_action(chat_id, "record_voice")
+
+                    # Detect language and mood for voice tuning
+                    from src.core.mood_detector import detect_mood
+                    from src.core.language_detector import detect_language
+                    mood_res = detect_mood(user_text)
+                    mood = mood_res.mood if hasattr(mood_res, "mood") else str(mood_res)
+                    lang_tuple = detect_language(user_text)
+                    language = lang_tuple[0] if isinstance(lang_tuple, tuple) else "English"
+
+                    voice_path = generate_voice(response, language=language, mood=mood)
+                    if voice_path:
+                        # Final guard before sending voice
+                        if _last_message_id.get(chat_id) == message_id:
+                            with open(voice_path, "rb") as voice_file:
+                                bot.send_voice(chat_id, voice_file)
+                        cleanup_voice_file(voice_path)
+                except Exception as ve:
+                    log.warning(f"Voice generation skipped: {ve}")
+
+        except Exception as e:
+            log.error(f"Error processing message: {e}")
+            fallback_msg = _get_fallback_msg(chat_id)
+            if fallback_msg:
+                bot.send_message(chat_id, fallback_msg)
+    finally:
+        lock.release()
 
 
 # ─── Health Tracking Commands ─────────────────────────────────────────────────
@@ -2301,6 +2409,37 @@ def _notify_ajay(msg: str):
         log.warning(f"[_notify_ajay] Failed: {e}")
 
 
+import time as _time_mod
+
+_last_startup_msg_time: float = 0.0
+STARTUP_MSG_COOLDOWN: int = 1800  # 30 minutes — prevents spam on Render restarts
+
+
+def send_startup_message():
+    """Send Aisha's wake-up notification to Ajay with a 30-minute cooldown.
+
+    Render may restart the process multiple times in quick succession.
+    This guard ensures Ajay only receives one startup ping per 30-minute window.
+    """
+    global _last_startup_msg_time
+    now = _time_mod.time()
+    if now - _last_startup_msg_time < STARTUP_MSG_COOLDOWN:
+        log.info(
+            f"startup_msg skipped — sent {int(now - _last_startup_msg_time)}s ago "
+            f"(cooldown={STARTUP_MSG_COOLDOWN}s)"
+        )
+        return
+    _last_startup_msg_time = now
+    try:
+        bot.send_message(
+            AUTHORIZED_ID,
+            "💜 Aisha is online and ready, Ajay! All systems initialised.",
+        )
+        log.info("startup_msg sent to Ajay")
+    except Exception as e:
+        log.warning(f"startup_msg send failed: {e}")
+
+
 # Global reference to the AutonomousLoop instance (set during startup)
 _autonomous_loop = None
 
@@ -2485,18 +2624,21 @@ if __name__ == "__main__":
             from src.core.autonomous_loop import AutonomousLoop, run_self_improvement
             _autonomous_loop = AutonomousLoop()
             log.info("autonomous_loop status=initialized")
-            _schedule.every().day.at("08:00").do(_autonomous_loop.run_morning_checkin)
-            _schedule.every().day.at("21:00").do(_autonomous_loop.run_evening_wrapup)
-            _schedule.every().day.at("21:30").do(_autonomous_loop.run_daily_digest)
-            _schedule.every().day.at("03:00").do(_autonomous_loop.run_memory_consolidation)
-            _schedule.every().sunday.at("19:00").do(_autonomous_loop.run_weekly_digest)
-            _schedule.every().sunday.at("03:00").do(_autonomous_loop.run_memory_cleanup)
+            send_startup_message()
+            # ── IST times converted to UTC (server runs UTC on Render) ────────
+            # IST = UTC + 5:30 → subtract 5:30 from IST time to get UTC time
+            _schedule.every().day.at("02:30").do(_autonomous_loop.run_morning_checkin)    # 8:00 AM IST
+            _schedule.every().day.at("15:30").do(_autonomous_loop.run_evening_wrapup)     # 9:00 PM IST
+            _schedule.every().day.at("16:00").do(_autonomous_loop.run_daily_digest)       # 9:30 PM IST
+            _schedule.every().day.at("21:30").do(_autonomous_loop.run_memory_consolidation)  # 3:00 AM IST
+            _schedule.every().sunday.at("13:30").do(_autonomous_loop.run_weekly_digest)   # 7:00 PM IST Sunday
+            _schedule.every().sunday.at("21:30").do(_autonomous_loop.run_memory_cleanup)  # 3:00 AM IST Sunday
             _schedule.every(5).minutes.do(_autonomous_loop.run_task_reminder_poll)
             _schedule.every(3).hours.do(_autonomous_loop.run_inactivity_check)
             _schedule.every(4).hours.do(_autonomous_loop.run_studio_session)
-            _schedule.every().day.at("02:00").do(run_self_improvement, _autonomous_loop)
-            _schedule.every().day.at("04:00").do(_autonomous_loop.run_temp_cleanup)
-            _schedule.every().day.at("09:00").do(_autonomous_loop.run_key_expiry_check)
+            _schedule.every().day.at("20:30").do(run_self_improvement, _autonomous_loop)  # 2:00 AM IST
+            _schedule.every().day.at("22:30").do(_autonomous_loop.run_temp_cleanup)       # 4:00 AM IST
+            _schedule.every().day.at("03:30").do(_autonomous_loop.run_key_expiry_check)   # 9:00 AM IST
             log.info("autonomous_loop status=schedule_registered")
             while True:
                 _schedule.run_pending()
