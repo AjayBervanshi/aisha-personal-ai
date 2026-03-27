@@ -6,6 +6,7 @@ Handles all channels with unique identity and generates core assets.
 """
 
 import os
+import logging
 from src.core.ai_router import AIRouter
 from src.core.voice_engine import generate_voice
 from src.core.image_engine import generate_image
@@ -14,6 +15,8 @@ from src.core.trend_engine import get_trends_for_channel
 from src.core.prompts.personality import CHANNEL_PROMPTS
 from src.core.config import CHANNEL_VOICE_IDS
 from src.core.series_tracker import get_continuity_context
+
+log = logging.getLogger(__name__)
 
 CHANNEL_IDENTITY = {
     "Story With Aisha": {
@@ -68,8 +71,8 @@ class YouTubeCrew:
                     nvidia_task_type=nvidia_task_type,
                 )
                 return result.strip()
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning(f"youtube_crew error: {e}")
 
         result = self.ai.generate(
             system_prompt="You are an expert content creator for YouTube and Instagram storytelling channels.",
@@ -239,7 +242,7 @@ Create:
             )
             image_bytes = generate_image(thumbnail_prompt)
             if image_bytes:
-                assets_dir = "temp_assets"
+                assets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "temp_assets")
                 os.makedirs(assets_dir, exist_ok=True)
                 thumb_path = os.path.join(assets_dir, f"thumb_{abs(hash(channel + topic))}.png")
                 with open(thumb_path, "wb") as f:

@@ -132,6 +132,14 @@ class AntigravityAgent:
                 }
             )
 
+            # Validate crew produced real content — not empty stubs
+            script_content = self.crew.results.get("script", "") if hasattr(self.crew, "results") else ""
+            marketing_content = self.crew.results.get("marketing", "") if hasattr(self.crew, "results") else ""
+            if not script_content or len(script_content.strip()) < 100:
+                raise ValueError(f"Crew returned empty/stub script for job {job_id}")
+            if not marketing_content or len(marketing_content.strip()) < 20:
+                raise ValueError(f"Crew returned empty marketing data for job {job_id}")
+
             marketing = self._extract_marketing_fields(self.crew.results.get("marketing", ""))
             video_path = self.crew.results.get("video_path") or payload.get("video_path")
             result = {
@@ -160,7 +168,7 @@ class AntigravityAgent:
                     with open(thumbnail_path, "rb") as f:
                         self.db.storage.from_("content-videos").upload(
                             storage_path, f.read(),
-                            file_options={"content-type": mime, "upsert": "true"}
+                            file_options={"content-type": mime, "upsert": True}
                         )
                     public_url = (
                         f"{os.getenv('SUPABASE_URL', '').rstrip('/')}"

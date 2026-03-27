@@ -65,6 +65,18 @@ _PROVIDER_KEY_PATTERNS: dict = {
 _PLACEHOLDER_MARKERS = ("your_", "placeholder", "xxxxxxx", "example", "test_key", "hf_fKAS")
 
 
+def _normalize_roles(messages: list) -> list:
+    """
+    Normalize message roles for OpenAI-compatible APIs (Groq, Mistral, xAI, OpenAI, NVIDIA).
+    Replaces any 'model' role (used by Gemini) with 'assistant', which is the only
+    role these APIs accept besides 'system' and 'user'.
+    """
+    return [
+        {**m, "role": "assistant" if m.get("role") == "model" else m.get("role", "user")}
+        for m in messages
+    ]
+
+
 def _find_backup_key(provider: str, current_key: str) -> "str | None":
     """
     Scan the .env file directly for alternative keys for the given provider.
@@ -174,6 +186,10 @@ class AIRouter:
         # Alert tracking — keys are "provider:error_type", values are last notify timestamps
         self._alert_notified: dict = {}
         self._alert_cooldown_secs = 6 * 3600  # Re-alert max once per 6 hours per event
+        # Gemini defaults (set before _init_clients so AttributeError never happens)
+        self._gemini_key: "str | None" = None
+        self._gemini_model_name: str = "gemini-2.5-flash"
+        self._gemini_fallback_models: list = []
         self._init_clients()
 
     def _init_clients(self):
@@ -616,9 +632,8 @@ class AIRouter:
     def _call_openai(self, system_prompt, user_message, history, image_bytes: bytes = None) -> str:
         client = self._clients["openai"]
         messages = [{"role": "system", "content": system_prompt}]
-        for msg in history[-8:]:
-            role = "assistant" if msg["role"] == "model" else msg["role"]
-            messages.append({"role": role, "content": msg["content"]})
+        for msg in _normalize_roles(history[-8:]):
+            messages.append({"role": msg["role"], "content": msg["content"]})
             
         content = [{"type": "text", "text": user_message}]
         if image_bytes:
@@ -643,7 +658,7 @@ class AIRouter:
     def _call_groq(self, system_prompt, user_message, history) -> str:
         client = self._clients["groq"]
         messages = [{"role": "system", "content": system_prompt}]
-        for msg in history[-8:]:
+        for msg in _normalize_roles(history[-8:]):
             messages.append({"role": msg["role"], "content": msg["content"]})
         messages.append({"role": "user", "content": user_message})
 
@@ -659,9 +674,8 @@ class AIRouter:
         """xAI Grok — uses OpenAI-compatible API."""
         client = self._clients["xai"]
         messages = [{"role": "system", "content": system_prompt}]
-        for msg in history[-8:]:
-            role = "assistant" if msg["role"] in ("model", "assistant") else "user"
-            messages.append({"role": role, "content": msg["content"]})
+        for msg in _normalize_roles(history[-8:]):
+            messages.append({"role": msg["role"], "content": msg["content"]})
         messages.append({"role": "user", "content": user_message})
 
         model = os.getenv("AI_MODEL_XAI", "grok-2-latest")
@@ -679,14 +693,14 @@ class AIRouter:
             task_type=task_type,
             system_prompt=system_prompt,
             user_message=user_message,
-            history=history,
+            history=_normalize_roles(history),
         )
 
     def _call_mistral(self, system_prompt, user_message, history) -> str:
         from mistralai.models.chat_completion import ChatMessage
         client = self._clients["mistral"]
         messages = [ChatMessage(role="system", content=system_prompt)]
-        for msg in history[-6:]:
+        for msg in _normalize_roles(history[-6:]):
             messages.append(ChatMessage(role=msg["role"], content=msg["content"]))
         messages.append(ChatMessage(role="user", content=user_message))
 
@@ -703,7 +717,7 @@ class AIRouter:
             "model": "llama3",  # Or whatever model you have installed
             "messages": [
                 {"role": "system", "content": system_prompt},
-                *[{"role": m["role"], "content": m["content"]} for m in history[-6:]],
+                *[{"role": m["role"], "content": m["content"]} for m in _normalize_roles(history[-6:])],
                 {"role": "user", "content": user_message}
             ],
             "stream": False
@@ -816,8 +830,8 @@ class AIRouter:
 
     def _fallback_message(self) -> str:
         return (
-            "Arre Ajay, all my AI brains are taking a nap right now 😴\n"
-            "Give me a minute and try again? I promise I'll be back! 💜"
+            "Ek second Ajay... mujhe kuch technical dikkat aa rahi hai. "
+            "Ek baar aur try karo? Agar problem rahe toh /syscheck se check karo. 🔧"
         )
 
     @property

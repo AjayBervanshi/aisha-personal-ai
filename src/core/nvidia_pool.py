@@ -195,6 +195,10 @@ class NvidiaPool:
                 log.info(f"  {name}: {len(entries)} keys")
 
     def _is_key_available(self, entry: dict) -> bool:
+        # If the cooldown has expired, reset failure count so the key is usable again
+        if entry["cooldown_until"] and time.time() > entry["cooldown_until"]:
+            entry["failures"] = 0
+            entry["cooldown_until"] = 0.0
         if entry["failures"] >= _MAX_FAILURES_BEFORE_SKIP:
             return False
         if time.time() < entry["cooldown_until"]:
@@ -227,16 +231,22 @@ class NvidiaPool:
 
     def _mark_failure(self, entry: dict, is_rate_limit: bool = False):
         with self._lock:
-            entry["failures"] += 1
             if is_rate_limit:
+                # 429 rate-limit is transient — put key in cooldown WITHOUT
+                # incrementing failures so it is never permanently blacklisted
                 entry["cooldown_until"] = time.time() + _COOLDOWN_SECONDS
+                log.warning(
+                    f"[NvidiaPool] {entry['env_var']} rate-limited (429) "
+                    f"— cooldown +{_COOLDOWN_SECONDS}s (failures unchanged: {entry['failures']})"
+                )
             else:
+                entry["failures"] += 1
                 backoff = min(30 * (2 ** min(entry["failures"] - 1, 3)), 300)
                 entry["cooldown_until"] = time.time() + backoff
-            log.warning(
-                f"[NvidiaPool] {entry['env_var']} failure #{entry['failures']} "
-                f"— cooldown +{int(entry['cooldown_until'] - time.time())}s"
-            )
+                log.warning(
+                    f"[NvidiaPool] {entry['env_var']} failure #{entry['failures']} "
+                    f"— cooldown +{int(entry['cooldown_until'] - time.time())}s"
+                )
 
     def _call_key(
         self,
