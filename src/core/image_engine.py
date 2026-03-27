@@ -66,7 +66,13 @@ def _generate_via_gemini(prompt: str) -> bytes | None:
 
 
 def _generate_via_openai(prompt: str) -> bytes | None:
-    """NVIDIA NIM image generation (stable-diffusion-xl) — replaces OpenAI DALL-E."""
+    """NVIDIA NIM image generation (stable-diffusion-xl).
+
+    Constraints (validated 2026-03-28):
+    - width: must be <= 1024 (not 1280 — API returns 422)
+    - height: must be >= 1024
+    - Valid square: 1024x1024
+    """
     api_key = os.getenv("NVIDIA_MISTRAL_LARGE_A") or os.getenv("NVIDIA_API_KEY")
     if not api_key:
         return None
@@ -81,8 +87,8 @@ def _generate_via_openai(prompt: str) -> bytes | None:
                 "sampler": "K_DPM_2_ANCESTRAL",
                 "seed": 0,
                 "steps": 25,
-                "width": 1280,
-                "height": 720,
+                "width": 1024,   # max allowed by API; 1280 returns 422
+                "height": 1024,  # min allowed by API; must be >= 1024
             },
             timeout=90,
         )
@@ -135,16 +141,26 @@ def _generate_via_huggingface(prompt: str) -> bytes | None:
 
 
 def _generate_pollinations(prompt: str, width: int = 1280, height: int = 720) -> bytes:
-    """Pollinations.ai — completely free, no API key needed."""
+    """Pollinations.ai image generation.
+
+    As of 2026-03-28 Pollinations requires an API key (Bearer token).
+    Set POLLINATIONS_API_KEY in .env to enable. Without a key the API
+    returns 401, so this function raises immediately when no key is found.
+    Free signup: https://auth.pollinations.ai
+    """
     import urllib.parse
-    # Keep prompt short and clean — Pollinations rejects very long URLs
+
+    api_key = os.getenv("POLLINATIONS_API_KEY")
+    if not api_key:
+        raise Exception("Pollinations now requires POLLINATIONS_API_KEY (get free key at auth.pollinations.ai)")
+
     clean_prompt = prompt[:200].replace('\n', ' ').strip()
     encoded = urllib.parse.quote(clean_prompt)
-    # Use default model (flux requires token on newer API — omit model param)
     url = f"https://image.pollinations.ai/prompt/{encoded}?width={width}&height={height}&seed={abs(hash(clean_prompt)) % 9999}"
     try:
         resp = requests.get(url, timeout=90, allow_redirects=True,
-                            headers={"User-Agent": "Mozilla/5.0"})
+                            headers={"User-Agent": "Mozilla/5.0",
+                                     "Authorization": f"Bearer {api_key}"})
         if resp.status_code == 200 and len(resp.content) > 1000:
             return resp.content
         raise Exception(f"Pollinations returned {resp.status_code}, size={len(resp.content)}")
@@ -235,7 +251,13 @@ def _generate_placeholder(prompt: str, width: int = 1280, height: int = 720) -> 
 def generate_image(prompt: str, width: int = 1280, height: int = 720) -> bytes:
     """
     Generate an image for the given prompt.
-    Priority: Gemini Imagen → DALL-E → HuggingFace → Pollinations.ai → Pillow placeholder.
+    Priority:
+      1. Gemini Imagen (requires paid plan — usually fails)
+      2. NVIDIA Stable Diffusion XL (free NIM credits; outputs 1024x1024)
+      3. HuggingFace Inference API (410 Gone on all free models — skipped)
+      4. LoremFlickr / Picsum (free stock photos — reliable fallback)
+      5. Pollinations.ai (requires POLLINATIONS_API_KEY — optional)
+      6. Pillow gradient placeholder (always succeeds)
     Returns bytes (PNG/JPEG). Returns empty bytes only if everything fails.
     """
     # 1. Try Gemini Imagen (best quality, needs paid plan)
