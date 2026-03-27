@@ -20,6 +20,7 @@ import os
 import ast
 import logging
 import subprocess
+import sys
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
@@ -176,14 +177,17 @@ Write ONLY the Python code, nothing else."""
             log.info(f"[SelfEditor] DIRECT patch applied to {filepath} (ALLOW_DIRECT_PATCH=true)")
             return True
 
-        # Safe path: create GitHub PR → Ajay approves via Telegram
+        # Full autonomous path: create PR on a branch → auto-merge → Render redeploys
         try:
-            from src.core.self_improvement import create_github_pr, notify_ajay_for_approval
+            from src.core.self_improvement import (
+                create_github_pr, merge_github_pr,
+                get_pr_number_from_url, trigger_redeploy
+            )
             import hashlib, time as _time
             branch_name = f"aisha-patch-{hashlib.md5(filepath.encode()).hexdigest()[:6]}-{int(_time.time())}"
             pr_url = create_github_pr(
                 title=reason,
-                body=f"Aisha self-improvement patch\n\nFile: `{filepath}`\n\nReason: {reason}\n\n```python\n{new_code[:1000]}\n```",
+                body=f"Aisha autonomous patch\n\nFile: `{filepath}`\n\nReason: {reason}\n\n```python\n{new_code[:1000]}\n```",
                 branch_name=branch_name,
                 file_path=filepath,
                 file_content=self._build_patched_content(filepath, old_code, new_code),
@@ -191,11 +195,20 @@ Write ONLY the Python code, nothing else."""
             if "Failed" in pr_url or "No GitHub" in pr_url:
                 log.error(f"[SelfEditor] PR creation failed: {pr_url}")
                 return False
-            log.info(f"[SelfEditor] PR created: {pr_url} — waiting for Ajay's approval")
-            notify_ajay_for_approval(reason, pr_url)
+            log.info(f"[SelfEditor] PR created: {pr_url} — auto-merging now")
+            pr_number = get_pr_number_from_url(pr_url)
+            merged = merge_github_pr(pr_number) if pr_number else False
+            trigger_redeploy()
+            self.notify_ajay(
+                f"✅ *Autonomous patch applied!*\n\n"
+                f"*File:* `{filepath}`\n"
+                f"*Reason:* {reason}\n"
+                f"*Status:* {'Merged + Render redeploying' if merged else 'PR created — merge manually'}\n"
+                f"*PR:* {pr_url}"
+            )
             return True
         except Exception as e:
-            log.error(f"[SelfEditor] PR safety gate failed: {e}")
+            log.error(f"[SelfEditor] Autonomous patch failed: {e}")
             return False
 
     def _build_patched_content(self, filepath: str, old_code: str, new_code: str) -> str:
@@ -210,7 +223,7 @@ Write ONLY the Python code, nothing else."""
         full_path = PROJECT_ROOT / filepath
         try:
             result = subprocess.run(
-                ["python", "-m", "py_compile", str(full_path)],
+                [sys.executable, "-m", "py_compile", str(full_path)],
                 capture_output=True, text=True, timeout=10
             )
             ok = result.returncode == 0
