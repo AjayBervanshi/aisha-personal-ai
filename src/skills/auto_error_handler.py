@@ -1,75 +1,127 @@
 import logging
-import logging.handlers
-import smtplib
-from email.message import EmailMessage
+import logging.config
 import os
-import sys
-import traceback
-from typing import Dict
+from typing import Dict, Callable
 
-class AutoErrorHandler:
-    """
-    A centralized error handling and logging system, allowing for customizable logging levels, 
-    error types, and notification mechanisms. This module provides features such as logging to 
-    files, sending error notifications via email or other channels, and providing detailed error 
-    reports to facilitate debugging and issue resolution.
-
-    Attributes:
-        log_level (str): The logging level to use. Can be one of 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'.
-        log_file (str): The file to log to.
-        email_config (Dict): A dictionary containing email configuration. Should have 'sender', 'receiver', 'smtp_server', 'smtp_port', 'password' keys.
-        error_types (list): A list of error types to handle.
-
-    Methods:
-        setup_logging: Sets up the logging system.
-        handle_error: Handles an error by logging it and sending a notification if necessary.
-    """
-
-    def __init__(self, log_level: str = 'INFO', log_file: str = 'error.log', email_config: Dict = None, error_types: list = None):
-        self.log_level = log_level
-        self.log_file = log_file
-        self.email_config = email_config
-        self.error_types = error_types if error_types else []
-
-        self.setup_logging()
-
-    def setup_logging(self):
-        log_level = getattr(logging, self.log_level.upper())
-        logging.basicConfig(level=log_level, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        logger = logging.getLogger()
-        handler = logging.handlers.RotatingFileHandler(self.log_file, maxBytes=1000000, backupCount=5)
-        logger.addHandler(handler)
-
-    def handle_error(self, error: Exception):
-        logger = logging.getLogger()
-        logger.error(f'Error: {error}')
-        logger.error(traceback.format_exc())
-        if self.email_config:
-            self.send_error_notification(error)
-
-    def send_error_notification(self, error: Exception):
-        msg = EmailMessage()
-        msg.set_content(f'Error: {error}\n{traceback.format_exc()}')
-        msg['Subject'] = 'Error Notification'
-        msg['From'] = self.email_config['sender']
-        msg['To'] = self.email_config['receiver']
-        with smtplib.SMTP_SSL(self.email_config['smtp_server'], self.email_config['smtp_port']) as smtp:
-            smtp.login(self.email_config['sender'], self.email_config['password'])
-            smtp.send_message(msg)
-
-def main():
-    email_config = {
-        'sender': 'sender@example.com',
-        'receiver': 'receiver@example.com',
-        'smtp_server': 'smtp.example.com',
-        'smtp_port': 465,
-        'password': 'password'
+logging.config.dictConfig({
+    'version': 1,
+    'formatters': {
+        'default': {
+            'format': '[%(asctime)s] %(levelname)s in %(module)s: %(message)s',
+        }
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'stream': 'ext://sys.stdout',
+            'formatter': 'default'
+        },
+        'file': {
+            'class': 'logging.FileHandler',
+            'filename': 'error.log',
+            'formatter': 'default'
+        }
+    },
+    'root': {
+        'level': 'DEBUG',
+        'handlers': ['console', 'file']
     }
-    error_handler = AutoErrorHandler(log_level='DEBUG', log_file='error.log', email_config=email_config)
+})
+
+logger = logging.getLogger(__name__)
+
+class ErrorHandler:
+    """
+    A robust error handling system that provides features such as logging, notification, and fallback mechanisms to handle potential errors and exceptions.
+    
+    This module is designed to be highly configurable, allowing developers to customize error handling behavior to suit specific needs.
+    
+    It includes a set of predefined handlers for common error scenarios, such as network errors, database connection errors, and invalid input errors.
+    
+    Attributes:
+        handlers (Dict[Exception, Callable]): A dictionary of exception types and their corresponding handlers.
+        
+    Methods:
+        add_handler(exception_type, handler): Adds a custom handler for a specific exception type.
+        handle_error(exception): Handles an error using the predefined or custom handlers.
+    """
+
+    def __init__(self):
+        self.handlers = {
+            ConnectionError: self.handle_network_error,
+            OSError: self.handle_database_connection_error,
+            ValueError: self.handle_invalid_input_error
+        }
+
+    def add_handler(self, exception_type: type, handler: Callable):
+        """
+        Adds a custom handler for a specific exception type.
+        
+        Args:
+            exception_type (type): The type of exception to handle.
+            handler (Callable): The handler function to use.
+        """
+        self.handlers[exception_type] = handler
+
+    def handle_error(self, exception: Exception):
+        """
+        Handles an error using the predefined or custom handlers.
+        
+        Args:
+            exception (Exception): The exception to handle.
+        """
+        try:
+            handler = self.handlers.get(type(exception))
+            if handler:
+                handler(exception)
+            else:
+                self.handle_unknown_error(exception)
+        except Exception as e:
+            logger.error(f"Error handling exception: {e}")
+
+    def handle_network_error(self, exception: ConnectionError):
+        """
+        Handles a network error.
+        
+        Args:
+            exception (ConnectionError): The network error to handle.
+        """
+        logger.error(f"Network error: {exception}")
+        # Add notification or fallback mechanism here
+
+    def handle_database_connection_error(self, exception: OSError):
+        """
+        Handles a database connection error.
+        
+        Args:
+            exception (OSError): The database connection error to handle.
+        """
+        logger.error(f"Database connection error: {exception}")
+        # Add notification or fallback mechanism here
+
+    def handle_invalid_input_error(self, exception: ValueError):
+        """
+        Handles an invalid input error.
+        
+        Args:
+            exception (ValueError): The invalid input error to handle.
+        """
+        logger.error(f"Invalid input error: {exception}")
+        # Add notification or fallback mechanism here
+
+    def handle_unknown_error(self, exception: Exception):
+        """
+        Handles an unknown error.
+        
+        Args:
+            exception (Exception): The unknown error to handle.
+        """
+        logger.error(f"Unknown error: {exception}")
+        # Add notification or fallback mechanism here
+
+if __name__ == "__main__":
+    error_handler = ErrorHandler()
     try:
-        x = 1 / 0
+        raise ConnectionError("Test network error")
     except Exception as e:
         error_handler.handle_error(e)
-
-if __name__ == '__main__':
-    main()
