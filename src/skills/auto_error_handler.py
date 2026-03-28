@@ -1,95 +1,75 @@
 import logging
-import logging.config
+import logging.handlers
 import smtplib
 from email.message import EmailMessage
+import os
+import sys
+import traceback
 from typing import Dict
-
-logging.config.dictConfig({
-    'version': 1,
-    'formatters': {
-        'default': {
-            'format': '[%(asctime)s] %(levelname)s in %(module)s: %(message)s',
-        }
-    },
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-            'stream': 'ext://sys.stdout',
-            'formatter': 'default'
-        },
-        'file': {
-            'class': 'logging.FileHandler',
-            'filename': 'error.log',
-            'formatter': 'default'
-        }
-    },
-    'root': {
-        'level': 'DEBUG',
-        'handlers': ['console', 'file']
-    }
-})
 
 class AutoErrorHandler:
     """
-    A centralized error handling mechanism that provides a flexible and configurable system for logging errors, 
-    sending notifications, and tracking error metrics. This module is designed to be easily integrated into existing 
-    applications, allowing for the creation of custom error types and providing a comprehensive solution for diagnosing 
-    and resolving issues.
+    A centralized error handling and logging system, allowing for customizable logging levels, 
+    error types, and notification mechanisms. This module provides features such as logging to 
+    files, sending error notifications via email or other channels, and providing detailed error 
+    reports to facilitate debugging and issue resolution.
 
     Attributes:
-        logger (logging.Logger): The logger instance used for logging errors.
-        notification_config (Dict): A dictionary containing the configuration for sending notifications.
+        log_level (str): The logging level to use. Can be one of 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'.
+        log_file (str): The file to log to.
+        email_config (Dict): A dictionary containing email configuration. Should have 'sender', 'receiver', 'smtp_server', 'smtp_port', 'password' keys.
+        error_types (list): A list of error types to handle.
 
     Methods:
-        log_error: Logs an error with the provided message and exception.
-        send_notification: Sends a notification to developers in case of a critical error.
-        track_error_metrics: Tracks error metrics, such as the number of occurrences and last occurrence time.
+        setup_logging: Sets up the logging system.
+        handle_error: Handles an error by logging it and sending a notification if necessary.
     """
 
-    def __init__(self, notification_config: Dict):
-        self.logger = logging.getLogger(__name__)
-        self.notification_config = notification_config
+    def __init__(self, log_level: str = 'INFO', log_file: str = 'error.log', email_config: Dict = None, error_types: list = None):
+        self.log_level = log_level
+        self.log_file = log_file
+        self.email_config = email_config
+        self.error_types = error_types if error_types else []
 
-    def log_error(self, message: str, exception: Exception = None):
-        try:
-            if exception:
-                self.logger.error(message, exc_info=exception)
-            else:
-                self.logger.error(message)
-        except Exception as e:
-            self.logger.critical(f"Failed to log error: {e}")
+        self.setup_logging()
 
-    def send_notification(self, message: str):
-        try:
-            msg = EmailMessage()
-            msg.set_content(message)
-            msg['subject'] = 'Critical Error Notification'
-            msg['to'] = self.notification_config['to']
-            msg['from'] = self.notification_config['from']
+    def setup_logging(self):
+        log_level = getattr(logging, self.log_level.upper())
+        logging.basicConfig(level=log_level, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        logger = logging.getLogger()
+        handler = logging.handlers.RotatingFileHandler(self.log_file, maxBytes=1000000, backupCount=5)
+        logger.addHandler(handler)
 
-            with smtplib.SMTP_SSL(self.notification_config['smtp_server'], self.notification_config['smtp_port']) as smtp:
-                smtp.login(self.notification_config['from'], self.notification_config['password'])
-                smtp.send_message(msg)
-        except Exception as e:
-            self.logger.critical(f"Failed to send notification: {e}")
+    def handle_error(self, error: Exception):
+        logger = logging.getLogger()
+        logger.error(f'Error: {error}')
+        logger.error(traceback.format_exc())
+        if self.email_config:
+            self.send_error_notification(error)
 
-    def track_error_metrics(self, error_message: str):
-        try:
-            # Implement error metrics tracking logic here
-            self.logger.info(f"Tracking error metrics for: {error_message}")
-        except Exception as e:
-            self.logger.critical(f"Failed to track error metrics: {e}")
+    def send_error_notification(self, error: Exception):
+        msg = EmailMessage()
+        msg.set_content(f'Error: {error}\n{traceback.format_exc()}')
+        msg['Subject'] = 'Error Notification'
+        msg['From'] = self.email_config['sender']
+        msg['To'] = self.email_config['receiver']
+        with smtplib.SMTP_SSL(self.email_config['smtp_server'], self.email_config['smtp_port']) as smtp:
+            smtp.login(self.email_config['sender'], self.email_config['password'])
+            smtp.send_message(msg)
+
+def main():
+    email_config = {
+        'sender': 'sender@example.com',
+        'receiver': 'receiver@example.com',
+        'smtp_server': 'smtp.example.com',
+        'smtp_port': 465,
+        'password': 'password'
+    }
+    error_handler = AutoErrorHandler(log_level='DEBUG', log_file='error.log', email_config=email_config)
+    try:
+        x = 1 / 0
+    except Exception as e:
+        error_handler.handle_error(e)
 
 if __name__ == '__main__':
-    notification_config = {
-        'to': 'developer@example.com',
-        'from': 'auto-error-handler@example.com',
-        'password': 'password',
-        'smtp_server': 'smtp.example.com',
-        'smtp_port': 465
-    }
-
-    error_handler = AutoErrorHandler(notification_config)
-    error_handler.log_error("Test error message")
-    error_handler.send_notification("Test notification message")
-    error_handler.track_error_metrics("Test error message")
+    main()
