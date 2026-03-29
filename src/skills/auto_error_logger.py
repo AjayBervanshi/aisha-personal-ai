@@ -1,6 +1,7 @@
 import logging
 import logging.config
 import smtplib
+import os
 from email.message import EmailMessage
 import sys
 import traceback
@@ -78,18 +79,24 @@ class AutoErrorLogger:
 
 def main():
     notification_config = {
-        'from': 'aisha.ai@example.com',
-        'to': 'developer@example.com',
-        'smtp_server': 'smtp.example.com',
-        'smtp_port': 465,
-        'password': 'password'
+        'from': os.environ.get('SMTP_FROM', 'aisha.ai@example.com'),
+        'to': os.environ.get('SMTP_TO', 'developer@example.com'),
+        'smtp_server': os.environ.get('SMTP_SERVER', 'smtp.example.com'),
+        'smtp_port': int(os.environ.get('SMTP_PORT', 465)),
+        'password': os.environ.get('SMTP_PASSWORD', 'password')
     }
     logger = AutoErrorLogger(notification_config)
 
     try:
+        # Example error to demonstrate logging
         x = 1 / 0
     except Exception as e:
-        logger.handle_exception(e)
+        # In a real scenario, ensure environment variables are set before sending notifications
+        if os.environ.get('SMTP_PASSWORD') and os.environ.get('SMTP_PASSWORD') != 'password':
+            logger.handle_exception(e)
+        else:
+            logger.log_error(f"An error occurred: {e}")
+            logger.log_error("SMTP notification skipped: SMTP_PASSWORD not set or is default.")
 
 if __name__ == '__main__':
     main()
