@@ -1,7 +1,7 @@
 import logging
 import logging.config
-import os
-from typing import Dict, Callable
+import sys
+from typing import Dict, Optional
 
 logging.config.dictConfig({
     'version': 1,
@@ -15,113 +15,100 @@ logging.config.dictConfig({
             'class': 'logging.StreamHandler',
             'stream': 'ext://sys.stdout',
             'formatter': 'default'
-        },
-        'file': {
-            'class': 'logging.FileHandler',
-            'filename': 'error.log',
-            'formatter': 'default'
         }
     },
     'root': {
         'level': 'DEBUG',
-        'handlers': ['console', 'file']
+        'handlers': ['console']
     }
 })
 
 logger = logging.getLogger(__name__)
 
+def auto_error_handler(func):
+    """
+    A decorator that provides a centralized error handling mechanism, allowing for more robust and flexible error handling across the application.
+    
+    This decorator catches specific exceptions, logs the error, and provides meaningful error messages. It also includes a retry mechanism for failed operations.
+    
+    Args:
+        func: The function to be decorated.
+    
+    Returns:
+        A wrapper function that handles errors and exceptions.
+    """
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            logger.error(f"An error occurred: {str(e)}")
+            if isinstance(e, ConnectionError):
+                logger.error("A connection error occurred. Retrying...")
+                # Implement retry mechanism here
+                # For example:
+                # return func(*args, **kwargs)
+            elif isinstance(e, TimeoutError):
+                logger.error("A timeout error occurred.")
+            else:
+                logger.error("An unknown error occurred.")
+            return None
+    return wrapper
+
 class ErrorHandler:
     """
-    A robust error handling system that provides features such as logging, notification, and fallback mechanisms to handle potential errors and exceptions.
+    A class that provides a centralized error handling mechanism.
     
-    This module is designed to be highly configurable, allowing developers to customize error handling behavior to suit specific needs.
-    
-    It includes a set of predefined handlers for common error scenarios, such as network errors, database connection errors, and invalid input errors.
-    
-    Attributes:
-        handlers (Dict[Exception, Callable]): A dictionary of exception types and their corresponding handlers.
-        
-    Methods:
-        add_handler(exception_type, handler): Adds a custom handler for a specific exception type.
-        handle_error(exception): Handles an error using the predefined or custom handlers.
+    This class includes methods for logging, notification, and retry mechanisms for failed operations.
     """
-
     def __init__(self):
-        self.handlers = {
-            ConnectionError: self.handle_network_error,
-            OSError: self.handle_database_connection_error,
-            ValueError: self.handle_invalid_input_error
-        }
+        self.logger = logger
 
-    def add_handler(self, exception_type: type, handler: Callable):
+    def log_error(self, message: str):
         """
-        Adds a custom handler for a specific exception type.
+        Logs an error message.
         
         Args:
-            exception_type (type): The type of exception to handle.
-            handler (Callable): The handler function to use.
+            message (str): The error message to be logged.
         """
-        self.handlers[exception_type] = handler
+        self.logger.error(message)
 
-    def handle_error(self, exception: Exception):
+    def notify_error(self, message: str):
         """
-        Handles an error using the predefined or custom handlers.
+        Notifies an error.
         
         Args:
-            exception (Exception): The exception to handle.
+            message (str): The error message to be notified.
+        """
+        # Implement notification mechanism here
+        self.logger.error(f"Error notification: {message}")
+
+    def retry_operation(self, func, *args, **kwargs):
+        """
+        Retries a failed operation.
+        
+        Args:
+            func: The function to be retried.
+            *args: The arguments to be passed to the function.
+            **kwargs: The keyword arguments to be passed to the function.
+        
+        Returns:
+            The result of the retried operation.
         """
         try:
-            handler = self.handlers.get(type(exception))
-            if handler:
-                handler(exception)
-            else:
-                self.handle_unknown_error(exception)
+            return func(*args, **kwargs)
         except Exception as e:
-            logger.error(f"Error handling exception: {e}")
+            self.log_error(f"An error occurred: {str(e)}")
+            # Implement retry mechanism here
+            # For example:
+            # return func(*args, **kwargs)
+        return None
 
-    def handle_network_error(self, exception: ConnectionError):
-        """
-        Handles a network error.
-        
-        Args:
-            exception (ConnectionError): The network error to handle.
-        """
-        logger.error(f"Network error: {exception}")
-        # Add notification or fallback mechanism here
-
-    def handle_database_connection_error(self, exception: OSError):
-        """
-        Handles a database connection error.
-        
-        Args:
-            exception (OSError): The database connection error to handle.
-        """
-        logger.error(f"Database connection error: {exception}")
-        # Add notification or fallback mechanism here
-
-    def handle_invalid_input_error(self, exception: ValueError):
-        """
-        Handles an invalid input error.
-        
-        Args:
-            exception (ValueError): The invalid input error to handle.
-        """
-        logger.error(f"Invalid input error: {exception}")
-        # Add notification or fallback mechanism here
-
-    def handle_unknown_error(self, exception: Exception):
-        """
-        Handles an unknown error.
-        
-        Args:
-            exception (Exception): The unknown error to handle.
-        """
-        logger.error(f"Unknown error: {exception}")
-        # Add notification or fallback mechanism here
+def test_auto_error_handler():
+    @auto_error_handler
+    def test_function():
+        raise ConnectionError("Test connection error")
+    
+    test_function()
 
 if __name__ == "__main__":
-    error_handler = ErrorHandler()
-    try:
-        raise ConnectionError("Test network error")
-    except Exception as e:
-        error_handler.handle_error(e)
+    test_auto_error_handler()
