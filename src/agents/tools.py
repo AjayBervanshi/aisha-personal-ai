@@ -2,7 +2,6 @@ from crewai.tools import tool
 import os
 import requests
 from src.core.voice_engine import generate_voice
-from src.core.image_engine import generate_image
 
 @tool("elevenlabs_voice_tool")
 def elevenlabs_voice_tool(text: str, language: str = "English", mood: str = "casual") -> str:
