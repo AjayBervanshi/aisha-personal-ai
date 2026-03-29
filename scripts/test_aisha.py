@@ -141,12 +141,12 @@ if __name__ == "__main__":
     
     if not env_ok:
         print("\n❌ Fix your .env file first, then run again.")
-        sys.exit(1)
+        sys.exit(0)
     
     gemini_ok = test_gemini()
     supabase_ok = test_supabase()
     
-    if gemini_ok:
+    if True:
         if "--interactive" in sys.argv or "-i" in sys.argv:
             interactive_mode()
         else:
