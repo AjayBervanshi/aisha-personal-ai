@@ -183,8 +183,8 @@ def _get_reliability_stats() -> dict:
         )
         if r1.ok:
             errors_1h = int(r1.headers.get("Content-Range", "0/0").split("/")[-1])
-    except Exception:
-        pass
+    except (requests.RequestException, ValueError, TypeError) as e:
+        log.warning("Failed to fetch metric: %s", e)
 
     # Last 24h errors
     since_24h = (now - timedelta(hours=24)).isoformat()
@@ -197,8 +197,8 @@ def _get_reliability_stats() -> dict:
         )
         if r2.ok:
             errors_24h = int(r2.headers.get("Content-Range", "0/0").split("/")[-1])
-    except Exception:
-        pass
+    except (requests.RequestException, ValueError, TypeError) as e:
+        log.warning("Failed to fetch metric: %s", e)
 
     # Content queue depth (queued jobs)
     queue_depth = 0
@@ -210,8 +210,8 @@ def _get_reliability_stats() -> dict:
         )
         if r3.ok:
             queue_depth = int(r3.headers.get("Content-Range", "0/0").split("/")[-1])
-    except Exception:
-        pass
+    except (requests.RequestException, ValueError, TypeError) as e:
+        log.warning("Failed to fetch metric: %s", e)
 
     return {"errors_1h": errors_1h, "errors_24h": errors_24h, "queue_depth": queue_depth}
 
@@ -233,8 +233,8 @@ def _write_system_log(summary: str) -> None:
             headers=_supabase_headers(),
             timeout=8,
         )
-    except Exception:
-        pass
+    except requests.RequestException as e:
+        log.warning("Failed to write system log: %s", e)
 
 
 def run_health_check() -> str:
