@@ -1,6 +1,12 @@
 import os
 import sys
 import argparse
+
+# Fix Windows cp1252 console encoding
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
 import re
 from datetime import datetime
 from dotenv import load_dotenv
