@@ -26,7 +26,8 @@ from src.core.ai_router import AIRouter
 
 from src.core.config import (
     GEMINI_API_KEY, GROQ_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_KEY,
-    GEMINI_MODEL, GROQ_MODEL, AI_TEMPERATURE, AI_MAX_TOKENS, AI_HISTORY_LIMIT, USER_NAME
+    GEMINI_MODEL, GROQ_MODEL, AI_TEMPERATURE, AI_MAX_TOKENS, AI_HISTORY_LIMIT, USER_NAME,
+    AISHA_SECRET_CODE
 )
 from src.core.language_detector import detect_language
 from src.core.mood_detector import detect_mood
@@ -206,7 +207,7 @@ class AishaBrain:
         ), "block_user"),
     ]
 
-    def _detect_and_route_intent(self, user_message: str) -> Optional[str]:
+    def _detect_and_route_intent(self, user_message: str, is_owner: bool = True) -> Optional[str]:
         """
         Check message against intent patterns.
         If matched, fire the tool in background and return an acknowledgement string.
@@ -214,12 +215,26 @@ class AishaBrain:
         """
         for pattern, intent in self._INTENT_PATTERNS:
             if pattern.search(user_message):
-                return self._fire_intent(intent, user_message)
+                return self._fire_intent(intent, user_message, is_owner=is_owner)
         return None
 
-    def _fire_intent(self, intent: str, user_message: str) -> Optional[str]:
+    def _fire_intent(self, intent: str, user_message: str, is_owner: bool = True) -> Optional[str]:
         """Execute a detected intent in a background thread. Returns acknowledgement or None."""
         import os
+
+        # SECURITY: Only the authorized owner can trigger system-level intents.
+        if not is_owner and intent in ("key_health", "key_update", "api_search", "self_improve", "file_repair", "block_user", "content_creation"):
+            # Guests should not trigger any background tool execution
+            return None
+
+        # SENSITIVE OPERATIONS REQUIRE THE SECRET CODE
+        high_risk_intents = ("key_update", "self_improve", "file_repair", "block_user")
+        if intent in high_risk_intents:
+            # Check if user message contains the secret code (e.g. "code: aisha-69")
+            # We use a simple case-insensitive search for the code.
+            if AISHA_SECRET_CODE.lower() not in user_message.lower():
+                print(f"[Brain] Sensitive intent '{intent}' blocked: Missing secret code.")
+                return None # Fall through to AI chat (Aisha won't execute)
 
         # ── Content creation ──────────────────────────────────────────────────
         if intent == "content_creation":
@@ -486,7 +501,7 @@ class AishaBrain:
         history.append({"role": "user", "content": user_message})
 
         # 4b. NLP Intent routing — fire tools from natural language before AI call
-        intent_response = self._detect_and_route_intent(user_message)
+        intent_response = self._detect_and_route_intent(user_message, is_owner=is_owner)
         if intent_response:
             # Save to history so context stays coherent
             history.append({"role": "assistant", "content": intent_response})

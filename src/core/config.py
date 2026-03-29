@@ -122,6 +122,9 @@ LOG_LEVEL    = _get("LOG_LEVEL",  "INFO")
 APP_ENV      = _get("APP_ENV",    "development")
 IS_DEV       = APP_ENV == "development"
 
+# Secret code for high-risk operations via natural language
+AISHA_SECRET_CODE = _get("AISHA_SECRET_CODE", "aisha-69")
+
 # AI generation settings — NO artificial limits
 AI_TEMPERATURE   = 0.88
 AI_MAX_TOKENS    = 16000  # Maximum for long-form story scripts
