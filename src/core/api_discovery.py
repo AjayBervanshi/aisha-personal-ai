@@ -19,7 +19,6 @@ import re
 import logging
 import requests
 from pathlib import Path
-from typing import Optional
 
 try:
     from dotenv import load_dotenv
