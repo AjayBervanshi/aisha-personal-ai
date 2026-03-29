@@ -513,9 +513,8 @@ ALTER TABLE content_performance
   ADD COLUMN IF NOT EXISTS pulled_at       TIMESTAMPTZ DEFAULT NOW();
 
 -- Unique constraint so analytics_engine upsert on_conflict="content_id" works
-CREATE UNIQUE INDEX IF NOT EXISTS idx_content_performance_content_id
-  ON content_performance(content_id)
-  WHERE content_id IS NOT NULL;
+ALTER TABLE content_performance
+  ADD CONSTRAINT content_performance_content_id_key UNIQUE (content_id);
 
 -- Fast lookups
 CREATE INDEX IF NOT EXISTS idx_content_performance_platform_channel
