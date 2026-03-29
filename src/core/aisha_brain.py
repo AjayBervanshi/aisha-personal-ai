@@ -378,13 +378,18 @@ class AishaBrain:
                 try:
                     rows = self.supabase.table("aisha_approved_users").select("*").eq("is_active", True).execute().data or []
                     blocked = []
+                    uids_to_block = []
                     for row in rows:
                         name  = (row.get("first_name") or "").lower()
                         uname = (row.get("telegram_username") or "").lower()
                         if target_name in name or target_name in uname:
                             uid = row["telegram_user_id"]
-                            self.supabase.table("aisha_approved_users").update({"is_active": False}).eq("telegram_user_id", uid).execute()
+                            uids_to_block.append(uid)
                             blocked.append((uid, row.get("first_name", f"User {uid}")))
+
+                    if uids_to_block:
+                        self.supabase.table("aisha_approved_users").update({"is_active": False}).in_("telegram_user_id", uids_to_block).execute()
+
                     if blocked:
                         names = ", ".join(f"{n} ({uid})" for uid, n in blocked)
                         return f"Done. {names} has been blocked and removed from my approved users list."
