@@ -138,23 +138,46 @@ class MemoryCompressor:
             return 0
 
         decayed = 0
+        to_archive_ids = []
+        to_archive_titles = []
+        to_decay_by_new_importance = {}
+
         for mem in old_memories:
             current_importance = mem.get("importance", 3)
             if current_importance <= MIN_IMPORTANCE:
-                # Archive instead of decay further
+                to_archive_ids.append(mem["id"])
+                to_archive_titles.append(mem.get("title", "")[:40])
+            else:
+                new_importance = current_importance - 1
+                if new_importance not in to_decay_by_new_importance:
+                    to_decay_by_new_importance[new_importance] = []
+                to_decay_by_new_importance[new_importance].append(mem["id"])
+
+        # Process batch archive
+        if to_archive_ids:
+            # Batch updates by 100 items at a time to avoid URL length issues with Supabase
+            batch_size = 100
+            for i in range(0, len(to_archive_ids), batch_size):
+                batch_ids = to_archive_ids[i:i + batch_size]
+                batch_titles = to_archive_titles[i:i + batch_size]
                 try:
-                    self.db.table("aisha_memory").update({"is_active": False}).eq("id", mem["id"]).execute()
-                    log.info("event=memory_archived", title=mem.get("title", "")[:40])
-                    decayed += 1
+                    self.db.table("aisha_memory").update({"is_active": False}).in_("id", batch_ids).execute()
+                    decayed += len(batch_ids)
+                    for title in batch_titles:
+                        log.info("event=memory_archived", title=title)
                 except Exception as e:
                     log.warning("event=archive_failed", error=str(e))
-            else:
-                # Decay by 1 step
+
+        # Process batch decay
+        for new_importance, ids in to_decay_by_new_importance.items():
+            batch_size = 100
+            for i in range(0, len(ids), batch_size):
+                batch_ids = ids[i:i + batch_size]
                 try:
                     self.db.table("aisha_memory").update({
-                        "importance": current_importance - 1,
-                    }).eq("id", mem["id"]).execute()
-                    decayed += 1
+                        "importance": new_importance,
+                    }).in_("id", batch_ids).execute()
+                    decayed += len(batch_ids)
                 except Exception as e:
                     log.warning("event=decay_update_failed", error=str(e))
 
