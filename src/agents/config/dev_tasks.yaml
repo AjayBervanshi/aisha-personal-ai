@@ -16,10 +16,13 @@ write_code_task:
 
 test_code_task:
   description: >
-    Take the code written by the Dev agent and write a comprehensive unittest test suite for it using write_file.
-    Then, execute the test file using the run_python_tests tool. If tests fail, diagnose the issue.
+    CRITICAL: You MUST execute the tests.
+    Take the code written by the Dev agent and write a comprehensive unittest test suite using write_file.
+    You MUST then use the 'run_python_tests' tool to execute that test file. DO NOT just do syntax validation.
+    If the tests fail, you must report the exact failure output back to the Developer.
+    If they pass, report the success. You are forbidden from returning an expected_output without a passing test run log.
   expected_output: >
-    A complete Python unittest script and the test execution results.
+    A complete Python unittest script, along with the raw terminal output proving the tests PASSED successfully.
   agent: tester
 
 review_code_task:

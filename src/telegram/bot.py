@@ -401,16 +401,32 @@ def handle_voice(message):
     # Transcribe with Gemini
     try:
         import google.generativeai as genai
-        audio_file = genai.upload_file(voice_path)
-        transcript_model = genai.GenerativeModel("gemini-2.5-flash")
+        # Upload explicitly as audio/ogg
+        audio_file = genai.upload_file(voice_path, mime_type="audio/ogg")
+
+        # We must configure safety settings to BLOCK_NONE so it doesn't censor transcriptions
+        safety_settings = [
+            { "category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE" },
+            { "category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE" },
+            { "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE" },
+            { "category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE" }
+        ]
+
+        transcript_model = genai.GenerativeModel("gemini-2.5-flash", safety_settings=safety_settings)
         result = transcript_model.generate_content([
             "Transcribe this voice message exactly as spoken. "
             "It may be in English, Hindi, Marathi, or Hinglish. "
-            "Return ONLY the transcription, nothing else.",
+            "Return ONLY the transcription, nothing else. DO NOT refuse to transcribe.",
             audio_file
         ])
         transcribed_text = result.text.strip()
         
+        # Clean up the file from Google's servers to prevent quota limits
+        try:
+            genai.delete_file(audio_file.name)
+        except Exception as e:
+            log.warning(f"Failed to delete audio file from Gemini: {e}")
+
         bot.send_message(message.chat.id, 
             f"🎙️ _Heard: \"{transcribed_text}\"_", 
             parse_mode="Markdown")
@@ -590,3 +606,29 @@ def handle_skip_skill(call):
         message_id=call.message.message_id,
         parse_mode="Markdown"
     )
+
+# ─── System / Admin Commands ─────────────────────────────────────────────────
+
+@bot.message_handler(commands=["gitpull"])
+def cmd_gitpull(message):
+    if not is_ajay(message): return unauthorized_response(message)
+
+    bot.send_message(message.chat.id, "🔄 Pulling latest code from GitHub...")
+    import subprocess
+    import requests
+
+    try:
+        # Try local git pull first (if running on a VPS)
+        result = subprocess.run(["git", "pull"], capture_output=True, text=True)
+        if result.returncode == 0:
+            bot.send_message(message.chat.id, f"✅ Git pull success:\n```\n{result.stdout}\n```", parse_mode="Markdown")
+        else:
+            bot.send_message(message.chat.id, f"⚠️ Git pull failed:\n```\n{result.stderr}\n```", parse_mode="Markdown")
+    except FileNotFoundError:
+        # If git isn't found (like on Render), we must trigger the Render deploy webhook
+        render_hook = os.getenv("RENDER_DEPLOY_HOOK")
+        if render_hook:
+            res = requests.post(render_hook)
+            bot.send_message(message.chat.id, f"⚡ Git not found — triggered Render redeploy instead. Status: {res.status_code}")
+        else:
+            bot.send_message(message.chat.id, "❌ Git not found locally, and RENDER_DEPLOY_HOOK is missing from .env!")
