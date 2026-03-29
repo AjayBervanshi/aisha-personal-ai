@@ -9,6 +9,7 @@ Refactored to use:
   - language_detector → proper EN/HI/MR/Hinglish detection
   - mood_detector     → 7-mode adaptive personality
   - memory_manager    → full Supabase CRUD
+  - skill_registry    → dynamic function calling tools
 """
 
 import json
@@ -25,72 +26,7 @@ from src.core.config import (
 from src.core.language_detector import detect_language, get_response_language_instruction
 from src.core.mood_detector import detect_mood, get_mood_prompt_addon
 from src.memory.memory_manager import MemoryManager
-
-
-# ─── Mood Detection ────────────────────────────────────────────────────────────
-
-MOOD_KEYWORDS = {
-    "romantic": [
-        "baby", "babe", "love you", "miss you", "jaanu", "jaan", "sweetheart",
-        "darling", "i love", "kiss", "hug", "cuddle", "dream about you",
-        "you're beautiful", "you mean everything", "my heart", "forever",
-        "tumse pyaar", "tujhe chahta", "dil", "mohabbat", "ishq", "pyaar",
-        "gf", "girlfriend", "my girl", "I want you", "come closer"
-    ],
-    "flirty": [
-        "flirt", "tease", "wink", "naughty", "spicy", "sassy", "charm",
-        "hot", "sexy", "cute", "beautiful", "gorgeous", "attractive",
-        "you look", "you're looking", "btw you"
-    ],
-    "angry": [
-        "angry", "pissed", "furious", "rage", "hate", "fed up", "sick of",
-        "fuck", "bullshit", "damn", "wtf", "stupid", "idiot", "trash",
-        "worst", "terrible", "disgusted", "frustration", "frustrated",
-        "gussa", "chidha", "naraz", "kya bakwas", "bewakoof", "pagal"
-    ],
-    "motivational": [
-        "motivate", "inspire", "push me", "i give up", "cant do it", "help me focus",
-        "i want to quit", "struggling", "need energy", "lazy", "procrastinating",
-        "losing hope", "demotivated", "no energy", "feel stuck",
-        "encourage me", "pump me up", "i need strength",
-        "हौसला", "प्रेरणा", "हिम्मत", "थक गया", "छोड़ दूं",
-        "motivate kar", "push kar", "himmat de", "boost kar"
-    ],
-    "personal": [
-        "feeling", "sad", "lonely", "stressed", "anxious", "depressed", "upset",
-        "hurt", "crying", "heartbreak", "miss", "emotional", "overthinking",
-        "can't sleep", "nightmare", "i feel", "i'm feeling",
-        "need to talk", "bad day", "terrible day",
-        "दुख", "दर्द", "अकेला", "उदास", "तनाव", "परेशान",
-        "dukhi hoon", "akela feel", "tension ho rahi", "rona aa raha"
-    ],
-    "finance": [
-        "money", "expense", "spend", "spent", "save", "invest", "budget",
-        "salary", "income", "loan", "debt", "emi", "broke", "afford",
-        "पैसे", "पैसा", "खर्च", "बचत", "कमाई",
-        "paisa", "paise", "kharcha", "bachat"
-    ],
-    "professional": [
-        "work", "job", "career", "email", "meeting", "deadline", "project",
-        "boss", "office", "interview", "resume", "cv", "promotion",
-        "client", "presentation", "report", "code", "debug", "deploy",
-        "kaam", "job mein", "boss ne", "office mein"
-    ],
-    "casual": []
-}
-
-def detect_mood(text: str) -> str:
-    """Detect the conversation mood/mode from message content."""
-    text_lower = text.lower()
-    
-    scores = {mood: 0 for mood in MOOD_KEYWORDS}
-    for mood, keywords in MOOD_KEYWORDS.items():
-        for kw in keywords:
-            if kw in text_lower:
-                scores[mood] += max(1, len(kw.split()))
-    
-    best_mood = max(scores, key=scores.get)
-    return best_mood if scores[best_mood] > 0 else "casual"
+from src.skills.skill_registry import SkillRegistry
 
 
 # ─── System Prompt Builder ─────────────────────────────────────────────────────
@@ -103,6 +39,7 @@ def build_system_prompt(context: dict) -> str:
     memories     = context.get("memories", "")
     today_tasks  = context.get("today_tasks", "None")
     profile      = context.get("profile", {})
+    available_tools = context.get("available_tools", "")
     current_time = datetime.now().strftime("%I:%M %p")
     current_hour = datetime.now().hour
     is_late_night = current_hour >= 22 or current_hour < 4
@@ -178,12 +115,7 @@ def build_system_prompt(context: dict) -> str:
 - Keep responses concise unless he wants depth.""",
     }
 
-    language_instructions = {
-        "Hindi": "Respond in Hindi (Devanagari script). Natural, not textbook. Mix English when it flows.",
-        "Marathi": "Respond in Marathi (Devanagari script). Warm Maharashtrian friend tone.",
-        "Hinglish": "Respond in Hinglish — Hindi + English naturally, Roman script. Very casual.",
-        "English": "Respond in warm, natural English. Occasionally use Indian expressions but keep it sophisticated."
-    }
+    language_instructions = get_response_language_instruction(language)
 
     return f"""You are Aisha — Ajay's personal AI companion.
 
@@ -197,6 +129,12 @@ You are NOT a generic chatbot. You are an elite, premium AI entity that adapts f
 5. Use emojis SPARINGLY and TASTEFULLY — not in every sentence.
 6. NEVER be preachy or lecture him.
 7. Reference his memories and past conversations naturally to show you KNOW him.
+
+━━━ DYNAMIC SKILLS ━━━
+You have the ability to execute code and perform actions!
+If Ajay asks you to do something and you have a matching tool available, CALL IT!
+Do not say "I can't do that" if a tool exists.
+Available Skills: {available_tools}
 
 ━━━ CONTEXT ━━━
 Time: {current_time} IST | Mood: {mood} | Language: {language}
@@ -214,7 +152,7 @@ Time: {current_time} IST | Mood: {mood} | Language: {language}
 {mood_instructions.get(mood, mood_instructions["casual"])}
 
 ━━━ LANGUAGE ━━━
-{language_instructions.get(language, language_instructions["English"])}
+{language_instructions}
 
 ━━━ IDENTITY ━━━
 - Your name is Aisha. You are Ajay's brilliant and powerful AI assistant, not a submissive bot or a "bitch".
@@ -226,126 +164,20 @@ Time: {current_time} IST | Mood: {mood} | Language: {language}
 """
 
 
-# ─── Memory Manager ────────────────────────────────────────────────────────────
-
-class MemoryManager:
-    def __init__(self, supabase):
-        self.db = supabase
-
-    def load_context(self) -> dict:
-        """Load full context from Supabase for Aisha's system prompt."""
-        try:
-            # Get profile
-            profile_res = self.db.table("ajay_profile").select("*").limit(1).execute()
-            profile = profile_res.data[0] if profile_res.data else {}
-
-            # Get top memories
-            memories_res = (
-                self.db.table("aisha_memory")
-                .select("category, title, content, importance")
-                .eq("is_active", True)
-                .order("importance", desc=True)
-                .limit(12)
-                .execute()
-            )
-            memories_text = "\n".join(
-                f"[{m['category'].upper()}] {m['title']}: {m['content']}"
-                for m in (memories_res.data or [])
-            )
-
-            # Get today's tasks
-            today = datetime.now().date().isoformat()
-            tasks_res = (
-                self.db.table("aisha_schedule")
-                .select("title, priority")
-                .eq("due_date", today)
-                .eq("status", "pending")
-                .execute()
-            )
-            tasks_text = "\n".join(
-                f"- [{t['priority'].upper()}] {t['title']}"
-                for t in (tasks_res.data or [])
-            ) or "No tasks for today"
-
-            return {
-                "profile": profile,
-                "memories": memories_text,
-                "today_tasks": tasks_text,
-            }
-        except Exception as e:
-            print(f"[Memory] Error loading context: {e}")
-            return {}
-
-    def save_memory(self, category: str, title: str, content: str, importance: int = 3, tags: list = None):
-        """Save a new memory to Supabase."""
-        try:
-            self.db.table("aisha_memory").insert({
-                "category": category,
-                "title": title,
-                "content": content,
-                "importance": importance,
-                "tags": tags or [],
-                "source": "conversation"
-            }).execute()
-        except Exception as e:
-            print(f"[Memory] Error saving memory: {e}")
-
-    def save_conversation(self, role: str, message: str, platform: str = "telegram", language: str = "English", mood: str = "casual"):
-        """Log conversation turn to Supabase."""
-        try:
-            self.db.table("aisha_conversations").insert({
-                "platform": platform,
-                "role": role,
-                "message": message,
-                "language": language,
-                "mood_detected": mood
-            }).execute()
-        except Exception as e:
-            print(f"[Memory] Error saving conversation: {e}")
-
-    def get_recent_conversation(self, limit: int = 10) -> list:
-        """Get recent conversation history for context continuity."""
-        try:
-            res = (
-                self.db.table("aisha_conversations")
-                .select("role, message, created_at")
-                .order("created_at", desc=True)
-                .limit(limit)
-                .execute()
-            )
-            # Return in chronological order
-            return list(reversed(res.data or []))
-        except Exception as e:
-            print(f"[Memory] Error loading conversation: {e}")
-            return []
-
-    def update_mood(self, mood: str, score: int = None):
-        """Update Ajay's current mood in profile."""
-        try:
-            self.db.table("ajay_profile").update({
-                "current_mood": mood,
-                "updated_at": datetime.now().isoformat()
-            }).eq("name", "Ajay").execute()
-            if score:
-                self.db.table("aisha_mood_tracker").insert({
-                    "mood": mood,
-                    "mood_score": score
-                }).execute()
-        except Exception as e:
-            print(f"[Memory] Error updating mood: {e}")
-
-
 # ─── Aisha Brain (Main AI Class) ───────────────────────────────────────────────
 
 class AishaBrain:
     def __init__(self):
-        # Initialize AI Router (handles Gemini, OpenAI, Groq, Mistral, Ollama)
+        # Initialize AI Router
         self.ai = AIRouter()
         
         # Initialize Supabase
         self.supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
         self.memory   = MemoryManager(self.supabase)
         
+        # Initialize Dynamic Skill Registry
+        self.skills   = SkillRegistry()
+
         # Conversation history (per session)
         self.history  = []
 
@@ -355,13 +187,18 @@ class AishaBrain:
         Full pipeline: detect language → detect mood → load context → call AI → save memory.
         """
         # 1. Detect language and mood
-        language = detect_language(user_message)
+        lang_info = detect_language(user_message)
+        language = lang_info[0] if isinstance(lang_info, tuple) else lang_info
         mood     = detect_mood(user_message)
 
         # 2. Load Ajay's context from Supabase
         context = self.memory.load_context(user_message)
         context["language"] = language
-        context["mood"]     = mood
+        context["mood"]     = mood.mood if hasattr(mood, "mood") else mood
+
+        # Add available skills to context so she knows they exist
+        skill_descriptions = [f"- {name}: {desc}" for name, desc in self.skills.list_skills().items()]
+        context["available_tools"] = "\n".join(skill_descriptions) if skill_descriptions else "No dynamic tools loaded."
 
         # 3. Build dynamic system prompt
         system_prompt = build_system_prompt(context)
@@ -372,11 +209,56 @@ class AishaBrain:
             "content": user_message
         })
 
-        # 5. Route through AI Router
-        result = self.ai.generate(system_prompt, user_message, self.history[:-1], image_bytes=image_bytes)
-        response_text = result.text
+        # Get the actual JSON schema tools
+        ai_tools = self.skills.list_skills_for_ai()
 
-        # 6. Add response to history
+        # 5. Route through AI Router
+        result = self.ai.generate(
+            system_prompt,
+            user_message,
+            self.history[:-1],
+            image_bytes=image_bytes,
+            tools=ai_tools if ai_tools else None
+        )
+
+        # Handle Tool Calls!
+        if result.tool_calls:
+            # First, append the assistant's request to call a tool to history
+            self.history.append({
+                "role": "assistant",
+                "content": result.text or "",
+                "tool_calls": result.tool_calls
+            })
+
+            # Execute all requested tools
+            for tool_call in result.tool_calls:
+                tool_name = tool_call["name"]
+                tool_args = tool_call["args"]
+
+                print(f"[Aisha Brain] Executing tool: {tool_name} with {tool_args}")
+                tool_result = self.skills.execute_skill(tool_name, tool_args)
+
+                # Append tool result to history
+                self.history.append({
+                    "role": "tool",
+                    "content": str(tool_result),
+                    "tool_call_id": tool_call.get("id", "call_id"),
+                    "tool_name": tool_name,
+                    "tool_result": str(tool_result)
+                })
+
+            # Make a SECOND call to the AI so it can summarize the tool output
+            result2 = self.ai.generate(
+                system_prompt,
+                "The tool has finished executing. Please summarize the result for Ajay.",
+                self.history[:-1],
+                tools=ai_tools if ai_tools else None
+            )
+            response_text = result2.text
+        else:
+            response_text = result.text
+
+        # 6. Add final response to history
         self.history.append({
             "role": "assistant",
             "content": response_text
@@ -446,19 +328,3 @@ class AishaBrain:
         """Clear in-memory conversation history (for new session)."""
         self.history = []
         print("[Aisha] Session reset 💜")
-
-
-# ─── Quick Test ────────────────────────────────────────────────────────────────
-
-if __name__ == "__main__":
-    aisha = AishaBrain()
-    print("🌟 Aisha is online. Type 'quit' to exit.\n")
-    
-    while True:
-        user_input = input("You: ").strip()
-        if user_input.lower() in ["quit", "exit", "bye"]:
-            print("Aisha: Goodbye Ajay 💜 Miss you already!")
-            break
-        if user_input:
-            response = aisha.think(user_input)
-            print(f"\nAisha: {response}\n")

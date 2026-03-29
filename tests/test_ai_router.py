@@ -6,34 +6,34 @@ class TestAIRouter(unittest.TestCase):
 
     @patch('src.core.ai_router.os.getenv')
     def test_fallback_chain(self, mock_getenv):
-        # We want to simulate having Gemini and Anthropic keys, but Groq fails.
-        # Actually, let's mock the clients being initialized
         router = AIRouter()
 
-        # Mock that we have gemini, anthropic, and groq clients
         router._clients = {
             "gemini": MagicMock(),
             "anthropic": MagicMock(),
             "groq": MagicMock()
         }
 
-        # Make Gemini fail
-        def mock_call_provider(provider, system, user, history, image):
+        def mock_call_provider(provider, system, user, history, image=None, tools=None):
             if provider == "gemini":
                 raise Exception("Rate limit exceeded")
+            if provider == "openai":
+                raise Exception("Rate limit exceeded")
+            if provider == "groq":
+                raise Exception("Rate limit exceeded")
+            if provider == "xai":
+                raise Exception("Rate limit exceeded")
             if provider == "anthropic":
-                return "Claude response"
-            return "Other response"
+                return "Claude response", None
+            return "Other response", None
 
         router._call_provider = mock_call_provider
 
         result = router.generate("system", "user")
 
-        # Should fallback to anthropic
         self.assertEqual(result.provider, "anthropic")
         self.assertEqual(result.text, "Claude response")
 
-        # Check that Gemini is now cooling down
         self.assertTrue(router._stats["gemini"].is_cooling_down())
 
     def test_all_fail(self):

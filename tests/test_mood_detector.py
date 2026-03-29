@@ -8,7 +8,7 @@ from src.core.aisha_brain import build_system_prompt, detect_mood
 class TestMoodDetector(unittest.TestCase):
 
     def test_default_mood(self):
-        self.assertEqual(detect_mood("hello there, just checking in"), "casual")
+        self.assertEqual(detect_mood("hello there, just checking in").mood, "casual")
 
     def test_multiple_keyword_matches(self):
         # A mix of romantic, angry, and finance.
@@ -16,7 +16,7 @@ class TestMoodDetector(unittest.TestCase):
         # "angry" (angry - 1 pt), "hate" (angry - 1 pt) -> Total 2
         # "money" (finance - 1 pt), "spend" (finance - 1 pt), "paisa" (finance - 1 pt) -> Total 3
         text = "baby i am so angry and hate that i had to spend my money and paisa"
-        self.assertEqual(detect_mood(text), "finance")
+        self.assertEqual(detect_mood(text).mood, "finance")
 
     @patch('src.core.aisha_brain.datetime')
     def test_late_night_hour_detection(self, mock_datetime):

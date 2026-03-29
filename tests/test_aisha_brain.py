@@ -38,7 +38,7 @@ class TestAishaBrain(unittest.TestCase):
             response = brain.think("Hello Aisha")
 
             self.assertEqual(response, "This is a mocked response from AI")
-            self.assertEqual(mock_router.generate.call_count, 2)
+            self.assertEqual(mock_router.generate.call_count, 3)
             mock_load_context.assert_called_once()
             self.assertEqual(mock_save_conv.call_count, 2)
             mock_update_mood.assert_called_once()
