@@ -19,6 +19,9 @@ import asyncio
 import os
 import uuid
 import edge_tts
+from src.core.logger import get_logger
+
+log = get_logger("VoiceEngine")
 
 # ── Voice Map — language-based defaults ──────────────────────
 VOICE_MAP = {
@@ -65,8 +68,8 @@ try:
         _fp = os.path.join(VOICE_DIR, _f)
         if os.path.isfile(_fp) and (_now - os.path.getmtime(_fp)) > 600:
             os.remove(_fp)
-except Exception:
-    pass
+except Exception as e:
+    log.error("stale_voice_cleanup_failed", extra={"error": str(e)})
 
 
 async def _generate_voice_async(
