@@ -52,7 +52,10 @@ class AishaBrain:
         # Per-user conversation histories — keyed by Telegram user_id (int).
         # Owner's history is warm-started from Supabase; guest histories start empty.
         # Format: { user_id: [{"role": ..., "content": ...}, ...] }
+        # Capped at MAX_GUEST_SESSIONS entries to prevent unbounded RAM growth.
         self._histories: dict = {}
+        self._history_last_used: dict = {}   # uid → timestamp for LRU eviction
+        self._MAX_GUEST_SESSIONS = 50        # keep at most 50 guest histories in RAM
 
         # Optional mood override — set by /mood <name> command, cleared each response
         self.mood_override: str | None = None
@@ -109,10 +112,41 @@ class AishaBrain:
             return []
 
     def _get_user_history(self, uid: int, is_owner: bool) -> list:
-        """Return (and lazily initialise) the history list for *uid*."""
+        """Return (and lazily initialise) the history list for *uid*.
+
+        Memory-safe:
+        - Guest histories are evicted via LRU once more than _MAX_GUEST_SESSIONS
+          accumulate in RAM (prevents unbounded dict growth from new chatters).
+        - Each history list is trimmed to 2×AI_HISTORY_LIMIT entries after every
+          call so long-running sessions cannot exhaust RAM with huge context.
+        """
+        import time as _t
+        now = _t.time()
+
         if uid not in self._histories:
+            # Evict oldest guest entry if at capacity (never evict owner or key-0 fallback)
+            owner_uid = self._get_owner_id()
+            if len(self._histories) >= self._MAX_GUEST_SESSIONS:
+                guest_keys = [
+                    k for k in self._history_last_used
+                    if k != owner_uid and k != 0
+                ]
+                if guest_keys:
+                    oldest = min(guest_keys, key=lambda k: self._history_last_used[k])
+                    del self._histories[oldest]
+                    del self._history_last_used[oldest]
+
             self._histories[uid] = self._load_history_from_db(user_id=uid if not is_owner else None)
-        return self._histories[uid]
+
+        self._history_last_used[uid] = now
+
+        # Trim to prevent unbounded growth (keep last 2×AI_HISTORY_LIMIT messages)
+        hist = self._histories[uid]
+        cap = AI_HISTORY_LIMIT * 2
+        if len(hist) > cap:
+            del hist[:len(hist) - cap]
+
+        return hist
 
     # ─── NLP Intent Router ───────────────────────────────────────────────────
     # Maps natural language to tool actions — no commands needed.

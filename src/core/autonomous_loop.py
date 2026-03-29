@@ -91,10 +91,14 @@ class AutonomousLoop:
 
     def _assert_no_telegram_webhook(self):
         """Auto-delete any stale Telegram webhook on startup when running in polling mode.
-        Only runs once per process lifetime."""
+        Only runs once per process lifetime.
+        SKIPPED when running on Render — Render uses the webhook, not polling."""
         if AutonomousLoop._webhook_warned:
             return
         AutonomousLoop._webhook_warned = True
+        # On Render, the bot is webhook-mode — never delete the webhook here.
+        if os.getenv("RENDER"):
+            return
         try:
             bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
             if not bot_token:
@@ -317,6 +321,9 @@ class AutonomousLoop:
                 topic = self.brain.ai.generate("You are Aisha.", prompt).text.strip()
                 if topic not in self._used_topics:
                     self._used_topics.append(topic)
+                    # Cap at 200 entries — old topics can be reused after that
+                    if len(self._used_topics) > 200:
+                        self._used_topics = self._used_topics[-200:]
                     break
 
             log.info(f"[Studio] Channel: '{selected['name']}' | Topic: '{topic}'")

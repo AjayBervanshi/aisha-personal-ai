@@ -53,6 +53,10 @@ def _get_fallback_msg(chat_id: int, error: Exception = None) -> str | None:
     if now - _last_fallback.get(chat_id, 0) < 600:  # 10 min cooldown
         return None
     _last_fallback[chat_id] = now
+    # Evict stale entries (older than 10 min) to prevent unbounded growth
+    stale = [k for k, v in _last_fallback.items() if now - v > 600]
+    for k in stale:
+        del _last_fallback[k]
 
     # Lazy import to avoid circular — AUTHORIZED_ID is set at module level after load_dotenv()
     try:
