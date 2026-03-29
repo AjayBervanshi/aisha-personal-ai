@@ -52,7 +52,7 @@ class _JsonFormatter(logging.Formatter):
 
         try:
             return json.dumps(payload, ensure_ascii=False, default=str)
-        except Exception:
+        except (TypeError, ValueError):
             return json.dumps({"level": "error", "event": "log_format_failed"})
 
 
