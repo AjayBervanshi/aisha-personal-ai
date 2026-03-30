@@ -313,31 +313,50 @@ def generate_performance_report() -> str:
             os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""),
         )
 
-        for channel in channels:
-            lines.append(f"*{channel}*")
+        # 1. Fetch all series for all channels in bulk
+        series_resp = sb.table("aisha_series").select("id, channel").in_("channel", channels).execute()
+        series_data = series_resp.data or []
 
-            series_resp = sb.table("aisha_series").select("id").eq("channel", channel).execute()
-            if not series_resp.data:
-                lines.append("  No episodes yet.\n")
-                continue
+        # Map series_id to channel
+        series_to_channel = {row["id"]: row["channel"] for row in series_data}
+        all_series_ids = list(series_to_channel.keys())
 
-            series_ids = [row["id"] for row in series_resp.data]
+        # 2. Fetch all episodes for these series in bulk
+        # Note: We don't limit(3) here because we need top 3 per channel
+        episodes_by_channel = {ch: [] for ch in channels}
 
+        if all_series_ids:
             ep_resp = (
                 sb.table("aisha_episodes")
-                .select("title,views,likes,youtube_url")
-                .in_("series_id", series_ids)
+                .select("series_id,title,views,likes,youtube_url")
+                .in_("series_id", all_series_ids)
                 .not_.is_("views", "null")
                 .order("views", desc=True)
-                .limit(3)
                 .execute()
             )
 
-            if not ep_resp.data:
+            for ep in (ep_resp.data or []):
+                channel = series_to_channel.get(ep["series_id"])
+                if channel:
+                    episodes_by_channel[channel].append(ep)
+
+        # 3. Generate report from in-memory data
+        for channel in channels:
+            lines.append(f"*{channel}*")
+
+            # Filter series for this channel to check if any exist
+            has_series = any(row["channel"] == channel for row in series_data)
+            if not has_series:
+                lines.append("  No episodes yet.\n")
+                continue
+
+            channel_episodes = episodes_by_channel[channel]
+            if not channel_episodes:
                 lines.append("  No performance data yet.\n")
                 continue
 
-            for i, ep in enumerate(ep_resp.data, 1):
+            # Take top 3 (already sorted by views desc from query)
+            for i, ep in enumerate(channel_episodes[:3], 1):
                 title = ep.get("title", "Untitled")[:50]
                 views = ep.get("views", 0)
                 likes = ep.get("likes", 0)
