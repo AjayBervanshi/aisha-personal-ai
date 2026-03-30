@@ -161,7 +161,7 @@ def get_pr_number_from_url(pr_url: str) -> int:
     """Extracts PR number from GitHub URL."""
     try:
         return int(pr_url.split("/")[-1])
-    except:
+    except (ValueError, TypeError, AttributeError):
         return 0
 
 
