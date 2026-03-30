@@ -1,4 +1,3 @@
-import os
 import requests
 from src.skills.skill_registry import aisha_skill
 
@@ -10,5 +9,5 @@ def get_weather(location: str) -> str:
         response = requests.get(url, timeout=5)
         response.raise_for_status()
         return response.text.strip()
-    except Exception as e:
+    except requests.exceptions.RequestException as e:
         return f"Sorry Aju, I couldn't check the weather for {location} right now! ({e})"
