@@ -17,7 +17,6 @@ Lifecycle:
 import os
 import ast
 import hashlib
-import json
 import logging
 import requests
 from datetime import datetime, timezone
