@@ -1,25 +1,35 @@
-import os
+import re
 
-files_to_patch = [
-    "supabase/migrations/20260313120000_critical_data_stores.sql",
-    "supabase/aisha_full_migration.sql"
-]
+with open("src/core/digest_engine.py", "r") as f:
+    content = f.read()
 
-search_text = """CREATE UNIQUE INDEX IF NOT EXISTS idx_content_performance_content_id
-  ON content_performance(content_id)
-  WHERE content_id IS NOT NULL;"""
+search = """            # Tasks
+            tasks_done = (db.table("aisha_schedule").select("id")
+                          .eq("due_date", today).eq("status", "done").execute()).data or []
+            tasks_missed = (db.table("aisha_schedule").select("id")
+                            .eq("due_date", today).eq("status", "missed").execute()).data or []
+            tasks_pending = (db.table("aisha_schedule").select("title")
+                             .eq("due_date", today).eq("status", "pending").execute()).data or []
+            stats["tasks_done"] = len(tasks_done)
+            stats["tasks_missed"] = len(tasks_missed)
+            stats["tasks_pending"] = [t["title"] for t in tasks_pending]"""
 
-replace_text = """ALTER TABLE content_performance
-  ADD CONSTRAINT content_performance_content_id_key UNIQUE (content_id);"""
+replace = """            # Tasks
+            # Optimization: Fetch all task statuses for today in one query
+            all_tasks = (db.table("aisha_schedule").select("id, title, status")
+                         .eq("due_date", today).in_("status", ["done", "missed", "pending"]).execute()).data or []
 
-for file_path in files_to_patch:
-    with open(file_path, "r") as f:
-        content = f.read()
+            tasks_done = [t for t in all_tasks if t.get("status") == "done"]
+            tasks_missed = [t for t in all_tasks if t.get("status") == "missed"]
+            tasks_pending = [t for t in all_tasks if t.get("status") == "pending"]
 
-    if search_text in content:
-        content = content.replace(search_text, replace_text)
-        with open(file_path, "w") as f:
-            f.write(content)
-        print(f"Patched {file_path}")
-    else:
-        print(f"Could not find search text in {file_path}")
+            stats["tasks_done"] = len(tasks_done)
+            stats["tasks_missed"] = len(tasks_missed)
+            stats["tasks_pending"] = [t["title"] for t in tasks_pending]"""
+
+if search in content:
+    with open("src/core/digest_engine.py", "w") as f:
+        f.write(content.replace(search, replace))
+    print("Patched successfully")
+else:
+    print("Search string not found")
