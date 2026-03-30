@@ -1,4 +1,3 @@
-import os
 import logging
 from src.core.self_improvement import create_github_pr
 
