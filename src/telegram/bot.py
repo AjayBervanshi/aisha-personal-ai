@@ -1437,6 +1437,79 @@ def cmd_test_pipeline(message):
     threading.Thread(target=run_test, daemon=True, name="pipeline-test").start()
 
 
+@bot.message_handler(commands=["makevideo"])
+def cmd_make_video(message):
+    """Trigger real video production + YouTube upload.
+    Usage: /makevideo [channel] | [topic]
+    Example: /makevideo Story With Aisha | ek pyaar ki kahani
+    """
+    if not is_ajay(message): return unauthorized_response(message)
+    text = message.text.replace("/makevideo", "").strip()
+    channel, topic = "Story With Aisha", None
+    if "|" in text:
+        parts = text.split("|", 1)
+        channel = parts[0].strip() or channel
+        topic = parts[1].strip() or None
+
+    valid_channels = {
+        "story": "Story With Aisha",
+        "riya": "Riya's Dark Whisper",
+        "romance": "Riya's Dark Romance Library",
+        "aisha": "Aisha & Him",
+    }
+    for k, v in valid_channels.items():
+        if k in channel.lower():
+            channel = v
+            break
+
+    bot.send_message(
+        message.chat.id,
+        f"🎬 *Starting video production!*\n\n"
+        f"Channel: *{channel}*\n"
+        f"Topic: _{topic or 'auto-selected from trends'}_\n\n"
+        f"Pipeline: Research → Script → Voice → Video → Upload\n"
+        f"This takes 5–10 min. I'll update you at each stage. ⏳",
+        parse_mode="Markdown"
+    )
+
+    def run_production():
+        try:
+            from src.agents.antigravity_agent import AntigravityAgent
+            agent = AntigravityAgent()
+            job = agent.enqueue_job(
+                topic=topic or "auto",
+                channel=channel,
+                fmt="short",
+                platform_targets=["youtube"],
+                auto_post=True,
+                payload={"render_video": True}
+            )
+            job_id = job.get("id", "?")
+            bot.send_message(message.chat.id, f"📋 Job queued: `{str(job_id)[:8]}` — processing now...", parse_mode="Markdown")
+
+            result = agent.process_job(job)
+
+            if result and result.get("status") == "completed":
+                output = result.get("output", {})
+                yt_url = output.get("youtube_url") or result.get("youtube_url", "")
+                bot.send_message(
+                    message.chat.id,
+                    f"✅ *Video published!*\n\n"
+                    f"Channel: {channel}\n"
+                    + (f"YouTube: {yt_url}\n" if yt_url else "Upload pending OAuth token setup.\n")
+                    + f"\nAisha is earning! 💰",
+                    parse_mode="Markdown"
+                )
+            else:
+                error = result.get("error_text", "Unknown") if result else "No result"
+                bot.send_message(message.chat.id, f"❌ Production failed: `{str(error)[:300]}`", parse_mode="Markdown")
+        except Exception as e:
+            log.error(f"[makevideo] {e}", exc_info=True)
+            bot.send_message(message.chat.id, f"❌ Error: `{str(e)[:300]}`", parse_mode="Markdown")
+
+    threading.Thread(target=run_production, daemon=True, name="video-production").start()
+
+
 @bot.message_handler(commands=["imagine"])
 def cmd_imagine(message):
     if not is_ajay(message): return unauthorized_response(message)
