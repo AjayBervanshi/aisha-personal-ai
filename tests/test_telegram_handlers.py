@@ -15,7 +15,7 @@ with patch('os.getenv') as mock_getenv:
         with patch('src.telegram.bot.telebot'):
             with patch('src.telegram.bot.AishaBrain'):
                 with patch('src.telegram.bot.create_client'):
-                    from src.telegram.bot import cmd_start, cmd_help, handle_text, is_ajay, AUTHORIZED_ID
+                    from src.telegram.bot import cmd_start, cmd_help, handle_text, get_user_role, AUTHORIZED_ID
 
 class TestTelegramHandlers(unittest.TestCase):
 
@@ -31,7 +31,7 @@ class TestTelegramHandlers(unittest.TestCase):
         try:
             cmd_start(msg)
             mock_bot.reply_to.assert_called_once()
-            self.assertIn("Aisha is a private assistant", mock_bot.reply_to.call_args[0][1])
+            self.assertIn("Access Denied", mock_bot.reply_to.call_args[0][1])
         finally:
             bot_module.AUTHORIZED_ID = original_id
 

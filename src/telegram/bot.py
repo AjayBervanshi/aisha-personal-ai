@@ -59,16 +59,48 @@ db    = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ─── Security: Only Ajay can use Aisha ────────────────────────────────────────
 
-def is_ajay(message) -> bool:
-    """Only allow Ajay (by Telegram user ID) to access Aisha."""
+# A local cache of authorized users (ID -> Role) to prevent hitting DB on every message
+_auth_cache = {}
+
+def get_user_role(message) -> str:
+    """
+    Returns 'admin', 'guest', or 'unauthorized' based on the sender's Telegram ID.
+    Ajay is always 'admin'. Others must be explicitly allowed in the aisha_users table.
+    """
+    user_id = message.from_user.id
+
+    # 1. Check if it's Ajay directly from .env
+    if AUTHORIZED_ID and user_id == AUTHORIZED_ID:
+        return "admin"
+
+    # 2. If .env is missing and it's not Ajay, lock down completely
     if not AUTHORIZED_ID or AUTHORIZED_ID == 0:
         log.error("CRITICAL SECURITY RISK: AUTHORIZED_ID is missing from .env. Locking down bot.")
-        return False  # Fail closed. Do NOT allow anyone to talk to her if ID is missing.
-    return message.from_user.id == AUTHORIZED_ID
+        return "unauthorized"
+
+    # 3. Check the local cache
+    if user_id in _auth_cache:
+        return _auth_cache[user_id]
+
+    # 4. Check the Supabase database for guests
+    try:
+        res = db.table("aisha_users").select("role").eq("telegram_id", user_id).limit(1).execute()
+        if res.data:
+            role = res.data[0]["role"]
+            _auth_cache[user_id] = role
+            return role
+    except Exception as e:
+        log.error(f"Error checking user authorization: {e}")
+
+    # Not authorized
+    return "unauthorized"
+
+def is_admin(message) -> bool:
+    return get_user_role(message) == "admin"
 
 
 def unauthorized_response(message):
-    bot.reply_to(message, "🔒 Aisha is a private assistant. She belongs to Ajay only 💜")
+    bot.reply_to(message, "🔒 Access Denied. I am a private assistant and I don't know you. Please ask my creator for access! 💜")
 
 
 # ─── Keyboards ─────────────────────────────────────────────────────────────────
@@ -111,7 +143,7 @@ def mood_keyboard():
 
 @bot.message_handler(commands=["start"])
 def cmd_start(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if get_user_role(message) == 'unauthorized': return unauthorized_response(message)
     
     hour = datetime.now().hour
     greeting = "Good morning" if 5 <= hour < 12 else \
@@ -128,16 +160,25 @@ def cmd_start(message):
         "🎯 Work on your goals together\n\n"
         "_I remember everything you share with me. Always here, Aju 💜_"
     )
-    bot.send_message(
-        message.chat.id,
-        welcome,
-        parse_mode="Markdown",
-        reply_markup=main_keyboard()
-    )
+    if get_user_role(message) == "guest":
+        welcome = (
+            f"💜 *{greeting}!*\n\n"
+            "I'm Aisha. My creator gave you access to chat with me!\n"
+            "I can answer questions, summarize text, or just be a friendly AI companion.\n"
+            "_Note: Some of my advanced features are reserved for my creator._"
+        )
+        bot.send_message(message.chat.id, welcome, parse_mode="Markdown")
+    else:
+        bot.send_message(
+            message.chat.id,
+            welcome,
+            parse_mode="Markdown",
+            reply_markup=main_keyboard()
+        )
 
 @bot.message_handler(commands=["help"])
 def cmd_help(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if get_user_role(message) == 'unauthorized': return unauthorized_response(message)
     
     help_text = (
         "🌟 *Aisha — Command Guide*\n\n"
@@ -166,7 +207,7 @@ def cmd_help(message):
 
 @bot.message_handler(commands=["imagine"])
 def cmd_imagine(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if get_user_role(message) == 'unauthorized': return unauthorized_response(message)
     prompt = message.text.replace("/imagine", "").strip()
     if not prompt:
         bot.send_message(message.chat.id, "Please tell me what to imagine! Like: `/imagine a beautiful futuristic sunset in Mumbai`", parse_mode="Markdown")
@@ -193,7 +234,7 @@ def cmd_imagine(message):
 
 @bot.message_handler(commands=["mood"])
 def cmd_mood(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if get_user_role(message) == 'unauthorized': return unauthorized_response(message)
     bot.send_message(
         message.chat.id,
         "💜 *How are you feeling right now, Ajay?*",
@@ -203,7 +244,7 @@ def cmd_mood(message):
 
 @bot.message_handler(commands=["today"])
 def cmd_today(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if get_user_role(message) == 'unauthorized': return unauthorized_response(message)
     
     today = datetime.now().date().isoformat()
     tasks = db.table("aisha_schedule") \
@@ -244,7 +285,7 @@ def cmd_today(message):
 
 @bot.message_handler(commands=["expense"])
 def cmd_expense(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if get_user_role(message) == 'unauthorized': return unauthorized_response(message)
     bot.send_message(
         message.chat.id,
         "💰 Tell me what you spent!\n\nJust say it naturally, like:\n"
@@ -255,7 +296,7 @@ def cmd_expense(message):
 
 @bot.message_handler(commands=["goals"])
 def cmd_goals(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if get_user_role(message) == 'unauthorized': return unauthorized_response(message)
     
     goals = db.table("aisha_goals") \
               .select("title, category, progress, timeframe") \
@@ -278,7 +319,7 @@ def cmd_goals(message):
 
 @bot.message_handler(commands=["memory"])
 def cmd_memory(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if get_user_role(message) == 'unauthorized': return unauthorized_response(message)
     
     memories = db.table("aisha_memory") \
                  .select("category, title, importance") \
@@ -299,7 +340,7 @@ def cmd_memory(message):
 
 @bot.message_handler(commands=["reset"])
 def cmd_reset(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if get_user_role(message) == 'unauthorized': return unauthorized_response(message)
     aisha.reset_session()
     bot.send_message(
         message.chat.id, 
@@ -310,7 +351,7 @@ def cmd_reset(message):
 @bot.message_handler(commands=["voice"])
 def cmd_voice(message):
     """Toggle Aisha's voice mode on/off."""
-    if not is_ajay(message): return unauthorized_response(message)
+    if get_user_role(message) == 'unauthorized': return unauthorized_response(message)
     global VOICE_MODE_ENABLED
     VOICE_MODE_ENABLED = not VOICE_MODE_ENABLED
     status = "ON 🎙️" if VOICE_MODE_ENABLED else "OFF 🔇"
@@ -323,7 +364,7 @@ def cmd_voice(message):
 
 @bot.message_handler(commands=["journal"])
 def cmd_journal(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if get_user_role(message) == 'unauthorized': return unauthorized_response(message)
 
     parts = message.text.split(" ", 1)
     if len(parts) > 1 and parts[1].strip().lower() == "read":
@@ -399,7 +440,7 @@ QUICK_ACTIONS = {
 
 @bot.message_handler(func=lambda m: m.text in QUICK_ACTIONS)
 def handle_quick_action(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if get_user_role(message) == 'unauthorized': return unauthorized_response(message)
     action = QUICK_ACTIONS[message.text]
     if action.startswith("/"):
         # Route to command
@@ -413,7 +454,7 @@ def handle_quick_action(message):
 
 @bot.message_handler(content_types=["voice"])
 def handle_voice(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if get_user_role(message) == 'unauthorized': return unauthorized_response(message)
     
     # Download voice file
     file_info = bot.get_file(message.voice.file_id)
@@ -458,7 +499,8 @@ def handle_voice(message):
         
         # Process as normal message
         bot.send_chat_action(message.chat.id, "typing")
-        response = aisha.think(transcribed_text, platform="telegram")
+        role = get_user_role(message)
+        response = aisha.think(transcribed_text, platform="telegram", user_role=role)
         bot.send_message(message.chat.id, response)
         
         # Send voice reply back (voice-in = voice-out)
@@ -493,7 +535,7 @@ def handle_voice(message):
 
 @bot.message_handler(content_types=["photo"])
 def handle_photo(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if get_user_role(message) == 'unauthorized': return unauthorized_response(message)
     
     bot.send_chat_action(message.chat.id, "typing")
     
@@ -506,7 +548,8 @@ def handle_photo(message):
         user_text = message.caption if message.caption else "I sent you a photo. What do you see?"
         
         # Pass image to Aisha's brain
-        response = aisha.think(user_text, platform="telegram", image_bytes=downloaded_bytes)
+        role = get_user_role(message)
+        response = aisha.think(user_text, platform="telegram", image_bytes=downloaded_bytes, user_role=role)
         bot.reply_to(message, response)
         
         # Optional: Voice reply
@@ -536,7 +579,7 @@ def handle_photo(message):
 
 @bot.message_handler(func=lambda message: True)
 def handle_text(message, override_text=None):
-    if not is_ajay(message): return unauthorized_response(message)
+    if get_user_role(message) == 'unauthorized': return unauthorized_response(message)
     
     user_text = override_text or message.text
     if not user_text or not user_text.strip():
@@ -547,7 +590,8 @@ def handle_text(message, override_text=None):
     
     try:
         log.info(f"[{message.from_user.first_name}] {user_text[:80]}")
-        response = aisha.think(user_text, platform="telegram")
+        role = get_user_role(message)
+        response = aisha.think(user_text, platform="telegram", user_role=role)
         
         # Send text response
         if len(response) > 4000:
@@ -610,9 +654,42 @@ if __name__ == "__main__":
 
 # ─── Self Improvement Callbacks ──────────────────────────────────────────
 
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("approve_req_"))
+def handle_approve_guest_req(call):
+    if not is_admin(call.message): return bot.answer_callback_query(call.id, text="Unauthorized", show_alert=True)
+    req_id = call.data.replace("approve_req_", "")
+
+    try:
+        db.table("aisha_guest_requests").update({"status": "approved", "updated_at": "now()"}).eq("id", req_id).execute()
+        bot.answer_callback_query(call.id, text="Approved! ✅")
+        bot.edit_message_text(
+            "✅ Approved! I'll tell the guest now.",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id
+        )
+    except Exception as e:
+        bot.answer_callback_query(call.id, text=f"Error: {e}")
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("deny_req_"))
+def handle_deny_guest_req(call):
+    if not is_admin(call.message): return bot.answer_callback_query(call.id, text="Unauthorized", show_alert=True)
+    req_id = call.data.replace("deny_req_", "")
+
+    try:
+        db.table("aisha_guest_requests").update({"status": "denied", "updated_at": "now()"}).eq("id", req_id).execute()
+        bot.answer_callback_query(call.id, text="Denied! ❌")
+        bot.edit_message_text(
+            "❌ Denied! I'll politely decline the guest.",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id
+        )
+    except Exception as e:
+        bot.answer_callback_query(call.id, text=f"Error: {e}")
+
 @bot.callback_query_handler(func=lambda c: c.data.startswith("deploy_skill_"))
 def handle_deploy_skill(call):
-    if not is_ajay(call.message): return bot.answer_callback_query(call.id, text="Unauthorized", show_alert=True)
+    if get_user_role(call.message) == 'unauthorized': return bot.answer_callback_query(call.id, text="Unauthorized", show_alert=True)
     import src.core.self_improvement as si
 
     skill_name = call.data.replace("deploy_skill_", "")
@@ -633,7 +710,7 @@ def handle_deploy_skill(call):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("skip_skill_"))
 def handle_skip_skill(call):
-    if not is_ajay(call.message): return bot.answer_callback_query(call.id, text="Unauthorized", show_alert=True)
+    if get_user_role(call.message) == 'unauthorized': return bot.answer_callback_query(call.id, text="Unauthorized", show_alert=True)
 
     skill_name = call.data.replace("skip_skill_", "")
     bot.answer_callback_query(call.id, text=f"Skipping {skill_name}")
@@ -649,7 +726,7 @@ def handle_skip_skill(call):
 
 @bot.message_handler(commands=["gitpull"])
 def cmd_gitpull(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if get_user_role(message) == 'unauthorized': return unauthorized_response(message)
 
     bot.send_message(message.chat.id, "🔄 Pulling latest code from GitHub...")
     import subprocess

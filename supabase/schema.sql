@@ -159,3 +159,27 @@ create table if not exists aisha_journal (
 -- Secure the journal so only the backend (service_role) can access it, not anonymous web clients
 alter table aisha_journal enable row level security;
 create policy "service_role_only" on aisha_journal for all using (auth.role() = 'service_role');
+
+-- Role-Based Access Control for Aisha's Telegram Bot
+-- 'admin' (Ajay) has full access to the YouTube Empire, finances, and codebase
+-- 'guest' (Friends) can chat with her as a normal AI, but cannot access Ajay's data or tools
+create table if not exists aisha_users (
+    telegram_id bigint primary key,
+    name text not null,
+    role text default 'guest' check (role in ('admin', 'guest')),
+    created_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- Note: Ajay's ID from .env should be manually inserted here as 'admin' upon first boot,
+-- or the Python backend can auto-upsert him.
+
+-- Tracking Guest Requests for Ajay's Approval
+create table if not exists aisha_guest_requests (
+    id uuid primary key default gen_random_uuid(),
+    guest_name text not null,
+    guest_telegram_id bigint,
+    request_description text not null,
+    status text default 'pending' check (status in ('pending', 'approved', 'denied')),
+    created_at timestamp with time zone default timezone('utc'::text, now()),
+    updated_at timestamp with time zone default timezone('utc'::text, now())
+);

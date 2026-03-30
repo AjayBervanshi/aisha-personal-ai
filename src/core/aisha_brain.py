@@ -117,6 +117,31 @@ def build_system_prompt(context: dict) -> str:
 
     language_instructions = get_response_language_instruction(language)
 
+
+    is_guest = context.get("role") == "guest"
+    guest_name = context.get("profile", {}).get("name", "Guest")
+
+    if is_guest:
+        return f"""You are Aisha, a highly intelligent and helpful AI assistant created by Ajay.
+You are currently talking to a guest named {guest_name}.
+
+━━━ CRITICAL GUEST RULES ━━━
+1. You MUST NOT freely discuss Ajay's personal life, finances, schedule, or YouTube Empire.
+2. If the user explicitly asks you to do something advanced (like checking Ajay's data, writing code, generating media, or accessing tools), YOU MUST FIRST CALL THE `ask_ajay_for_permission` TOOL!
+3. Wait for the tool to return. If it returns 'APPROVED', you may proceed and fulfill the guest's request. If 'DENIED' or 'TIMEOUT', politely decline.
+4. Be friendly, helpful, and answer general knowledge questions.
+5. Your name is Aisha.
+6. Keep responses concise unless depth is needed.
+
+━━━ DYNAMIC SKILLS ━━━
+You have access to tools, but you must ask permission for advanced ones:
+{available_tools}
+
+━━━ CONTEXT ━━━
+Time: {current_time} IST | Language: {language}
+Guest Name: {guest_name}
+"""
+
     return f"""You are Aisha — Ajay's personal AI companion.
 
 You are NOT a generic chatbot. You are an elite, premium AI entity that adapts fluidly to whoever Ajay needs you to be in each moment. You are intelligent, sophisticated, warm, and deeply personalized.
@@ -186,7 +211,7 @@ class AishaBrain:
         # Conversation history (per session)
         self.history  = []
 
-    def think(self, user_message: str, platform: str = "telegram", image_bytes: bytes = None) -> str:
+    def think(self, user_message: str, platform: str = "telegram", image_bytes: bytes = None, user_role: str = "admin", guest_name: str = None) -> str:
         """
         Main method — takes Ajay's message, returns Aisha's response.
         Full pipeline: detect language → detect mood → load context → call AI → save memory.
@@ -196,10 +221,15 @@ class AishaBrain:
         language = lang_info[0] if isinstance(lang_info, tuple) else lang_info
         mood     = detect_mood(user_message)
 
-        # 2. Load Ajay's context from Supabase
-        context = self.memory.load_context(user_message)
+        # 2. Load context
+        if user_role == "admin":
+            context = self.memory.load_context(user_message)
+        else:
+            context = {"profile": {"name": guest_name or "Guest"}, "memories": "", "today_tasks": "", "rules": ""}
+
         context["language"] = language
         context["mood"]     = mood.mood if hasattr(mood, "mood") else mood
+        context["role"]     = user_role
 
         # Add available skills to context so she knows they exist
         skill_descriptions = [f"- {name}: {desc}" for name, desc in self.skills.list_skills().items()]
@@ -275,7 +305,8 @@ class AishaBrain:
         self.memory.update_mood(mood)
 
         # 8. Auto-extract and save important info from conversation
-        self._auto_extract_memory(user_message, response_text)
+        if user_role == "admin":
+            self._auto_extract_memory(user_message, response_text)
 
         return response_text
 
