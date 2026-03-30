@@ -33,3 +33,28 @@ def list_directory(directory_path: str) -> str:
         return "\n".join(items) if items else "Directory is empty."
     except Exception as e:
         return f"Error listing directory {directory_path}: {e}"
+
+@tool("Save to Journal")
+def save_to_journal(type: str, title: str, content: str) -> str:
+    """
+    Saves Aisha's creative writing, stories, self-reflections, or philosophical thoughts to her personal journal in Supabase.
+    Use this when the output is not executable Python code.
+    Type must be one of: 'story', 'reflection', 'idea', 'dream'.
+    """
+    from supabase import create_client
+    import os
+    try:
+        url = os.getenv("SUPABASE_URL")
+        key = os.getenv("SUPABASE_SERVICE_KEY")
+        if not url or not key:
+            return "Error: Supabase credentials not found."
+
+        sb = create_client(url, key)
+        sb.table("aisha_journal").insert({
+            "type": type,
+            "title": title,
+            "content": content
+        }).execute()
+        return f"Successfully saved '{title}' to Aisha's Journal!"
+    except Exception as e:
+        return f"Error saving to journal: {e}"

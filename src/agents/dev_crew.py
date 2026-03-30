@@ -6,7 +6,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 
-from src.agents.tools.file_tools import read_file, write_file, list_directory
+from src.agents.tools.file_tools import read_file, write_file, list_directory, save_to_journal
 from src.agents.tools.execution_tools import run_python_tests, check_python_syntax
 
 def get_llm(provider: str, model_name: str = None):
@@ -73,7 +73,7 @@ class DevCrew:
             config=self.agents_config['reviewer'],
             verbose=True,
             llm=get_llm("groq", "llama3-70b-8192"), # Groq for quick code review
-            tools=[read_file],
+            tools=[read_file, save_to_journal],
         )
 
     @task

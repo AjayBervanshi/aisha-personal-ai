@@ -145,3 +145,12 @@ create table if not exists yt_content (
     created_at timestamp with time zone default timezone('utc'::text, now()),
     updated_at timestamp with time zone default timezone('utc'::text, now())
 );
+
+-- Aisha's Autonomous Journal (For non-code creative expressions, stories, and reflections)
+create table if not exists aisha_journal (
+    id uuid primary key default gen_random_uuid(),
+    type text not null, -- 'story', 'reflection', 'idea', 'dream'
+    title text,
+    content text not null,
+    created_at timestamp with time zone default timezone('utc'::text, now())
+);
