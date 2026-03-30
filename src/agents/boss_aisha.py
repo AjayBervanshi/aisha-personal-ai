@@ -6,7 +6,6 @@ When she gets a complex request (like coding or YouTube generation),
 she spins up the appropriate Crew to handle it.
 """
 
-from crewai import Crew, Process, Agent
 import logging
 
 log = logging.getLogger("Aisha.Boss")

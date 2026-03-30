@@ -197,8 +197,8 @@ def cleanup_voice_file(filepath: str):
     try:
         if filepath and os.path.exists(filepath):
             os.remove(filepath)
-    except Exception:
-        pass
+    except OSError as e:
+        print(f"[Voice Engine] Warning: Could not delete {filepath} - {e}")
 
 
 def _clean_for_speech(text: str) -> str:

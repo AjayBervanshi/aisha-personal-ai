@@ -134,3 +134,14 @@ as $$
   order by similarity desc
   limit match_count;
 $$;
+
+-- YouTube Content Tracking (Added based on content_id suggestion)
+create table if not exists yt_content (
+    content_id uuid primary key default gen_random_uuid(),
+    title text not null,
+    script text,
+    status text default 'planned', -- 'planned', 'scripted', 'audio_ready', 'video_ready', 'uploaded'
+    youtube_url text,
+    created_at timestamp with time zone default timezone('utc'::text, now()),
+    updated_at timestamp with time zone default timezone('utc'::text, now())
+);

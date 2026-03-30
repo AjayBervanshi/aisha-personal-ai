@@ -1,4 +1,3 @@
-import os
 import requests
 from src.skills.skill_registry import aisha_skill
 
