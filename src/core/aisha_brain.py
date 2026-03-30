@@ -490,13 +490,35 @@ class AishaBrain:
         # when caller_id is None so that old call-sites stay compatible.
         uid = caller_id if caller_id is not None else 0
 
+        # Fetch user permissions for granular access control
+        permissions = {}
+        if uid != 0:
+            try:
+                res = self.supabase.table("aisha_users").select("permissions").eq("telegram_user_id", uid).execute()
+                if res.data:
+                    permissions = res.data[0].get("permissions", {})
+            except Exception as e:
+                print(f"[Brain] Error loading perms for {uid}: {e}")
+
         # 2. Load context — only load Ajay's private data when Ajay is talking
         context = self.memory.load_context(user_message) if is_owner else {}
         context["language"]     = language
         context["mood"]         = mood
         context["caller_name"]  = caller_name
         context["is_owner"]     = is_owner
+        context["permissions"]  = permissions
         context["user_message"] = user_message  # for format constraint detection
+
+        # Enhanced Guest Context
+        if not is_owner:
+            guest_instruction = (
+                f"You are talking to {caller_name} (a guest), NOT your owner Ajay. "
+                "Be helpful but do NOT divulge any details about Ajay's finances, "
+                "tasks, memories, or YouTube business."
+            )
+            # Prepend to user message for immediate visibility or append to system prompt
+            # builder.py handles is_owner, but we add it here for extra reinforcement
+            user_message = f"[System: {guest_instruction}]\n{user_message}"
 
         # 3. Build dynamic system prompt
         system_prompt = build_system_prompt(context)

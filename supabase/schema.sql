@@ -150,3 +150,14 @@ create table if not exists aisha_journal (
 alter table aisha_journal enable row level security;
 create policy "service_role_only" on aisha_journal
     for all using (auth.role() = 'service_role');
+
+-- Role-Based Access Control (RBAC) Table
+create table if not exists aisha_users (
+    telegram_user_id bigint primary key,
+    role text not null default 'guest', -- 'admin', 'guest'
+    first_name text,
+    username text,
+    created_at timestamp with time zone default timezone('utc'::text, now()),
+    updated_at timestamp with time zone default timezone('utc'::text, now()),
+    constraint valid_role check (role in ('admin', 'guest'))
+);

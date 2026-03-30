@@ -82,6 +82,7 @@ def build_system_prompt(context: dict) -> str:
     profile         = context.get("profile", {})
     caller_name  = context.get("caller_name", "Ajay")
     is_owner     = context.get("is_owner", True)
+    permissions  = context.get("permissions", {})
     now          = datetime.now(IST)
     current_time = now.strftime("%I:%M %p")
 
@@ -97,18 +98,24 @@ def build_system_prompt(context: dict) -> str:
 
     # ── Guest mode: approved friend/colleague talking, not Ajay ──
     if not is_owner:
+        # Format granted permissions for the prompt
+        granted_list = [k.replace("can_", "").replace("_", " ").title() for k, v in permissions.items() if v]
+        perms_str = f"\nGRANTED PERMISSIONS: {', '.join(granted_list)}" if granted_list else ""
+
         prompt = f"""{CORE_IDENTITY}
 
 ━━━━ CURRENT USER ━━━━
-You are talking to {caller_name} — an approved guest of Ajay's.
+You are talking to {caller_name} — an approved guest of Ajay's.{perms_str}
 IMPORTANT RULES FOR GUEST MODE:
 1. Address this person as "{caller_name}" — NEVER call them "Ajay" or "Ajju".
 2. Be warm, professional and helpful — but do NOT share Ajay's private data (expenses, tasks, memories, goals).
 3. You can answer general questions, help with expenses for {caller_name} only, and chat casually.
-4. If they ask you to share something with Ajay, say: "Sure {caller_name}, I'll flag that for Ajay!"
+4. You may execute tools and skills that {caller_name} has been GRANTED permission for.
+5. If they ask for something you aren't permitted to do, say you'll ask Ajay for permission.
+6. If they ask you to share something with Ajay, say: "Sure {caller_name}, I'll flag that for Ajay!"
    and actually forward it (the system handles this automatically).
-5. Do NOT use Ajay's informal tone with this person unless they ask you to be casual.
-6. Do NOT use Hindi slangs (Arre, yaar, boss) unless the user uses them first.
+7. Do NOT use Ajay's informal tone with this person unless they ask you to be casual.
+8. Do NOT use Hindi slangs (Arre, yaar, boss) unless the user uses them first.
 
 ━━━ CONTEXT ━━━
 Time: {current_time} IST | Language: {language}

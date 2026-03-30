@@ -116,6 +116,7 @@ _pending_shell: dict = {}  # message_id → command string
 
 # ─── User Approval System ─────────────────────────────────────────────────────
 _approved_users: set = set()    # user_ids Ajay has approved this session
+_user_roles: dict[int, str] = {} # user_id → role ('admin', 'guest')
 _pending_approvals: dict = {}   # user_id → {user, text, message}
 
 # ─── Configuration ─────────────────────────────────────────────────────────────
@@ -144,41 +145,87 @@ aisha = AishaBrain()
 db    = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
-# ─── Load approved users from Supabase on startup ─────────────────────────────
+# ─── Load users and roles from Supabase on startup ─────────────────────────────
 
-def load_approved_users_from_db():
-    """Query aisha_approved_users and populate the in-memory _approved_users set."""
+def load_users_from_db():
+    """Query aisha_users and populate in-memory role cache."""
     try:
+        # 1. Load from the new RBAC table
         rows = (
+            db.table("aisha_users")
+            .select("telegram_user_id, role")
+            .execute()
+        ).data or []
+        for row in rows:
+            uid = row["telegram_user_id"]
+            role = row["role"]
+            _user_roles[uid] = role
+            _approved_users.add(uid)
+
+        # 2. Legacy: also load from aisha_approved_users if not already in cache
+        # This ensures existing users don't lose access during migration
+        legacy_rows = (
             db.table("aisha_approved_users")
             .select("telegram_user_id")
             .eq("is_active", True)
             .execute()
         ).data or []
-        for row in rows:
-            _approved_users.add(row["telegram_user_id"])
-        log.info(f"load_approved_users count={len(rows)}")
+        for row in legacy_rows:
+            uid = row["telegram_user_id"]
+            if uid not in _user_roles:
+                _user_roles[uid] = "guest" # Legacy approved users default to guests
+                _approved_users.add(uid)
+
+        log.info(f"load_users count={len(_approved_users)} (rbac={len(rows)}, legacy={len(legacy_rows)})")
     except Exception as e:
-        log.error(f"load_approved_users error={e}")
+        log.error(f"load_users error={e}")
 
-load_approved_users_from_db()
+load_users_from_db()
 
 
-# ─── Security: Only Ajay can use Aisha ────────────────────────────────────────
+# ─── Security: Role-Based Access Control (RBAC) ───────────────────────────────
 
-def is_ajay(message) -> bool:
-    """Allow Ajay or any user Ajay has approved this session.
+def get_user_role(user_id: int) -> str:
+    """Returns the role of a user, fetching from DB if not in cache."""
+    if user_id == AUTHORIZED_ID:
+        return "admin"
+
+    if user_id in _user_roles:
+        return _user_roles[user_id]
+
+    try:
+        res = db.table("aisha_users").select("role").eq("telegram_user_id", user_id).execute()
+        if res.data:
+            role = res.data[0]["role"]
+            _user_roles[user_id] = role
+            _approved_users.add(user_id)
+            return role
+    except Exception as e:
+        log.error(f"get_user_role error user_id={user_id}: {e}")
+
+    return "unauthorized"
+
+
+def is_admin(message) -> bool:
+    """True if the user is Ajay or has been granted 'admin' role."""
+    uid = getattr(message.from_user, "id", None) or getattr(message, "id", None)
+    if uid == AUTHORIZED_ID:
+        return True
+    return get_user_role(uid) == "admin"
+
+
+def is_authorized(message) -> bool:
+    """Allow Admins and Guests to use Aisha.
 
     SECURITY: When AJAY_TELEGRAM_ID is not configured (AUTHORIZED_ID == 0),
-    access is DENIED to everyone. This prevents accidental public exposure
-    if the env var is missing on first deploy. Use ALLOW_PUBLIC_ACCESS=true
-    in .env only for explicit local testing of unauthenticated flows.
+    access is restricted to explicitly approved users only.
     """
-    if AUTHORIZED_ID == 0:
-        # Env var missing — deny all unless operator explicitly opted into dev mode
-        return os.getenv("ALLOW_PUBLIC_ACCESS", "").lower() == "true"
     uid = getattr(message.from_user, "id", None) or getattr(message, "id", None)
-    return uid == AUTHORIZED_ID or uid in _approved_users
+    if AUTHORIZED_ID != 0 and uid == AUTHORIZED_ID:
+        return True
+
+    role = get_user_role(uid)
+    return role in ("admin", "guest")
 
 
 def unauthorized_response(message):
@@ -257,7 +304,7 @@ def mood_keyboard():
 
 @bot.message_handler(commands=["start"])
 def cmd_start(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_authorized(message): return unauthorized_response(message)
     
     greeting = get_greeting()  # IST-aware greeting
     
@@ -280,8 +327,10 @@ def cmd_start(message):
 
 @bot.message_handler(commands=["help"])
 def cmd_help(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_authorized(message): return unauthorized_response(message)
     
+    admin = is_admin(message)
+
     help_text = (
         "🌟 *Aisha — Command Guide*\n\n"
         "You can just *talk to me normally* — no commands needed!\n"
@@ -290,52 +339,70 @@ def cmd_help(message):
         "/start — Greet Aisha\n"
         "/imagine — Generate an image (e.g., /imagine a cyber city)\n"
         "/mood — Log how you're feeling\n"
-        "/today — See today's tasks + summary\n"
-        "/addtask — Add a task or reminder\n"
-        "/expense — Log an expense quickly\n"
-        "/journal — Write a journal entry\n"
-        "/goals — See your active goals\n"
-        "/memory — See what Aisha remembers\n"
-        "/reset — Start a fresh conversation\n\n"
-        "💬 *Or just say:*\n"
-        "• 'I spent ₹500 on food'\n"
-        "• 'Remind me to call mama at 6pm'\n"
+        "/reset — Start a fresh conversation\n"
+        "/voice — Toggle voice mode\n"
+    )
+
+    if admin:
+        help_text += (
+            "/today — See today's tasks + summary\n"
+            "/addtask — Add a task or reminder\n"
+            "/expense — Log an expense quickly\n"
+            "/journal — Write a journal entry\n"
+            "/goals — See your active goals\n"
+            "/memory — See what Aisha remembers\n"
+        )
+
+    help_text += (
+        "\n💬 *Or just say:*\n"
         "• 'I'm feeling stressed'\n"
         "• 'Motivate me'\n"
-        "• 'What are my goals?'\n\n"
-        "🎙️ You can also send *voice messages!*\n\n"
-        "🎬 *YouTube Studio:*\n"
-        "/channels — Your 4 channel brands\n"
-        "/produce [channel] — Start a production\n"
-        "/studio — Aisha auto-picks topic & channel\n"
-        "/testpipeline [channel] — Dry-run pipeline test (no upload)\n"
-        "/inbox — Check business email\n"
-        "/aistatus — See active AI brains\n\n"
-        "🧠 *Aisha Self-Improvement:*\n"
-        "/upgrade — Full autonomous upgrade: audit → code → PR → deploy 🚀\n"
-        "/selfaudit — Aisha audits her own code\n"
-        "/addtool [description] — Aisha builds a new tool\n"
-        "/skills — See all skills Aisha has learned\n\n"
-        "⚡ *Power Commands (Claude Code Level):*\n"
-        "/upload [channel] — Upload latest content to YouTube\n"
-        "/queue — See content pipeline jobs\n"
-        "/earnings — Revenue dashboard & monetization progress\n"
-        "/calendar — Weekly content schedule (+ /calendar generate)\n"
-        "/logs [n] — View last N lines of aisha.log\n"
-        "/syscheck — Run full system test\n"
-        "/shell <cmd> — Run shell command (with confirmation)\n"
-        "/read <file> — Read any file\n"
-        "/gitpull — Pull latest code from GitHub\n"
-        "/restart — Restart Aisha bot\n"
-        "/findapi <platform> — Search web for API key signup guide\n"
     )
+
+    if admin:
+        help_text += (
+            "• 'I spent ₹500 on food'\n"
+            "• 'Remind me to call mama at 6pm'\n"
+            "• 'What are my goals?'\n"
+        )
+
+    help_text += "\n🎙️ You can also send *voice messages!*\n"
+
+    if admin:
+        help_text += (
+            "\n🎬 *YouTube Studio:*\n"
+            "/channels — Your 4 channel brands\n"
+            "/produce [channel] — Start a production\n"
+            "/studio — Aisha auto-picks topic & channel\n"
+            "/testpipeline [channel] — Dry-run pipeline test (no upload)\n"
+            "/inbox — Check business email\n"
+            "/aistatus — See active AI brains\n\n"
+            "🧠 *Aisha Self-Improvement:*\n"
+            "/upgrade — Full autonomous upgrade 🚀\n"
+            "/selfaudit — Aisha audits her own code\n"
+            "/addtool [description] — Aisha builds a new tool\n"
+            "/skills — See all skills Aisha has learned\n\n"
+            "⚡ *Power Commands:*\n"
+            "/upload [channel] — Upload to YouTube\n"
+            "/queue — See content pipeline jobs\n"
+            "/earnings — Revenue dashboard\n"
+            "/calendar — Weekly content schedule\n"
+            "/logs [n] — View last N log lines\n"
+            "/syscheck — Run full system test\n"
+            "/shell <cmd> — Run shell command\n"
+            "/read <file> — Read any file\n"
+            "/gitpull — Pull latest code from GitHub\n"
+            "/restart — Restart Aisha bot\n"
+            "/findapi <platform> — API key guides\n"
+        )
+
     bot.send_message(message.chat.id, help_text, parse_mode="Markdown")
 
 
 @bot.message_handler(commands=["selfaudit"])
 def cmd_selfaudit(message):
     """Trigger Aisha's self-improvement engine."""
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     bot.send_message(message.chat.id, "Starting self-audit now, Ajju! Reading my own code, finding bugs, fixing what I can. I'll report back in a few minutes. 💜🧠")
     import subprocess, sys as _sys
     project_root = str(Path(__file__).parent.parent.parent)
@@ -351,7 +418,7 @@ def cmd_upgrade(message):
     Audit → Plan → Generate code → GitHub PR → Auto-merge → Render redeploy → Notify Ajay.
     Optional: /upgrade <target_file> to audit a specific file.
     """
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
 
     args = message.text.replace("/upgrade", "").strip()
     target_file = args if args else None
@@ -391,7 +458,7 @@ def cmd_upgrade(message):
 @bot.message_handler(commands=["feature"])
 def cmd_feature(message):
     """Request a new feature to be built autonomously by Aisha's 6-agent pipeline."""
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     feature_desc = message.text.replace("/feature", "").strip()
     if not feature_desc:
         bot.send_message(
@@ -425,7 +492,7 @@ def cmd_feature(message):
 @bot.message_handler(commands=["skills"])
 def cmd_skills(message):
     """Show all skills Aisha has learned so far."""
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     from src.core.self_modifier import get_modifier
     modifier = get_modifier()
     skills = modifier.get_skill_list()
@@ -442,7 +509,7 @@ def cmd_skills(message):
 @bot.message_handler(commands=["addtool"])
 def cmd_addtool(message):
     """Ask Aisha to write and add a new tool to herself."""
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     description = message.text.replace("/addtool", "").strip()
 
     if not description:
@@ -478,7 +545,7 @@ def cmd_addtool(message):
 @bot.message_handler(commands=["aistatus"])
 def cmd_aistatus(message):
     """Show which AI brains and social platforms are connected."""
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
 
     from src.core.ai_router import AIRouter
     from src.core.social_media_engine import SocialMediaEngine
@@ -504,7 +571,7 @@ def cmd_aistatus(message):
 
 @bot.message_handler(commands=["inbox"])
 def cmd_inbox(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     bot.send_message(message.chat.id, "Checking your business inbox... 📬")
 
     try:
@@ -529,7 +596,7 @@ def cmd_inbox(message):
 
 @bot.message_handler(commands=["channels"])
 def cmd_channels(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     text = (
         "🎬 *Your YouTube Empire — 4 Channels:*\n\n"
         "1️⃣ *Story With Aisha* — Romantic storytelling (8-15 min)\n"
@@ -546,7 +613,7 @@ def cmd_channels(message):
 
 @bot.message_handler(commands=["produce"])
 def cmd_produce(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     channel = message.text.replace("/produce", "").strip()
     
     VALID_CHANNELS = [
@@ -579,7 +646,7 @@ def cmd_produce(message):
 @bot.message_handler(commands=["upload"])
 def cmd_upload(message):
     """Upload the latest produced content to YouTube."""
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     channel = message.text.replace("/upload", "").strip()
     bot.send_message(message.chat.id, "🎬 Checking for latest produced content...", parse_mode="Markdown")
     try:
@@ -655,7 +722,7 @@ def cmd_upload(message):
 @bot.message_handler(commands=["queue"])
 def cmd_queue(message):
     """Show content pipeline queue status."""
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     try:
         rows = db.table("content_jobs") \
                  .select("id, channel, status, created_at, youtube_status") \
@@ -686,7 +753,7 @@ def cmd_queue(message):
 @bot.message_handler(commands=["logs"])
 def cmd_logs(message):
     """Show last N lines from aisha.log."""
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     text = message.text.replace("/logs", "").strip()
     try:
         n = int(text) if text and text.isdigit() else 30
@@ -713,7 +780,7 @@ def cmd_logs(message):
 @bot.message_handler(commands=["earnings"])
 def cmd_earnings(message):
     """Show revenue dashboard: uploads, views, monetization progress."""
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     bot.send_message(message.chat.id, "📊 Pulling revenue data... ⏳")
 
     def _build_report():
@@ -785,7 +852,7 @@ def cmd_earnings(message):
 @bot.message_handler(commands=["calendar"])
 def cmd_calendar(message):
     """Show or regenerate the weekly content calendar."""
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     arg = message.text.replace("/calendar", "").strip().lower()
 
     def _get_or_generate():
@@ -847,7 +914,7 @@ def cmd_calendar(message):
 @bot.message_handler(commands=["syscheck"])
 def cmd_syscheck(message):
     """Run full system health check and report results."""
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     loading_msg = bot.send_message(message.chat.id, "Running system checks... ⏳")
     try:
         from src.core.monitoring_engine import full_health_report
@@ -861,7 +928,7 @@ def cmd_syscheck(message):
 @bot.message_handler(commands=["healthreport"])
 def cmd_healthreport(message):
     """Run health check via monitoring_engine.run_health_check() and send result."""
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     loading_msg = bot.send_message(message.chat.id, "Running health report... ⏳")
     try:
         from src.core.monitoring_engine import run_health_check
@@ -875,7 +942,7 @@ def cmd_healthreport(message):
 @bot.message_handler(commands=["dbrepair"])
 def cmd_dbrepair(message):
     """Manually trigger Aisha's DB self-repair — creates any missing Supabase tables."""
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     loading_msg = bot.send_message(message.chat.id, "Running DB self-repair... ⏳")
     try:
         from src.core.self_db import check_and_repair
@@ -894,7 +961,7 @@ def cmd_dbrepair(message):
 @bot.message_handler(commands=["drainqueue"])
 def cmd_drainqueue(message):
     """Manually drain up to 5 stuck queued jobs — Ajay only."""
-    if not is_ajay(message):
+    if not is_admin(message):
         return unauthorized_response(message)
 
     loading_msg = bot.send_message(message.chat.id, "Draining queue... checking for stuck jobs ⏳")
@@ -971,7 +1038,7 @@ def cmd_drainqueue(message):
 @bot.message_handler(commands=["fixkeys"])
 def cmd_fixkeys(message):
     """Check all API keys and report their live status — Ajay only."""
-    if not is_ajay(message):
+    if not is_admin(message):
         return unauthorized_response(message)
 
     loading_msg = bot.send_message(message.chat.id, "🔑 Checking all API keys in parallel... ⏳")
@@ -1196,7 +1263,7 @@ def cmd_fixkeys(message):
 @bot.message_handler(commands=["shell", "run"])
 def cmd_shell(message):
     """Run a shell command with confirmation before execution."""
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     cmd = message.text.replace("/shell", "").replace("/run", "").strip()
     if not cmd:
         bot.send_message(message.chat.id,
@@ -1221,7 +1288,7 @@ def cmd_shell(message):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("shell_confirm_") or c.data.startswith("shell_cancel_"))
 def handle_shell_callback(call):
-    if not is_ajay(call): return  # check call.from_user, not call.message
+    if not is_admin(call): return  # check call.from_user, not call.message
     parts = call.data.split("_", 2)
     action = parts[1]   # "confirm" or "cancel"
     msg_id = int(parts[2])
@@ -1265,7 +1332,7 @@ def handle_shell_callback(call):
 @bot.message_handler(commands=["read"])
 def cmd_read(message):
     """Read a file and send its contents."""
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     filepath = message.text.replace("/read", "").strip().splitlines()[0].strip()
     if not filepath:
         bot.send_message(message.chat.id,
@@ -1320,7 +1387,7 @@ def cmd_read(message):
 @bot.message_handler(commands=["gitpull"])
 def cmd_gitpull(message):
     """Pull latest code from GitHub (or trigger Render redeploy if git not available)."""
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     bot.send_message(message.chat.id, "🔄 Pulling latest code from GitHub...")
     try:
         import subprocess, shutil
@@ -1357,7 +1424,7 @@ def cmd_gitpull(message):
 @bot.message_handler(commands=["restart"])
 def cmd_restart(message):
     """Restart the Aisha bot process (self-restart)."""
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     bot.send_message(message.chat.id, "🔄 Restarting Aisha... I'll be back in 10 seconds! 💜")
     import subprocess, sys, time
     time.sleep(2)
@@ -1371,7 +1438,7 @@ def cmd_restart(message):
 
 @bot.message_handler(commands=["studio"])
 def cmd_studio(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     bot.send_message(message.chat.id, "Starting my creative session! I'll pick the best channel and topic myself. Check your email in a few minutes! 💜🎬")
 
     import subprocess, sys as _sys
@@ -1382,7 +1449,7 @@ def cmd_studio(message):
 @bot.message_handler(commands=["testpipeline"])
 def cmd_test_pipeline(message):
     """Test the full content pipeline with a dry run."""
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     channel_arg = message.text.replace("/testpipeline", "").strip()
 
     # Default to simplest channel for testing
@@ -1512,7 +1579,7 @@ def cmd_make_video(message):
 
 @bot.message_handler(commands=["imagine"])
 def cmd_imagine(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     prompt = message.text.replace("/imagine", "").strip()
     if not prompt:
         bot.send_message(message.chat.id, "Please tell me what to imagine! Like: `/imagine a beautiful futuristic sunset in Mumbai`", parse_mode="Markdown")
@@ -1539,7 +1606,7 @@ def cmd_imagine(message):
 
 @bot.message_handler(commands=["mood"])
 def cmd_mood(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_authorized(message): return unauthorized_response(message)
     # Support: /mood casual  /mood motivational  etc.
     parts = message.text.strip().split(maxsplit=1)
     if len(parts) > 1:
@@ -1570,7 +1637,7 @@ def cmd_mood(message):
 
 @bot.message_handler(commands=["today"])
 def cmd_today(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     
     today = datetime.now().date().isoformat()
     tasks = db.table("aisha_schedule") \
@@ -1611,7 +1678,7 @@ def cmd_today(message):
 
 @bot.message_handler(commands=["addtask"])
 def cmd_addtask(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     task_text = message.text.replace("/addtask", "").strip()
     if not task_text:
         bot.send_message(message.chat.id,
@@ -1642,7 +1709,7 @@ def cmd_addtask(message):
 
 @bot.message_handler(commands=["expense"])
 def cmd_expense(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     bot.send_message(
         message.chat.id,
         "💰 Tell me what you spent!\n\nJust say it naturally, like:\n"
@@ -1653,7 +1720,7 @@ def cmd_expense(message):
 
 @bot.message_handler(commands=["goals"])
 def cmd_goals(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     
     goals = db.table("aisha_goals") \
               .select("title, category, progress, timeframe") \
@@ -1676,7 +1743,7 @@ def cmd_goals(message):
 
 @bot.message_handler(commands=["memory"])
 def cmd_memory(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     
     memories = db.table("aisha_memory") \
                  .select("category, title, importance") \
@@ -1697,7 +1764,7 @@ def cmd_memory(message):
 
 @bot.message_handler(commands=["reset"])
 def cmd_reset(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_authorized(message): return unauthorized_response(message)
     aisha.reset_session()
     bot.send_message(
         message.chat.id,
@@ -1709,7 +1776,7 @@ def cmd_reset(message):
 @bot.message_handler(commands=["block"])
 def cmd_block(message):
     """Block an approved user: /block <name_or_user_id>"""
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     query = message.text.replace("/block", "").strip().lower()
     if not query:
         bot.send_message(message.chat.id, "Usage: /block <name or user_id>")
@@ -1760,7 +1827,7 @@ def _block_user_by_query(chat_id: int, query: str):
 @bot.message_handler(commands=["voice"])
 def cmd_voice(message):
     """Toggle Aisha's voice mode on/off."""
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_authorized(message): return unauthorized_response(message)
     global VOICE_MODE_ENABLED
     VOICE_MODE_ENABLED = not VOICE_MODE_ENABLED
     status = "ON 🎙️" if VOICE_MODE_ENABLED else "OFF 🔇"
@@ -1773,7 +1840,7 @@ def cmd_voice(message):
 
 @bot.message_handler(commands=["journal"])
 def cmd_journal(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     parts = message.text.split(" ", 1)
     if len(parts) > 1 and parts[1].strip().lower() == "read":
         try:
@@ -1805,7 +1872,7 @@ def cmd_journal(message):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("mood_"))
 def handle_mood_callback(call):
-    if not is_ajay(call):
+    if not is_authorized(call):
         bot.answer_callback_query(call.id, text="Unauthorized", show_alert=True)
         return
     parts     = call.data.split("_")
@@ -1835,7 +1902,7 @@ def handle_mood_callback(call):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("approve_user_") or c.data.startswith("deny_user_"))
 def handle_user_approval(call):
-    if not is_ajay(call):
+    if not is_admin(call):
         bot.answer_callback_query(call.id, "Unauthorized", show_alert=True)
         return
 
@@ -1856,16 +1923,16 @@ def handle_user_approval(call):
         name     = user_obj.first_name if user_obj else f"User {user_id}"
         username = user_obj.username   if user_obj else None
 
-        # Persist approval to Supabase
+        # Persist approval to Supabase RBAC table
         try:
-            db.table("aisha_approved_users").upsert({
+            db.table("aisha_users").upsert({
                 "telegram_user_id": user_id,
-                "telegram_username": username,
+                "username": username,
                 "first_name": name,
-                "approved_by": AUTHORIZED_ID,
-                "is_active": True,
+                "role": "guest", # Default new users to guests
             }, on_conflict="telegram_user_id").execute()
-            log.info(f"approved_user user_id={user_id} persisted=True")
+            _user_roles[user_id] = "guest"
+            log.info(f"approved_user user_id={user_id} role=guest persisted=True")
         except Exception as e:
             log.error(f"approved_user persist error user_id={user_id} err={e}")
 
@@ -1941,7 +2008,7 @@ QUICK_ACTIONS = {
 
 @bot.message_handler(func=lambda m: m.text in QUICK_ACTIONS)
 def handle_quick_action(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_authorized(message): return unauthorized_response(message)
     action = QUICK_ACTIONS[message.text]
     if action.startswith("/"):
         # Route to command
@@ -1955,7 +2022,7 @@ def handle_quick_action(message):
 
 @bot.message_handler(content_types=["voice"])
 def handle_voice(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_authorized(message): return unauthorized_response(message)
 
     chat_id    = message.chat.id
     message_id = message.message_id
@@ -2010,13 +2077,13 @@ def handle_voice(message):
             bot.send_chat_action(chat_id, "typing")
             voice_caller_id   = message.from_user.id
             voice_caller_name = message.from_user.first_name or "Guest"
-            voice_is_owner    = (voice_caller_id == AUTHORIZED_ID)
+            voice_is_admin    = is_admin(message)
             response = aisha.think(
                 transcribed_text,
                 platform="telegram",
                 caller_name=voice_caller_name,
                 caller_id=voice_caller_id,
-                is_owner=voice_is_owner,
+                is_owner=voice_is_admin,
             )
 
             # Guard before sending reply
@@ -2060,7 +2127,7 @@ def handle_voice(message):
 
 @bot.message_handler(content_types=["photo"])
 def handle_photo(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_authorized(message): return unauthorized_response(message)
 
     chat_id    = message.chat.id
     message_id = message.message_id
@@ -2093,14 +2160,14 @@ def handle_photo(message):
             # Pass image to Aisha's brain
             photo_caller_id   = message.from_user.id
             photo_caller_name = message.from_user.first_name or "Guest"
-            photo_is_owner    = (photo_caller_id == AUTHORIZED_ID)
+            photo_is_admin    = is_admin(message)
             response = aisha.think(
                 user_text,
                 platform="telegram",
                 image_bytes=downloaded_bytes,
                 caller_name=photo_caller_name,
                 caller_id=photo_caller_id,
-                is_owner=photo_is_owner,
+                is_owner=photo_is_admin,
             )
 
             # Guard: don't send if a newer message has already arrived
@@ -2140,7 +2207,7 @@ def handle_photo(message):
 
 @bot.message_handler(func=lambda message: True)
 def handle_text(message, override_text=None):
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_authorized(message): return unauthorized_response(message)
 
     user_text = override_text or message.text
     if not user_text or not user_text.strip():
@@ -2169,11 +2236,11 @@ def handle_text(message, override_text=None):
         # Identify who is talking so Aisha addresses them correctly
         caller_id   = message.from_user.id
         caller_name = message.from_user.first_name or "Guest"
-        owner       = (caller_id == AUTHORIZED_ID)
+        admin       = is_admin(message)
 
         # ── "Share with owner" intent ─────────────────────────────────────────
         # If an approved non-owner user says "share this with Ajay/owner", forward it.
-        if not owner and any(kw in user_text.lower() for kw in [
+        if not admin and any(kw in user_text.lower() for kw in [
             "share with", "tell ajay", "tell your owner", "tell the owner",
             "forward to", "send to ajay", "notify ajay", "let ajay know"
         ]):
@@ -2201,7 +2268,7 @@ def handle_text(message, override_text=None):
                 platform="telegram",
                 caller_name=caller_name,
                 caller_id=caller_id,
-                is_owner=owner,
+                is_owner=admin,
             )
 
             # Guard: don't send if a newer message has already arrived
@@ -2253,7 +2320,7 @@ def handle_text(message, override_text=None):
 
 @bot.message_handler(commands=["water"])
 def cmd_water(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     text = message.text.replace("/water", "").strip()
     try:
         glasses = int(text) if text else 1
@@ -2269,7 +2336,7 @@ def cmd_water(message):
 
 @bot.message_handler(commands=["sleep"])
 def cmd_sleep(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     text = message.text.replace("/sleep", "").strip()
     parts = text.split() if text else []
     try:
@@ -2287,7 +2354,7 @@ def cmd_sleep(message):
 
 @bot.message_handler(commands=["workout"])
 def cmd_workout(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     text = message.text.replace("/workout", "").strip()
     parts = text.split(maxsplit=1) if text else []
     workout_type = parts[0] if parts else "workout"
@@ -2302,7 +2369,7 @@ def cmd_workout(message):
 
 @bot.message_handler(commands=["health"])
 def cmd_health(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     from src.core.health_tracker import HealthTracker
     tracker = HealthTracker(aisha.supabase)
     text = tracker.format_summary_text()
@@ -2313,7 +2380,7 @@ def cmd_health(message):
 
 @bot.message_handler(commands=["digest"])
 def cmd_digest(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     bot.send_chat_action(message.chat.id, "typing")
     from src.core.digest_engine import DigestEngine
     digest = DigestEngine(aisha.memory, aisha.ai)
@@ -2325,7 +2392,7 @@ def cmd_digest(message):
 
 @bot.message_handler(commands=["retry"])
 def cmd_retry(message):
-    if not is_ajay(message): return unauthorized_response(message)
+    if not is_admin(message): return unauthorized_response(message)
     try:
         rows = (
             aisha.supabase.table("aisha_message_queue")
@@ -2363,7 +2430,7 @@ def cmd_updatekey(message):
     /updatekey GROQ_API_KEY gsk_newkeyhere
     Ajay sends the new key value, Aisha validates it and saves to DB.
     """
-    if not is_ajay(message):
+    if not is_admin(message):
         return unauthorized_response(message)
     parts = message.text.strip().split(maxsplit=2)
     if len(parts) < 3:
@@ -2381,7 +2448,7 @@ def cmd_updatekey(message):
 @bot.message_handler(commands=["keyhealth"])
 def cmd_keyhealth(message):
     """Run credential health check and report all API key statuses."""
-    if not is_ajay(message):
+    if not is_admin(message):
         return unauthorized_response(message)
     bot.send_message(message.chat.id, "Running key health check... this takes ~30 seconds.")
 
@@ -2400,7 +2467,7 @@ def cmd_keyhealth(message):
 @bot.message_handler(commands=["findapi"])
 def cmd_findapi(message):
     """Search web for how to get an API key for any platform and send Ajay a guide."""
-    if not is_ajay(message):
+    if not is_admin(message):
         return unauthorized_response(message)
     parts = message.text.strip().split(maxsplit=1)
     if len(parts) < 2 or not parts[1].strip():
@@ -2445,7 +2512,7 @@ def cmd_findapi(message):
 @bot.message_handler(commands=["instagram_setup", "instagram_auth"])
 def cmd_instagram_setup(message):
     """Generate and send the Meta OAuth URL so Ajay can reconnect Instagram."""
-    if not is_ajay(message):
+    if not is_admin(message):
         return unauthorized_response(message)
 
     app_id = os.getenv("INSTAGRAM_APP_ID", "")
@@ -2961,6 +3028,9 @@ if __name__ == "__main__":
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("deploy_skill_"))
 def handle_deploy_skill(call):
+    if not is_admin(call):
+        bot.answer_callback_query(call.id, "Unauthorized", show_alert=True)
+        return
     skill_name = call.data.replace("deploy_skill_", "")
     
     # We need the PR URL or number. Since we only have skill_name, 
@@ -3003,6 +3073,9 @@ def handle_deploy_skill(call):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("skip_skill_"))
 def handle_skip_skill(call):
+    if not is_admin(call):
+        bot.answer_callback_query(call.id, "Unauthorized", show_alert=True)
+        return
     skill_name = call.data.replace("skip_skill_", "")
     bot.answer_callback_query(call.id, text=f"Skipping {skill_name}")
     bot.edit_message_text(
