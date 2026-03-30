@@ -1,3 +1,4 @@
+import os
 import logging
 import smtplib
 from email.message import EmailMessage
@@ -53,14 +54,14 @@ class AutoErrorNotifier:
 def main():
     config = {
         'email': {
-            'to': 'recipient@example.com',
-            'from': 'sender@example.com',
-            'smtp_server': 'smtp.example.com',
-            'password': 'password'
+            'to': os.environ.get('SMTP_TO'),
+            'from': os.environ.get('SMTP_FROM'),
+            'smtp_server': os.environ.get('SMTP_SERVER'),
+            'password': os.environ.get('SMTP_PASSWORD')
         },
         'slack': {
-            'webhook_url': 'https://slack.com/webhook',
-            'channel': 'error-notifications'
+            'webhook_url': os.environ.get('SLACK_WEBHOOK_URL'),
+            'channel': os.environ.get('SLACK_CHANNEL', 'error-notifications')
         }
     }
     notifier = AutoErrorNotifier(config)
