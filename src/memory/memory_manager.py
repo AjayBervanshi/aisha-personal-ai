@@ -209,6 +209,11 @@ class MemoryManager:
         try:
             profile = self.get_profile()
 
+            # Explicitly load ALL Behavioral Rules and Corrections (Importance 5)
+            # This ensures Aisha never forgets a scolding or a newly learned rule
+            rules_res = self.db.table("aisha_memory").select("category, title, content").eq("category", "rule").order("created_at", desc=False).limit(20).execute()
+            rules_list = rules_res.data or []
+
             # Combine top static memories and semantic memories
             memories_list = self.get_top_memories(limit=5)
 
@@ -225,6 +230,11 @@ class MemoryManager:
                 f"[{m.get('category', 'OTHER').upper()}] {m.get('title', 'Memory')}: {m.get('content', '')}"
                 for m in memories_list
             )
+
+            rules_text = "\n".join(
+                f"- {r.get('content', '')}"
+                for r in rules_list
+            ) if rules_list else "No explicit behavioral rules learned yet."
 
             # Get today's tasks
             today = datetime.now().date().isoformat()
@@ -243,6 +253,7 @@ class MemoryManager:
             return {
                 "profile": profile,
                 "memories": memories_text,
+                "rules": rules_text,
                 "today_tasks": tasks_text,
             }
         except Exception as e:

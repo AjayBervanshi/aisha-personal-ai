@@ -61,8 +61,9 @@ db    = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def is_ajay(message) -> bool:
     """Only allow Ajay (by Telegram user ID) to access Aisha."""
-    if AUTHORIZED_ID == 0:
-        return True  # Not configured — allow all (dev mode)
+    if not AUTHORIZED_ID or AUTHORIZED_ID == 0:
+        log.error("CRITICAL SECURITY RISK: AUTHORIZED_ID is missing from .env. Locking down bot.")
+        return False  # Fail closed. Do NOT allow anyone to talk to her if ID is missing.
     return message.from_user.id == AUTHORIZED_ID
 
 

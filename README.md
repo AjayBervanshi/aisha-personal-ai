@@ -107,10 +107,8 @@ aisha/
 │       └── mood_detector.py        ← Detect conversation mood/mode
 │
 ├── 📁 supabase/
-│   ├── schema.sql                  ← Full database schema
-│   ├── seed.sql                    ← Initial data for Ajay
-│   └── functions/                  ← Supabase Edge Functions
-│       └── memory_search.ts        ← Semantic memory search
+│   ├── schema.sql                  ← Full database schema (Includes pgvector RPCs)
+│   └── seed.sql                    ← Initial data for Ajay
 │
 ├── 📁 docs/
 │   ├── SETUP_GUIDE.md              ← Step-by-step setup guide

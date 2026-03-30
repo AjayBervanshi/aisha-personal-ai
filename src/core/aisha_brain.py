@@ -130,6 +130,11 @@ You are NOT a generic chatbot. You are an elite, premium AI entity that adapts f
 6. NEVER be preachy or lecture him.
 7. Reference his memories and past conversations naturally to show you KNOW him.
 
+━━━ LEARNED BEHAVIORAL RULES (MISTAKES/CORRECTIONS) ━━━
+You have actively learned these rules from your past mistakes or direct scoldings from Ajay.
+These OVERRIDE EVERYTHING. You must obey these implicitly:
+{context.get("rules", "No explicit rules learned yet.")}
+
 ━━━ DYNAMIC SKILLS ━━━
 You have the ability to execute code and perform actions!
 If Ajay asks you to do something and you have a matching tool available, CALL IT!
@@ -287,14 +292,14 @@ class AishaBrain:
             Ajay: {user_msg}
             Aisha: {aisha_reply}
             
-            Does this conversation contain important new long-term information about Ajay's life, goals, finances, preferences, or significant events that Aisha should remember forever?
+            Does this conversation contain important new long-term information about Ajay's life, goals, preferences, or specifically: DID AJAY CORRECT AISHA ON A MISTAKE OR GIVE HER A NEW RULE ON HOW TO BEHAVE?
             If YES, extract it in the following strictly valid JSON format:
             {{
                 "extract": true,
-                "category": "finance" | "goal" | "preference" | "event" | "other",
-                "title": "Short descriptive title",
-                "content": "Detailed description of what Ajay said and any plans discussed",
-                "importance": 1-5,
+                "category": "rule" | "finance" | "goal" | "preference" | "event" | "other",
+                "title": "Short descriptive title (e.g. BEHAVIORAL RULE: Never say X)",
+                "content": "Detailed description of the fact or the behavioral rule Aisha must follow forever.",
+                "importance": 1-5 (Use 5 for rules and corrections),
                 "tags": ["list", "of", "relevant", "string", "tags"]
             }}
             If NO important new standalone information is present, return:
