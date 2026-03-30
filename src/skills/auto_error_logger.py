@@ -79,11 +79,11 @@ class AutoErrorLogger:
 
 def main():
     notification_config = {
-        'from': os.environ.get('SMTP_FROM', 'aisha.ai@example.com'),
-        'to': os.environ.get('SMTP_TO', 'developer@example.com'),
-        'smtp_server': os.environ.get('SMTP_SERVER', 'smtp.example.com'),
+        'from': os.environ.get('SMTP_FROM'),
+        'to': os.environ.get('SMTP_TO'),
+        'smtp_server': os.environ.get('SMTP_SERVER'),
         'smtp_port': int(os.environ.get('SMTP_PORT', 465)),
-        'password': os.environ.get('SMTP_PASSWORD', 'password')
+        'password': os.environ.get('SMTP_PASSWORD')
     }
     logger = AutoErrorLogger(notification_config)
 
@@ -92,11 +92,11 @@ def main():
         x = 1 / 0
     except Exception as e:
         # In a real scenario, ensure environment variables are set before sending notifications
-        if os.environ.get('SMTP_PASSWORD') and os.environ.get('SMTP_PASSWORD') != 'password':
+        if os.environ.get('SMTP_PASSWORD'):
             logger.handle_exception(e)
         else:
             logger.log_error(f"An error occurred: {e}")
-            logger.log_error("SMTP notification skipped: SMTP_PASSWORD not set or is default.")
+            logger.log_error("SMTP notification skipped: SMTP_PASSWORD not set.")
 
 if __name__ == '__main__':
     main()
