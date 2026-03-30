@@ -148,6 +148,7 @@ class NotificationEngine:
                 .execute()
             ).data or []
 
+            task_ids_to_update = []
             for task in tasks:
                 due_time_str = task.get("due_time")
                 if not due_time_str:
@@ -158,12 +159,16 @@ class NotificationEngine:
                     minutes_away = (due_dt - now).total_seconds() / 60
                     if 0 <= minutes_away <= 30:
                         self.task_reminder(task)
-                        # Mark reminder sent
-                        self.memory.db.table("aisha_schedule").update(
-                            {"reminder_sent": True}
-                        ).eq("id", task["id"]).execute()
+                        task_ids_to_update.append(task["id"])
                 except Exception:
                     continue
+
+            # Batch update reminder_sent for all triggered tasks
+            if task_ids_to_update:
+                self.memory.db.table("aisha_schedule").update(
+                    {"reminder_sent": True}
+                ).in_("id", task_ids_to_update).execute()
+
         except Exception as e:
             log.error("event=task_reminder_poll_failed — %s", str(e))
 
