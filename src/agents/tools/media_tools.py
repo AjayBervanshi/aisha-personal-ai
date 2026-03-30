@@ -32,3 +32,37 @@ def generate_image(prompt: str) -> str:
         return "Image generation failed."
     except Exception as e:
         return f"Error generating image: {e}"
+
+@tool("Sync Video")
+def sync_video(image_path: str, audio_path: str, output_filename: str) -> str:
+    """Uses ffmpeg (via subprocess) to combine a static generated image and an audio file into an .mp4 video. Provide the paths to the image, the audio, and the desired output filename (e.g., 'final_video.mp4')."""
+    import subprocess
+    import os
+
+    if not os.path.exists(image_path):
+        return f"Error: Image '{image_path}' not found."
+    if not os.path.exists(audio_path):
+        return f"Error: Audio '{audio_path}' not found."
+
+    output_path = os.path.join("temp_voice", output_filename)
+    os.makedirs("temp_voice", exist_ok=True)
+
+    try:
+        # ffmpeg command: -loop 1 (loop the single image), -i image, -i audio, -c:v libx264 (video codec),
+        # -tune stillimage, -c:a aac (audio codec), -b:a 192k (audio bitrate), -pix_fmt yuv420p (pixel format for compatibility),
+        # -shortest (end video when the shortest input (the audio) ends)
+        cmd = [
+            "ffmpeg", "-y", "-loop", "1", "-i", image_path, "-i", audio_path,
+            "-c:v", "libx264", "-tune", "stillimage", "-c:a", "aac", "-b:a", "192k",
+            "-pix_fmt", "yuv420p", "-shortest", output_path
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            return f"Video successfully synced and saved to {output_path}"
+        else:
+            return f"ffmpeg failed: {result.stderr}"
+    except FileNotFoundError:
+        return "Error: ffmpeg is not installed or not in PATH."
+    except Exception as e:
+        return f"Error syncing video: {e}"

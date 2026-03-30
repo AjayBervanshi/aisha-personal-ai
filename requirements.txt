@@ -27,3 +27,5 @@ uvicorn>=0.30.0                 # Web Server for API
 # Development
 pytest>=7.0.0                   # Testing
 python-json-logger>=2.0.0       # Structured logging
+google-api-python-client
+google-auth-oauthlib

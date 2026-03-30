@@ -2,7 +2,8 @@ from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
 
 from src.agents.dev_crew import get_llm
-from src.agents.tools.media_tools import generate_audio, generate_image
+from src.agents.tools.media_tools import generate_audio, generate_image, sync_video
+from src.agents.tools.youtube_tools import search_youtube_trends, upload_to_youtube
 
 @CrewBase
 class YouTubeCrew:
@@ -16,6 +17,7 @@ class YouTubeCrew:
         return Agent(
             config=self.agents_config['riya'],
             verbose=True,
+            tools=[search_youtube_trends],
             llm=get_llm("gemini", "gemini-1.5-flash") # Great for fast web research
         )
 
@@ -58,6 +60,7 @@ class YouTubeCrew:
         return Agent(
             config=self.agents_config['sync'],
             verbose=True,
+            tools=[sync_video],
             llm=get_llm("gemini", "gemini-1.5-flash") # For final orchestration
         )
 
@@ -66,6 +69,7 @@ class YouTubeCrew:
         return Agent(
             config=self.agents_config['cappy'],
             verbose=True,
+            tools=[upload_to_youtube],
             llm=get_llm("groq", "llama3-8b-8192") # Lightweight for title gen
         )
 
