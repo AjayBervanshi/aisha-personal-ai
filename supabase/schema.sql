@@ -149,7 +149,7 @@ create table if not exists yt_content (
 -- Aisha's Autonomous Journal (For non-code creative expressions, stories, and reflections)
 create table if not exists aisha_journal (
     id uuid primary key default gen_random_uuid(),
-    type text not null check (type in ('story', 'reflection', 'idea', 'dream')),
+    type text not null,
     title text,
     content text not null,
     created_at timestamp with time zone default timezone('utc'::text, now()),
