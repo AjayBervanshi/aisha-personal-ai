@@ -96,6 +96,17 @@ REQUIRED_TABLES: dict[str, str] = {
         CREATE INDEX IF NOT EXISTS idx_health_date
           ON aisha_health(date DESC);
     """,
+    "aisha_users": """
+        CREATE TABLE IF NOT EXISTS aisha_users (
+          telegram_user_id BIGINT PRIMARY KEY,
+          role TEXT NOT NULL DEFAULT 'guest',
+          first_name TEXT,
+          username TEXT,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW(),
+          CONSTRAINT valid_role CHECK (role IN ('admin', 'guest'))
+        );
+    """,
 }
 
 

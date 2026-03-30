@@ -498,6 +498,17 @@ class AishaBrain:
         context["is_owner"]     = is_owner
         context["user_message"] = user_message  # for format constraint detection
 
+        # Enhanced Guest Context
+        if not is_owner:
+            guest_instruction = (
+                f"You are talking to {caller_name} (a guest), NOT your owner Ajay. "
+                "Be helpful but do NOT divulge any details about Ajay's finances, "
+                "tasks, memories, or YouTube business."
+            )
+            # Prepend to user message for immediate visibility or append to system prompt
+            # builder.py handles is_owner, but we add it here for extra reinforcement
+            user_message = f"[System: {guest_instruction}]\n{user_message}"
+
         # 3. Build dynamic system prompt
         system_prompt = build_system_prompt(context)
 
