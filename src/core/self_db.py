@@ -29,6 +29,7 @@ REQUIRED_TABLES: dict[str, str] = {
           remind_at TIMESTAMPTZ NOT NULL,
           recurrence TEXT DEFAULT 'once',
           status TEXT DEFAULT 'pending',
+          workspace_id UUID REFERENCES aisha_workspaces(id),
           created_at TIMESTAMPTZ DEFAULT NOW()
         );
         CREATE INDEX IF NOT EXISTS idx_reminders_remind_at
@@ -44,6 +45,7 @@ REQUIRED_TABLES: dict[str, str] = {
           paid_via TEXT,
           notes TEXT,
           expense_date DATE DEFAULT CURRENT_DATE,
+          workspace_id UUID REFERENCES aisha_workspaces(id),
           created_at TIMESTAMPTZ DEFAULT NOW()
         );
         CREATE INDEX IF NOT EXISTS idx_expenses_date
@@ -102,9 +104,47 @@ REQUIRED_TABLES: dict[str, str] = {
           role TEXT NOT NULL DEFAULT 'guest',
           first_name TEXT,
           username TEXT,
+          permissions JSONB DEFAULT '{}'::JSONB,
           created_at TIMESTAMPTZ DEFAULT NOW(),
           updated_at TIMESTAMPTZ DEFAULT NOW(),
+          active_workspace_id UUID REFERENCES aisha_workspaces(id),
           CONSTRAINT valid_role CHECK (role IN ('admin', 'guest'))
+        );
+    """,
+    "aisha_workspaces": """
+        CREATE TABLE IF NOT EXISTS aisha_workspaces (
+          id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+          name TEXT NOT NULL,
+          type TEXT NOT NULL CHECK (type IN ('vault', 'studio', 'lobby')),
+          created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+    """,
+    "aisha_memory": """
+        CREATE TABLE IF NOT EXISTS aisha_memory (
+          id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+          category TEXT NOT NULL,
+          title TEXT NOT NULL,
+          content TEXT NOT NULL,
+          importance INTEGER DEFAULT 3,
+          tags TEXT[] DEFAULT ARRAY[]::TEXT[],
+          workspace_id UUID REFERENCES aisha_workspaces(id),
+          is_active BOOLEAN DEFAULT TRUE,
+          source TEXT DEFAULT 'conversation',
+          embedding VECTOR(768),
+          created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+    """,
+    "aisha_conversations": """
+        CREATE TABLE IF NOT EXISTS aisha_conversations (
+          id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+          platform TEXT NOT NULL,
+          role TEXT NOT NULL,
+          message TEXT NOT NULL,
+          language TEXT,
+          mood_detected TEXT,
+          workspace_id UUID REFERENCES aisha_workspaces(id),
+          embedding VECTOR(768),
+          created_at TIMESTAMPTZ DEFAULT NOW()
         );
     """,
 }
@@ -143,11 +183,36 @@ def _run_sql(sql: str) -> tuple[bool, str]:
         return False, str(e)
 
 
+def migrate_schema():
+    """Apply migrations to existing tables (add columns, etc.)."""
+    if not PAT or not PROJECT_REF:
+        return
+
+    migrations = [
+        # Add permissions and active_workspace_id to aisha_users
+        "ALTER TABLE aisha_users ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}'::JSONB;",
+        "ALTER TABLE aisha_users ADD COLUMN IF NOT EXISTS active_workspace_id UUID REFERENCES aisha_workspaces(id);",
+        # Add workspace_id to core tables
+        "ALTER TABLE aisha_memory ADD COLUMN IF NOT EXISTS workspace_id UUID REFERENCES aisha_workspaces(id);",
+        "ALTER TABLE aisha_conversations ADD COLUMN IF NOT EXISTS workspace_id UUID REFERENCES aisha_workspaces(id);",
+        "ALTER TABLE aisha_schedule ADD COLUMN IF NOT EXISTS workspace_id UUID REFERENCES aisha_workspaces(id);",
+        "ALTER TABLE aisha_finance ADD COLUMN IF NOT EXISTS workspace_id UUID REFERENCES aisha_workspaces(id);",
+        "ALTER TABLE aisha_reminders ADD COLUMN IF NOT EXISTS workspace_id UUID REFERENCES aisha_workspaces(id);",
+    ]
+
+    for sql in migrations:
+        _run_sql(sql)
+
+
 def check_and_repair() -> dict[str, str]:
     """
     Check all required tables. Create any that are missing.
     Returns {table_name: "ok" | "created" | "failed: <reason>"}.
     """
+    # 1. Run migrations first to ensure columns exist on existing tables
+    migrate_schema()
+
+    # 2. Run standard table checks
     results: dict[str, str] = {}
     for table, ddl in REQUIRED_TABLES.items():
         if _table_exists(table):

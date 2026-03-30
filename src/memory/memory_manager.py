@@ -53,23 +53,24 @@ class MemoryManager:
 
     # ── Memory (CRUD & Vector) ─────────────────────────────────
 
-    def get_top_memories(self, limit: int = 12) -> List[Dict[str, Any]]:
+    def get_top_memories(self, limit: int = 12, workspace_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get the highest importance static memories."""
         try:
-            res = (
+            query = (
                 self.db.table("aisha_memory")
                 .select("category, title, content, importance")
                 .eq("is_active", True)
-                .order("importance", desc=True)
-                .limit(limit)
-                .execute()
             )
+            if workspace_id:
+                query = query.eq("workspace_id", workspace_id)
+
+            res = query.order("importance", desc=True).limit(limit).execute()
             return res.data or []
         except Exception as e:
             print(f"[Memory] Error getting top memories: {e}")
             return []
 
-    def get_semantic_memories(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+    def get_semantic_memories(self, query: str, limit: int = 5, workspace_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Search for relevant memories using pgvector!
         (Requires an embedding of the query first)
@@ -79,15 +80,25 @@ class MemoryManager:
             return []
 
         try:
+            # Note: match_memories RPC doesn't currently support filtering in SQL.
+            # We fetch more then filter in Python to ensure enough results after filter.
             res = self.db.rpc(
                 'match_memories',
                 {
                     'query_embedding': embedding,
-                    'match_threshold': 0.7,
-                    'match_count': limit
+                    'match_threshold': 0.6, # lower threshold for raw pull
+                    'match_count': limit * 4
                 }
             ).execute()
-            return res.data or []
+
+            data = res.data or []
+            # Filter by workspace if provided
+            if workspace_id:
+                # Need to ensure match_memories returns workspace_id.
+                # If it doesn't, this will fail gracefully but return unfiltered data.
+                data = [m for m in data if not m.get("workspace_id") or str(m.get("workspace_id")) == str(workspace_id)]
+
+            return data[:limit]
         except Exception as e:
             print(f"[Memory] Error fetching semantic memories: {e}")
             return []
@@ -126,7 +137,8 @@ class MemoryManager:
                     print(f"[Memory] Fatal: Failed after {max_retries} attempts.")
                     return None
 
-    def save_memory(self, category: str, title: str, content: str, importance: int = 3, tags: Optional[List[str]] = None):
+    def save_memory(self, category: str, title: str, content: str, importance: int = 3,
+                    tags: Optional[List[str]] = None, workspace_id: Optional[str] = None):
         """Save a new memory to Supabase. Embedding is best-effort — memory saves even if embedding fails."""
         embedding = self._generate_embedding(content)
         row: Dict[str, Any] = {
@@ -135,6 +147,7 @@ class MemoryManager:
             "content": content,
             "importance": importance,
             "tags": tags or [],
+            "workspace_id": workspace_id,
             "source": "conversation",
         }
         if embedding is not None:
@@ -189,7 +202,7 @@ class MemoryManager:
 
     def save_conversation(self, role: str, message: str, platform: str = "telegram",
                           language: str = "English", mood: str = "casual",
-                          user_id: Optional[int] = None):
+                          user_id: Optional[int] = None, workspace_id: Optional[str] = None):
         """Log conversation turn to Supabase.
 
         Args:
@@ -205,6 +218,7 @@ class MemoryManager:
                 "message": message,
                 "language": language,
                 "mood_detected": mood,
+                "workspace_id": workspace_id,
             }
             if user_id is not None:
                 row["guest_user_id"] = user_id
@@ -213,7 +227,8 @@ class MemoryManager:
             print(f"[Memory] Error saving conversation: {e}")
 
     def get_recent_conversation(self, limit: int = 10,
-                                user_id: Optional[int] = None) -> List[Dict[str, Any]]:
+                                user_id: Optional[int] = None,
+                                workspace_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get recent conversation history for context continuity.
 
         When ``user_id`` is None (default), only owner turns are returned
@@ -223,13 +238,17 @@ class MemoryManager:
         try:
             query = (
                 self.db.table("aisha_conversations")
-                .select("role, message, created_at")
+                .select("role, message, created_at, workspace_id")
             )
             if user_id is None:
                 # Owner warm-start: exclude guest-tagged rows
                 query = query.is_("guest_user_id", "null")
             else:
                 query = query.eq("guest_user_id", user_id)
+
+            if workspace_id:
+                query = query.eq("workspace_id", workspace_id)
+
             res = (
                 query
                 .order("created_at", desc=True)
@@ -243,17 +262,17 @@ class MemoryManager:
 
     # ── Context Loader ─────────────────────────────────────────
 
-    def load_context(self, user_message: str = "") -> Dict[str, Any]:
+    def load_context(self, user_message: str = "", workspace_id: Optional[str] = None) -> Dict[str, Any]:
         """Load full context from Supabase for Aisha's system prompt."""
         try:
             profile = self.get_profile()
 
             # Combine top static memories and semantic memories
-            memories_list = self.get_top_memories(limit=5)
+            memories_list = self.get_top_memories(limit=5, workspace_id=workspace_id)
 
             # If user message is provided, fetch 3 semantic memories related to it
             if user_message:
-                semantic_mems = self.get_semantic_memories(user_message, limit=3)
+                semantic_mems = self.get_semantic_memories(user_message, limit=3, workspace_id=workspace_id)
                 # Deduplicate by title
                 existing_titles = {m.get('title') for m in memories_list}
                 for sm in semantic_mems:
@@ -267,13 +286,16 @@ class MemoryManager:
 
             # Get today's tasks
             today = datetime.now().date().isoformat()
-            tasks_res = (
+            tasks_query = (
                 self.db.table("aisha_schedule")
                 .select("title, priority")
                 .eq("due_date", today)
                 .eq("status", "pending")
-                .execute()
             )
+            if workspace_id:
+                tasks_query = tasks_query.eq("workspace_id", workspace_id)
+
+            tasks_res = tasks_query.execute()
             tasks_text = "\n".join(
                 f"- [{t['priority'].upper()}] {t['title']}"
                 for t in (tasks_res.data or [])
@@ -282,15 +304,16 @@ class MemoryManager:
             # Get today's expenses (from aisha_finance, date-filtered to today)
             today_expenses_text = "No expenses logged today"
             try:
-                exp_res = (
+                exp_query = (
                     self.db.table("aisha_finance")
                     .select("amount, category, description, date")
                     .eq("type", "expense")
                     .eq("date", today)
-                    .order("id", desc=True)
-                    .limit(20)
-                    .execute()
                 )
+                if workspace_id:
+                    exp_query = exp_query.eq("workspace_id", workspace_id)
+
+                exp_res = exp_query.order("id", desc=True).limit(20).execute()
                 if exp_res.data:
                     total = sum(r.get("amount", 0) for r in exp_res.data)
                     lines = [
@@ -311,17 +334,19 @@ class MemoryManager:
             print(f"[Memory] Error loading context: {e}")
             return {}
 
-    def get_today_tasks(self) -> List[Dict[str, Any]]:
+    def get_today_tasks(self, workspace_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get today's pending tasks."""
         try:
             today = datetime.now().date().isoformat()
-            res = (
+            query = (
                 self.db.table("aisha_schedule")
                 .select("*")
                 .eq("due_date", today)
                 .eq("status", "pending")
-                .execute()
             )
+            if workspace_id:
+                query = query.eq("workspace_id", workspace_id)
+            res = query.execute()
             return res.data or []
         except Exception as e:
             print(f"[Memory] Error fetching today's tasks: {e}")

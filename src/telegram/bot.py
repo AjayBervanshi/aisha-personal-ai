@@ -302,6 +302,90 @@ def mood_keyboard():
 
 # ─── Commands ─────────────────────────────────────────────────────────────────
 
+@bot.message_handler(commands=["team"])
+def cmd_team(message):
+    """CEO Dashboard: View and manage collaborators and workspaces."""
+    if not is_admin(message): return unauthorized_response(message)
+
+    try:
+        # 1. Fetch Workspaces
+        ws_res = db.table("aisha_workspaces").select("*").execute()
+        workspaces = {w["id"]: w for w in (ws_res.data or [])}
+
+        # 2. Fetch Collaborators
+        user_res = db.table("aisha_users").select("*").execute()
+        users = user_res.data or []
+
+        # 3. Format Report
+        lines = ["📊 *Aisha Enterprise Dashboard*\n"]
+
+        lines.append("📁 *Workspaces:*")
+        if not workspaces:
+            lines.append("  _No workspaces defined._")
+        else:
+            for wid, w in workspaces.items():
+                lines.append(f"  • `{w['name']}` ({w['type'].title()})")
+
+        lines.append("\n👥 *Team:*")
+        if not users:
+            lines.append("  _No collaborators yet._")
+        else:
+            for u in users:
+                role = u.get("role", "guest").title()
+                name = u.get("first_name", "Unknown")
+                ws_id = u.get("active_workspace_id")
+                ws_name = workspaces.get(ws_id, {}).get("name", "None")
+                lines.append(f"  • *{name}* ({role}) | WS: `{ws_name}`")
+
+        lines.append("\n_Use /workspace <name> to switch your active context._")
+        bot.send_message(message.chat.id, "\n".join(lines), parse_mode="Markdown")
+    except Exception as e:
+        log.error(f"cmd_team error: {e}")
+        bot.send_message(message.chat.id, f"❌ Error loading dashboard: {e}")
+
+
+@bot.message_handler(commands=["workspace"])
+def cmd_workspace(message):
+    """Switch the current user's active workspace context."""
+    if not is_authorized(message): return unauthorized_response(message)
+
+    arg = message.text.replace("/workspace", "").strip()
+    uid = message.from_user.id
+
+    if not arg:
+        bot.send_message(message.chat.id, "Usage: `/workspace <name_or_id>`", parse_mode="Markdown")
+        return
+
+    try:
+        # Find workspace by name or ID
+        ws_res = db.table("aisha_workspaces").select("*").execute()
+        target = None
+        for w in (ws_res.data or []):
+            if arg.lower() in w["name"].lower() or arg == w["id"]:
+                target = w
+                break
+
+        if not target:
+            bot.send_message(message.chat.id, f"❌ Workspace '{arg}' not found.")
+            return
+
+        # Update user's active workspace
+        db.table("aisha_users").update({"active_workspace_id": target["id"]}).eq("telegram_user_id", uid).execute()
+
+        # Clear in-memory brain history for this user to force context refresh
+        aisha.reset_session(caller_id=uid)
+
+        bot.send_message(
+            message.chat.id,
+            f"✅ Context switched to: *{target['name']}* ({target['type'].title()})\n"
+            "I'm now focused on this workspace! 💜",
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        log.error(f"cmd_workspace error: {e}")
+        bot.send_message(message.chat.id, f"❌ Error switching workspace: {e}")
+
+
 @bot.message_handler(commands=["start"])
 def cmd_start(message):
     if not is_authorized(message): return unauthorized_response(message)
@@ -2837,6 +2921,8 @@ if __name__ == "__main__":
 
     bot.set_my_commands([
         telebot.types.BotCommand("/start",   "Start / Greet Aisha"),
+        telebot.types.BotCommand("/team",    "CEO Dashboard (Team & Workspaces)"),
+        telebot.types.BotCommand("/workspace", "Switch active workspace context"),
         telebot.types.BotCommand("/today",   "Today's summary"),
         telebot.types.BotCommand("/mood",    "Log your mood"),
         telebot.types.BotCommand("/expense", "Log an expense"),

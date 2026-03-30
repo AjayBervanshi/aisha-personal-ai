@@ -490,18 +490,22 @@ class AishaBrain:
         # when caller_id is None so that old call-sites stay compatible.
         uid = caller_id if caller_id is not None else 0
 
-        # Fetch user permissions for granular access control
+        # Fetch user permissions and active workspace for granular access control
         permissions = {}
+        active_workspace_id = None
         if uid != 0:
             try:
-                res = self.supabase.table("aisha_users").select("permissions").eq("telegram_user_id", uid).execute()
+                res = self.supabase.table("aisha_users").select("permissions, active_workspace_id").eq("telegram_user_id", uid).execute()
                 if res.data:
-                    permissions = res.data[0].get("permissions", {})
+                    row = res.data[0]
+                    permissions = row.get("permissions", {})
+                    active_workspace_id = row.get("active_workspace_id")
             except Exception as e:
-                print(f"[Brain] Error loading perms for {uid}: {e}")
+                print(f"[Brain] Error loading user data for {uid}: {e}")
 
-        # 2. Load context — only load Ajay's private data when Ajay is talking
-        context = self.memory.load_context(user_message) if is_owner else {}
+        # 2. Load context — only load Ajay's private data when Ajay is talking in the vault
+        # or if it's a shared workspace context.
+        context = self.memory.load_context(user_message, workspace_id=active_workspace_id) if (is_owner or active_workspace_id) else {}
         context["language"]     = language
         context["mood"]         = mood
         context["caller_name"]  = caller_name
@@ -533,9 +537,11 @@ class AishaBrain:
             # Save to history so context stays coherent
             history.append({"role": "assistant", "content": intent_response})
             self.memory.save_conversation("user", user_message, platform, language, mood,
-                                          user_id=caller_id if not is_owner else None)
+                                          user_id=caller_id if not is_owner else None,
+                                          workspace_id=active_workspace_id)
             self.memory.save_conversation("assistant", intent_response, platform, language, mood,
-                                          user_id=caller_id if not is_owner else None)
+                                          user_id=caller_id if not is_owner else None,
+                                          workspace_id=active_workspace_id)
             return intent_response
 
         # 5. Determine preferred provider (e.g. Riya loves Grok)
@@ -619,9 +625,11 @@ class AishaBrain:
             # Persist to DB — guest turns are tagged with their user_id so they
             # stay isolated from the owner's conversation log.
             self.memory.save_conversation("user", user_message, platform, language, mood,
-                                          user_id=caller_id if not is_owner else None)
+                                          user_id=caller_id if not is_owner else None,
+                                          workspace_id=active_workspace_id)
             self.memory.save_conversation("assistant", response_text, platform, language, mood,
-                                          user_id=caller_id if not is_owner else None)
+                                          user_id=caller_id if not is_owner else None,
+                                          workspace_id=active_workspace_id)
             # Only update Ajay's mood profile when Ajay is talking
             if is_owner:
                 self.memory.update_mood(mood, mood_res.score)
@@ -645,7 +653,7 @@ class AishaBrain:
                     import threading as _mt
                     _mt.Thread(
                         target=self._auto_extract_memory,
-                        args=(user_message, response_text),
+                        args=(user_message, response_text, active_workspace_id),
                         daemon=True,
                     ).start()
 
@@ -700,7 +708,7 @@ class AishaBrain:
 
 
 
-    def _auto_extract_memory(self, user_msg: str, aisha_reply: str):
+    def _auto_extract_memory(self, user_msg: str, aisha_reply: str, workspace_id: str = None):
         """
         Auto-detect important information in the conversation and save to memory.
         Enhanced with an LLM prompt to dynamically parse context into JSON!
@@ -743,7 +751,8 @@ class AishaBrain:
                         title=f"{data.get('title', 'Memory')} - {datetime.now().strftime('%d %b %Y')}",
                         content=data.get("content", f"Ajay said: {user_msg[:300]}"),
                         importance=data.get("importance", 3),
-                        tags=data.get("tags", ["auto-extracted"])
+                        tags=data.get("tags", ["auto-extracted"]),
+                        workspace_id=workspace_id
                     )
         except Exception as e:
             print(f"[Memory Extraction LLM] Error: {e}")

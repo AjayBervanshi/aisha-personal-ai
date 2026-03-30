@@ -10,6 +10,14 @@ create table if not exists ajay_profile (
     updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
+-- Workspaces Table (AI Enterprise Architecture)
+create table if not exists aisha_workspaces (
+    id uuid primary key default gen_random_uuid(),
+    name text not null,
+    type text not null check (type in ('vault', 'studio', 'lobby')),
+    created_at timestamp with time zone default timezone('utc'::text, now())
+);
+
 -- Active Memory (Existing text-based memory, now enhanced)
 create table if not exists aisha_memory (
     id uuid primary key default gen_random_uuid(),
@@ -18,6 +26,7 @@ create table if not exists aisha_memory (
     content text not null,
     importance integer default 3,
     tags text[] default array[]::text[],
+    workspace_id uuid references aisha_workspaces(id),
     is_active boolean default true,
     source text default 'conversation',
     embedding vector(768), -- Added for semantic search!
@@ -62,6 +71,7 @@ create table if not exists aisha_conversations (
     message text not null,
     language text,
     mood_detected text,
+    workspace_id uuid references aisha_workspaces(id),
     embedding vector(768),
     created_at timestamp with time zone default timezone('utc'::text, now())
 );
@@ -73,6 +83,7 @@ create table if not exists aisha_schedule (
     priority text default 'medium',
     status text default 'pending',
     due_date date,
+    workspace_id uuid references aisha_workspaces(id),
     created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
@@ -84,6 +95,7 @@ create table if not exists aisha_goals (
     progress integer default 0,
     timeframe text,
     status text default 'active',
+    workspace_id uuid references aisha_workspaces(id),
     created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
@@ -94,6 +106,7 @@ create table if not exists aisha_finance (
     type text, -- 'expense', 'income'
     date date,
     description text,
+    workspace_id uuid references aisha_workspaces(id),
     created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
@@ -157,6 +170,8 @@ create table if not exists aisha_users (
     role text not null default 'guest', -- 'admin', 'guest'
     first_name text,
     username text,
+    permissions jsonb default '{}'::jsonb,
+    active_workspace_id uuid references aisha_workspaces(id),
     created_at timestamp with time zone default timezone('utc'::text, now()),
     updated_at timestamp with time zone default timezone('utc'::text, now()),
     constraint valid_role check (role in ('admin', 'guest'))
