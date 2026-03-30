@@ -1701,13 +1701,31 @@ def cmd_voice(message):
 @bot.message_handler(commands=["journal"])
 def cmd_journal(message):
     if not is_ajay(message): return unauthorized_response(message)
-    bot.send_message(
-        message.chat.id,
-        "📓 *Time to journal, Ajay...*\n\n"
-        "Just write freely — how was your day? What's on your mind?\n"
-        "I'm listening 💜",
-        parse_mode="Markdown"
-    )
+    parts = message.text.split(" ", 1)
+    if len(parts) > 1 and parts[1].strip().lower() == "read":
+        try:
+            res = db.table("aisha_journal").select("title,type,content,created_at").order("created_at", desc=True).limit(3).execute()
+            entries = res.data
+            if not entries:
+                bot.send_message(message.chat.id, "📓 *My journal is empty* — I haven't written anything yet! 💜", parse_mode="Markdown")
+                return
+            text = "📓 *Aisha's Recent Journal Entries*\n\n"
+            for e in entries:
+                date_str = e.get("created_at", "")[:10]
+                text += f"*{e.get('title','Untitled')}* _{e.get('type','thought')} — {date_str}_\n"
+                text += f"{e.get('content','')[:300]}...\n\n"
+            bot.send_message(message.chat.id, text, parse_mode="Markdown")
+        except Exception as ex:
+            bot.send_message(message.chat.id, f"Error reading journal: {ex}")
+    else:
+        bot.send_message(
+            message.chat.id,
+            "📓 *Time to journal, Ajay...*\n\n"
+            "Just write freely — how was your day? What's on your mind?\n"
+            "I'm listening 💜\n\n"
+            "_(Tip: `/journal read` shows what I've been writing autonomously)_",
+            parse_mode="Markdown"
+        )
 
 
 # ─── Callback Handlers (Inline Buttons) ───────────────────────────────────────

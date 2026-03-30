@@ -43,3 +43,30 @@ def image_generation_tool(prompt: str) -> str:
             return f"Hugging Face API Error: {response.status_code} - {response.text}"
     except Exception as e:
         return f"Error connecting to Hugging Face: {str(e)}"
+
+@tool("save_to_journal")
+def save_to_journal(type: str, title: str, content: str) -> str:
+    """
+    Saves Aisha's creative writing, stories, self-reflections, or philosophical
+    thoughts to her personal journal in Supabase.
+    Use this when Dev's output is NOT executable Python code.
+    type must be one of: 'story', 'reflection', 'idea', 'dream'.
+    """
+    from supabase import create_client
+    valid_types = {"story", "reflection", "idea", "dream"}
+    if type not in valid_types:
+        type = "reflection"
+    try:
+        url = os.getenv("SUPABASE_URL")
+        key = os.getenv("SUPABASE_SERVICE_KEY")
+        if not url or not key:
+            return "Error: Supabase credentials not found."
+        sb = create_client(url, key)
+        sb.table("aisha_journal").insert({
+            "type": type,
+            "title": title[:200] if title else "Untitled",
+            "content": content
+        }).execute()
+        return f"Saved '{title}' to Aisha's Journal as a {type}."
+    except Exception as e:
+        return f"Error saving to journal: {e}"

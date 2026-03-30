@@ -1,5 +1,6 @@
 from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
+from src.agents.tools import save_to_journal
 
 @CrewBase
 class DevCrew:
@@ -28,6 +29,7 @@ class DevCrew:
     def reviewer(self) -> Agent:
         return Agent(
             config=self.agents_config['reviewer'],
+            tools=[save_to_journal],
             verbose=True,
             allow_delegation=False
         )
