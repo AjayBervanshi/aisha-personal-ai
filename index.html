@@ -644,9 +644,9 @@
         <div class="header-status" id="status-text">Online · Always here for you</div>
       </div>
       <div class="header-actions">
-        <button class="icon-btn" id="voice-toggle-btn" onclick="toggleVoiceOutput()" title="Toggle voice">🔊</button>
-        <button class="icon-btn" onclick="clearChat()" title="Clear chat">🗑️</button>
-        <button class="icon-btn" onclick="toggleSettings()" title="Settings">⚙️</button>
+        <button class="icon-btn" id="voice-toggle-btn" onclick="toggleVoiceOutput()" title="Toggle voice" aria-label="Toggle voice">🔊</button>
+        <button class="icon-btn" onclick="clearChat()" title="Clear chat" aria-label="Clear chat">🗑️</button>
+        <button class="icon-btn" onclick="toggleSettings()" title="Settings" aria-label="Settings">⚙️</button>
       </div>
     </div>
 
@@ -687,9 +687,9 @@
         <div class="text-wrap">
           <textarea id="user-input" placeholder="Talk to Aisha..." rows="1" onkeydown="handleKey(event)"
             oninput="autoResize(this)"></textarea>
-          <button class="mic-btn" id="mic-btn" onclick="toggleMic()" title="Voice input">🎙️</button>
+          <button class="mic-btn" id="mic-btn" onclick="toggleMic()" title="Voice input" aria-label="Voice input">🎙️</button>
         </div>
-        <button class="send-btn" onclick="sendMessage()" title="Send">➤</button>
+        <button class="send-btn" onclick="sendMessage()" title="Send" aria-label="Send message">➤</button>
       </div>
     </div>
 
@@ -697,14 +697,14 @@
     <div class="panel" id="settings-panel">
       <div class="panel-header">
         <div class="panel-title">⚙️ Settings</div>
-        <button class="panel-close" onclick="toggleSettings()">✕</button>
+        <button class="panel-close" onclick="toggleSettings()" aria-label="Close settings">✕</button>
       </div>
       <div class="panel-body">
         <div class="setting-section">
           <div class="setting-label">Voice</div>
           <div class="setting-row">
             <span class="setting-name">🔊 Voice Output</span>
-            <button class="toggle on" id="voice-toggle" onclick="toggleVoiceOutput()"></button>
+            <button class="toggle on" id="voice-toggle" onclick="toggleVoiceOutput()" aria-label="Toggle voice output"></button>
           </div>
           <div class="setting-row" onclick="changeVoice()">
             <span class="setting-name">🎵 Voice Style</span>
@@ -712,7 +712,7 @@
           </div>
           <div class="setting-row">
             <span class="setting-name">🎙️ Voice Input</span>
-            <button class="toggle on" id="mic-toggle"></button>
+            <button class="toggle on" id="mic-toggle" aria-label="Toggle voice input"></button>
           </div>
         </div>
         <div class="setting-section">
@@ -726,7 +726,7 @@
           <div class="setting-label">Appearance</div>
           <div class="setting-row">
             <span class="setting-name">🌙 Dark Mode</span>
-            <button class="toggle on"></button>
+            <button class="toggle on" aria-label="Toggle dark mode"></button>
           </div>
         </div>
         <div class="setting-section">
@@ -791,8 +791,8 @@
         <div style="display:flex;align-items:center;gap:6px">
           <div class="msg-time">${msgTime}</div>
           <div class="msg-actions">
-            <button class="msg-action-btn" onclick="speakText(this)" data-text="${text.replace(/"/g, '&quot;')}">🔊</button>
-            <button class="msg-action-btn" onclick="copyText('${text.replace(/'/g, "\\'")}')">📋</button>
+            <button class="msg-action-btn" onclick="speakText(this)" data-text="${text.replace(/"/g, '&quot;')}" aria-label="Speak message">🔊</button>
+            <button class="msg-action-btn" onclick="copyText('${text.replace(/'/g, "\\'")}')" aria-label="Copy message text">📋</button>
           </div>
         </div>
       </div>`;
