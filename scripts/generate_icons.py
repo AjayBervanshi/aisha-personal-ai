@@ -11,6 +11,12 @@ import os
 import sys
 from pathlib import Path
 
+# Fix Windows cp1252 console encoding
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
 def generate_icons():
     """Generate PWA icons using only Python stdlib + optional Pillow."""
     icons_dir = Path(__file__).parent.parent / "src" / "web" / "icons"

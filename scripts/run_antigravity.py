@@ -14,6 +14,12 @@ import logging
 import os
 import sys
 
+# Fix Windows cp1252 console encoding
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.agents.antigravity_agent import AntigravityAgent

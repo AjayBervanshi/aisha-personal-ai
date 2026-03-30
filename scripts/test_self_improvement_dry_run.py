@@ -11,6 +11,12 @@ Run: python scripts/test_self_improvement_dry_run.py
 """
 import sys
 import os
+
+# Fix Windows cp1252 console encoding
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
 from pathlib import Path
 from unittest.mock import patch, MagicMock, call
 

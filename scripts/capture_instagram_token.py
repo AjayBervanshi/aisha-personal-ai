@@ -2,8 +2,15 @@
 Playwright script to capture Instagram FB token from Graph Explorer.
 Runs in foreground, polls for EAA token, saves to file then exits.
 """
+import sys
 from playwright.sync_api import sync_playwright
 import time, json
+
+# Fix Windows cp1252 console encoding
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
 from pathlib import Path
 
 TOKEN_OUT = Path(__file__).parent.parent / "tokens" / "instagram_fb_token.txt"

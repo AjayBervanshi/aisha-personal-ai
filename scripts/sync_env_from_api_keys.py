@@ -16,6 +16,12 @@ from __future__ import annotations
 import json
 import os
 import sys
+
+# Fix Windows cp1252 console encoding
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
 from pathlib import Path
 from typing import Callable, Dict, Tuple
 
