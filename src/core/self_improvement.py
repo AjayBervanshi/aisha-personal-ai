@@ -96,3 +96,50 @@ def notify_ajay_for_approval(skill_name: str, pr_url: str):
         "parse_mode": "Markdown",
         "reply_markup": json.dumps(keyboard)
     })
+
+def merge_github_pr(branch_name: str) -> bool:
+    """
+    Merges the pull request for a specific branch via GitHub API.
+    """
+    token = os.getenv("GITHUB_TOKEN")
+    repo = os.getenv("GITHUB_REPO")
+
+    if not token or not repo:
+        log.warning("No GitHub credentials found. Can't merge PR.")
+        return False
+
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+
+    base_url = f"https://api.github.com/repos/{repo}"
+
+    try:
+        # Find the open PR for this head branch
+        prs = requests.get(f"{base_url}/pulls?state=open&head={repo.split('/')[0]}:{branch_name}", headers=headers, timeout=10).json()
+        if not prs:
+            log.warning(f"No open PR found for branch {branch_name}")
+            return False
+
+        pr_num = prs[0]["number"]
+
+        # Merge it
+        res = requests.put(f"{base_url}/pulls/{pr_num}/merge", headers=headers, json={
+            "merge_method": "squash"
+        }, timeout=10)
+
+        if res.status_code in [200, 201]:
+            # Delete the branch after successful merge
+            requests.delete(f"{base_url}/git/refs/heads/{branch_name}", headers=headers, timeout=5)
+
+            # Fire the redeploy hook!
+            hook = os.getenv("RENDER_DEPLOY_HOOK")
+            if hook:
+                requests.post(hook, timeout=5)
+            return True
+
+        return False
+    except Exception as e:
+        log.error(f"Failed to merge PR: {e}")
+        return False

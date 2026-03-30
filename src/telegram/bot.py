@@ -446,7 +446,8 @@ def handle_voice(message):
                 lang_info = detect_language(transcribed_text)
                 language = lang_info.get("language", "English") if isinstance(lang_info, dict) else "English"
                 
-                voice_reply = generate_voice(response, language=language, mood=mood)
+                mood_str = mood.mood if hasattr(mood, 'mood') else mood
+                voice_reply = generate_voice(response, language=language, mood=mood_str)
                 if voice_reply:
                     with open(voice_reply, "rb") as vf:
                         bot.send_voice(message.chat.id, vf)
@@ -493,7 +494,8 @@ def handle_photo(message):
                 lang_info = detect_language(user_text)
                 language = lang_info.get("language", "English") if isinstance(lang_info, dict) else "English"
                 
-                voice_reply = generate_voice(response, language=language, mood=mood)
+                mood_str = mood.mood if hasattr(mood, 'mood') else mood
+                voice_reply = generate_voice(response, language=language, mood=mood_str)
                 if voice_reply:
                     with open(voice_reply, "rb") as vf:
                         bot.send_voice(message.chat.id, vf)
@@ -542,7 +544,8 @@ def handle_text(message, override_text=None):
                 lang_info = detect_language(user_text)
                 language = lang_info.get("language", "English") if isinstance(lang_info, dict) else "English"
                 
-                voice_path = generate_voice(response, language=language, mood=mood)
+                mood_str = mood.mood if hasattr(mood, 'mood') else mood
+                voice_path = generate_voice(response, language=language, mood=mood_str)
                 if voice_path:
                     with open(voice_path, "rb") as voice_file:
                         bot.send_voice(message.chat.id, voice_file)
@@ -584,6 +587,9 @@ if __name__ == "__main__":
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("deploy_skill_"))
 def handle_deploy_skill(call):
+    if not is_ajay(call.message): return bot.answer_callback_query(call.id, text="Unauthorized", show_alert=True)
+    import src.core.self_improvement as si
+
     skill_name = call.data.replace("deploy_skill_", "")
     bot.answer_callback_query(call.id, text=f"Deploying {skill_name} now! 🚀")
     bot.edit_message_text(
@@ -593,10 +599,17 @@ def handle_deploy_skill(call):
         message_id=call.message.message_id,
         parse_mode="Markdown"
     )
-    # Trigger deployment webhook or merge PR logic here
+
+    success = si.merge_github_pr(branch_name=f"skill-{skill_name}")
+    if success:
+        bot.send_message(call.message.chat.id, "✅ Code merged successfully! Deploying now...")
+    else:
+        bot.send_message(call.message.chat.id, "⚠️ Couldn't merge PR automatically. Please check GitHub!")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("skip_skill_"))
 def handle_skip_skill(call):
+    if not is_ajay(call.message): return bot.answer_callback_query(call.id, text="Unauthorized", show_alert=True)
+
     skill_name = call.data.replace("skip_skill_", "")
     bot.answer_callback_query(call.id, text=f"Skipping {skill_name}")
     bot.edit_message_text(
