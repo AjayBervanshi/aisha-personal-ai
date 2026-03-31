@@ -84,6 +84,8 @@
       box-shadow: 0 0 20px rgba(155, 89, 245, 0.5);
       position: relative;
       cursor: pointer;
+      border: none;
+      font-family: inherit;
     }
 
     .avatar::after {
@@ -170,6 +172,7 @@
       cursor: pointer;
       transition: all 0.2s;
       flex-shrink: 0;
+      font-family: inherit;
     }
 
     .mode-pill:hover,
@@ -629,6 +632,13 @@
     .msg {
       animation: fadeUp 0.3s ease;
     }
+
+    button:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
   </style>
 </head>
 
@@ -638,7 +648,7 @@
 
     <!-- Header -->
     <div class="header">
-      <div class="avatar" onclick="toggleSettings()">💜</div>
+      <button class="avatar" onclick="toggleSettings()" aria-label="Open settings">💜</button>
       <div class="header-info">
         <div class="header-name">Aisha</div>
         <div class="header-status" id="status-text">Online · Always here for you</div>
@@ -652,11 +662,11 @@
 
     <!-- Mode Pills -->
     <div class="mode-strip">
-      <div class="mode-pill active" data-mode="auto" onclick="setMode(this)">✨ Auto</div>
-      <div class="mode-pill" data-mode="motivational" onclick="setMode(this)">⚡ Motivate</div>
-      <div class="mode-pill" data-mode="finance" onclick="setMode(this)">💰 Finance</div>
-      <div class="mode-pill" data-mode="professional" onclick="setMode(this)">💼 Work</div>
-      <div class="mode-pill" data-mode="casual" onclick="setMode(this)">😄 Casual</div>
+      <button class="mode-pill active" data-mode="auto" onclick="setMode(this)">✨ Auto</button>
+      <button class="mode-pill" data-mode="motivational" onclick="setMode(this)">⚡ Motivate</button>
+      <button class="mode-pill" data-mode="finance" onclick="setMode(this)">💰 Finance</button>
+      <button class="mode-pill" data-mode="professional" onclick="setMode(this)">💼 Work</button>
+      <button class="mode-pill" data-mode="casual" onclick="setMode(this)">😄 Casual</button>
     </div>
 
     <!-- Chat Area -->
@@ -678,14 +688,14 @@
     <!-- Input -->
     <div class="input-area">
       <div class="input-row">
-        <select class="lang-select" id="lang-select">
+        <select class="lang-select" id="lang-select" aria-label="Select language">
           <option value="auto">🌐</option>
           <option value="English">EN</option>
           <option value="Hindi">HI</option>
           <option value="Marathi">MR</option>
         </select>
         <div class="text-wrap">
-          <textarea id="user-input" placeholder="Talk to Aisha..." rows="1" onkeydown="handleKey(event)"
+          <textarea id="user-input" aria-label="Message input" placeholder="Talk to Aisha..." rows="1" onkeydown="handleKey(event)"
             oninput="autoResize(this)"></textarea>
           <button class="mic-btn" id="mic-btn" onclick="toggleMic()" title="Voice input" aria-label="Voice input">🎙️</button>
         </div>
