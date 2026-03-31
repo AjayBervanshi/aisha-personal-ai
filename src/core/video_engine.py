@@ -6,23 +6,28 @@ Converts voice audio + AI-generated scene images into a proper MP4 video.
 
 Flow:
   1. Extract 6-8 scene descriptions from the script using AI
-  2. Generate scene images via HuggingFace API (FLUX.1-schnell)
+  2. Generate scene images via image_engine.py fallback chain
   3. Stitch audio + images into MP4 using moviepy:
      - Ken Burns effect (slow pan/zoom) for visual interest
      - Smooth fade transitions between scenes
      - Audio overlay on image slideshow
-  4. Return final video path
+  4. Burn Hindi subtitles via ffmpeg (proportional timing from script)
+  5. Return final video path
 
-This is the standard format for Hindi storytelling YouTube channels.
+Formats:
+  - "landscape" → 1280×720  (16:9) for standard YouTube uploads
+  - "shorts"    → 1080×1920 (9:16) for YouTube Shorts / Instagram Reels
 """
 
 import os
+import re
 import uuid
 import json
 import logging
-import requests
+import subprocess
 import tempfile
 from pathlib import Path
+import requests
 
 log = logging.getLogger("Aisha.VideoEngine")
 
@@ -38,21 +43,34 @@ ASSETS_DIR = os.path.join(
 )
 os.makedirs(ASSETS_DIR, exist_ok=True)
 
+# Format → (width, height)
+_FORMATS = {
+    "landscape": (1280, 720),
+    "shorts":    (1080, 1920),
+}
+
+# Devanagari font for Hindi subtitles — bundled or system
+_HINDI_FONTS = [
+    os.path.join(os.path.dirname(__file__), "fonts", "NotoSansDevanagari-Regular.ttf"),
+    "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Regular.ttf",
+    "NotoSansDevanagari-Regular.ttf",
+    "C:/Windows/Fonts/Aparajita.ttf",
+    "C:/Windows/Fonts/Mangal.ttf",
+]
+
 
 # ── Scene Extraction ─────────────────────────────────────────
 
 def extract_scene_descriptions(script: str, channel: str, num_scenes: int = 7) -> list[str]:
     """
-    Uses AI to extract visual scene descriptions from the script.
+    Uses Gemini to extract visual scene descriptions from the script.
     Returns a list of image generation prompts.
     """
     try:
-        import requests as _req
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             return _fallback_scenes(channel, num_scenes)
 
-        # Channel-specific visual style
         style_map = {
             "Story With Aisha":            "warm golden hour, soft bokeh, Indian romantic aesthetic, emotional close-ups",
             "Riya's Dark Whisper":         "dark cinematic noir, dramatic shadows, Mumbai night, moody atmospheric",
@@ -76,17 +94,14 @@ Return ONLY a valid JSON array of {num_scenes} strings. Example:
 No explanation, no extra text. Just the JSON array."""
 
         _url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
-        _resp = _req.post(_url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=60)
+        _resp = requests.post(_url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=60)
         _resp.raise_for_status()
         text = _resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
 
-        # Clean and parse
-        import re
         match = re.search(r'\[[\s\S]*\]', text)
         if match:
             scenes = json.loads(match.group(0))
-            # Append style suffix to each prompt
-            return [f"{s}. Style: {style}. Ultra HD, cinematic, 16:9 aspect ratio." for s in scenes[:num_scenes]]
+            return [f"{s}. Style: {style}. Ultra HD, cinematic." for s in scenes[:num_scenes]]
 
     except Exception as e:
         log.error(f"Scene extraction failed: {e}")
@@ -116,30 +131,150 @@ def _fallback_scenes(channel: str, num_scenes: int) -> list[str]:
             "Black rose on dark silk sheets, symbolic and mysterious",
         ],
     }
-    default = [
-        f"Cinematic Indian storytelling scene {i+1}, emotional, high quality"
-        for i in range(num_scenes)
-    ]
+    default = [f"Cinematic Indian storytelling scene {i+1}, emotional, high quality" for i in range(num_scenes)]
     scenes = fallbacks.get(channel, default)
     return (scenes * ((num_scenes // len(scenes)) + 1))[:num_scenes]
 
 
 # ── Image Generation ─────────────────────────────────────────
 
-def generate_scene_image(prompt: str) -> bytes | None:
-    """
-    Generate a scene image using image_engine.py fallback chain:
-    Gemini Imagen → OpenAI DALL-E → Pillow placeholder.
-    HuggingFace endpoints are 410 Gone and skipped.
-    """
+def generate_scene_image(prompt: str, width: int = 1280, height: int = 720) -> bytes | None:
+    """Generate a scene image using image_engine.py fallback chain."""
     try:
         from src.core.image_engine import generate_image
-        result = generate_image(prompt=prompt, width=1280, height=720)
+        result = generate_image(prompt=prompt, width=width, height=height)
         if result:
             return result
     except Exception as e:
-        log.error(f"[video_engine] generate_scene_image via image_engine failed: {e}")
+        log.error(f"[video_engine] generate_scene_image failed: {e}")
     return None
+
+
+# ── Subtitle Generation ──────────────────────────────────────
+
+def _split_into_subtitle_lines(script: str, max_chars: int = 40) -> list[str]:
+    """
+    Split a Hindi/Hinglish script into subtitle lines.
+    Splits on sentence boundaries (। | . | ? | !) then wraps long lines.
+    """
+    # Split on Devanagari danda (।), period, question mark, exclamation
+    raw_sentences = re.split(r'[।\.!\?]+', script)
+    lines = []
+    for s in raw_sentences:
+        s = s.strip()
+        if not s:
+            continue
+        # Wrap long sentences into chunks of max_chars
+        while len(s) > max_chars:
+            # Find a space or comma near the limit
+            cut = s.rfind(' ', 0, max_chars)
+            if cut == -1:
+                cut = max_chars
+            lines.append(s[:cut].strip())
+            s = s[cut:].strip()
+        if s:
+            lines.append(s)
+    return lines
+
+
+def _generate_ass_subtitles(
+    script: str,
+    audio_duration: float,
+    width: int,
+    height: int,
+    output_path: str,
+) -> bool:
+    """
+    Generate an ASS subtitle file with proportional timing.
+    Returns True on success.
+    """
+    lines = _split_into_subtitle_lines(script, max_chars=35 if width > height else 28)
+    if not lines:
+        return False
+
+    # Find a Hindi-capable font
+    font_name = "Noto Sans Devanagari"
+    for fp in _HINDI_FONTS:
+        if os.path.exists(fp):
+            font_name = Path(fp).stem.split("-")[0].replace("Noto", "Noto ").strip()
+            break
+
+    # Font size based on resolution
+    font_size = 48 if width < height else 36  # bigger for vertical Shorts
+
+    time_per_line = audio_duration / max(len(lines), 1)
+
+    def _ts(seconds: float) -> str:
+        """Convert seconds to ASS timestamp H:MM:SS.cc"""
+        h = int(seconds // 3600)
+        m = int((seconds % 3600) // 60)
+        s = seconds % 60
+        return f"{h}:{m:02d}:{int(s):02d}.{int((s % 1) * 100):02d}"
+
+    # ASS header
+    ass = f"""[Script Info]
+ScriptType: v4.00+
+PlayResX: {width}
+PlayResY: {height}
+Collisions: Normal
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,{font_name},{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,2,20,20,60,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+
+    for i, line in enumerate(lines):
+        start = i * time_per_line
+        end = start + time_per_line - 0.05
+        end = min(end, audio_duration)
+        # Escape special ASS characters
+        safe_line = line.replace("\\", "\\\\").replace("{", "\\{")
+        ass += f"Dialogue: 0,{_ts(start)},{_ts(end)},Default,,0,0,0,,{safe_line}\n"
+
+    try:
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(ass)
+        return True
+    except Exception as e:
+        log.error(f"ASS subtitle write failed: {e}")
+        return False
+
+
+def _burn_subtitles_ffmpeg(video_path: str, ass_path: str, output_path: str) -> bool:
+    """
+    Use ffmpeg to burn ASS subtitles into the video.
+    Returns True on success.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-i", video_path,
+                "-vf", f"ass={ass_path}",
+                "-c:a", "copy",
+                "-c:v", "libx264",
+                "-preset", "fast",
+                "-crf", "23",
+                output_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if result.returncode == 0:
+            log.info(f"[VideoEngine] Subtitles burned in: {output_path}")
+            return True
+        log.error(f"[VideoEngine] ffmpeg subtitle burn failed: {result.stderr[-500:]}")
+        return False
+    except FileNotFoundError:
+        log.warning("[VideoEngine] ffmpeg not found — skipping subtitle burn")
+        return False
+    except subprocess.TimeoutExpired:
+        log.error("[VideoEngine] ffmpeg subtitle burn timed out")
+        return False
 
 
 # ── Video Rendering ──────────────────────────────────────────
@@ -151,17 +286,21 @@ def render_video(
     topic: str,
     thumbnail_path: str = None,
     num_scenes: int = 7,
+    format: str = "shorts",
+    add_subtitles: bool = True,
 ) -> str | None:
     """
     Main function: render a full MP4 from voice audio + AI scene images.
 
     Args:
         voice_path:     Path to .mp3 voice file (from voice_engine.py)
-        script:         Full script text (for scene extraction)
+        script:         Full script text (for scene extraction + subtitles)
         channel:        YouTube channel name (for visual style)
         topic:          Video topic (for naming)
         thumbnail_path: Optional pre-generated thumbnail to include as first frame
         num_scenes:     Number of scene images to generate (default 7)
+        format:         "shorts" (9:16, 1080×1920) or "landscape" (16:9, 1280×720)
+        add_subtitles:  Burn Hindi subtitles into video (default True)
 
     Returns:
         Path to rendered .mp4 file, or None on failure.
@@ -179,7 +318,8 @@ def render_video(
         log.error(f"Voice file not found: {voice_path}")
         return None
 
-    log.info(f"[VideoEngine] Rendering video for '{channel}': {topic}")
+    width, height = _FORMATS.get(format, _FORMATS["shorts"])
+    log.info(f"[VideoEngine] Rendering {format} ({width}×{height}) for '{channel}': {topic}")
 
     try:
         # Load audio and get duration
@@ -187,18 +327,14 @@ def render_video(
         total_duration = audio.duration
         log.info(f"[VideoEngine] Audio duration: {total_duration:.1f}s")
 
-        # Calculate time per scene
-        time_per_scene = total_duration / num_scenes
-
         # Step 1: Extract scene descriptions
         log.info("[VideoEngine] Extracting scene descriptions...")
         scene_descriptions = extract_scene_descriptions(script, channel, num_scenes)
 
         # Step 2: Generate scene images
-        log.info(f"[VideoEngine] Generating {len(scene_descriptions)} scene images via HuggingFace...")
+        log.info(f"[VideoEngine] Generating {len(scene_descriptions)} scene images...")
         image_paths = []
 
-        # Use thumbnail as first scene if available
         if thumbnail_path and os.path.exists(thumbnail_path):
             image_paths.append(thumbnail_path)
             scenes_to_generate = scene_descriptions[1:]
@@ -207,7 +343,7 @@ def render_video(
 
         for i, desc in enumerate(scenes_to_generate):
             log.info(f"[VideoEngine] Scene {i+1}/{len(scenes_to_generate)}: generating...")
-            img_bytes = generate_scene_image(desc)
+            img_bytes = generate_scene_image(desc, width=width, height=height)
             if img_bytes:
                 img_path = os.path.join(ASSETS_DIR, f"scene_{uuid.uuid4().hex[:6]}.png")
                 with open(img_path, "wb") as f:
@@ -216,10 +352,9 @@ def render_video(
             else:
                 log.warning(f"[VideoEngine] Scene {i+1} image failed, using color fill")
 
-        # Fallback: if no images generated, use solid color background
         if not image_paths:
             log.warning("[VideoEngine] No images generated. Using gradient background.")
-            return _render_with_gradient(voice_path, audio, channel, topic)
+            return _render_with_gradient(voice_path, audio, channel, topic, width, height)
 
         # Step 3: Build video clips with Ken Burns effect
         log.info("[VideoEngine] Stitching clips with Ken Burns effect...")
@@ -228,14 +363,13 @@ def render_video(
 
         for i, img_path in enumerate(image_paths):
             try:
-                clip = _make_ken_burns_clip(img_path, clip_duration, i)
+                clip = _make_ken_burns_clip(img_path, clip_duration, i, width, height)
                 if clip:
                     clips.append(clip)
             except Exception as e:
                 log.warning(f"[VideoEngine] Clip {i} failed: {e}")
-                # Add a colored fill clip as fallback
                 color = [20, 20, 30] if "Riya" in channel else [30, 15, 40]
-                clips.append(ColorClip(size=(1280, 720), color=color, duration=clip_duration))
+                clips.append(ColorClip(size=(width, height), color=color, duration=clip_duration))
 
         if not clips:
             return None
@@ -245,27 +379,56 @@ def render_video(
         video = concatenate_videoclips(clips, method="compose")
         video = video.with_audio(audio)
 
-        # Step 5: Export
-        output_filename = f"video_{uuid.uuid4().hex[:8]}.mp4"
-        output_path = os.path.join(VIDEO_DIR, output_filename)
+        # Step 5: Export base video
+        base_filename = f"video_{uuid.uuid4().hex[:8]}_base.mp4"
+        base_path = os.path.join(VIDEO_DIR, base_filename)
 
         video.write_videofile(
-            output_path,
+            base_path,
             fps=24,
             codec="libx264",
             audio_codec="aac",
             temp_audiofile=os.path.join(VIDEO_DIR, f"temp_audio_{uuid.uuid4().hex[:4]}.m4a"),
             remove_temp=True,
-            logger=None,  # Suppress verbose moviepy logs
+            logger=None,
         )
 
         # Cleanup scene images
         for p in image_paths:
-            if p != thumbnail_path:  # Don't delete the original thumbnail
+            if p != thumbnail_path:
                 try:
                     Path(p).unlink(missing_ok=True)
                 except Exception:
                     pass
+
+        # Step 6: Burn Hindi subtitles via ffmpeg
+        output_filename = f"video_{uuid.uuid4().hex[:8]}.mp4"
+        output_path = os.path.join(VIDEO_DIR, output_filename)
+
+        if add_subtitles and script.strip():
+            ass_path = os.path.join(VIDEO_DIR, f"subs_{uuid.uuid4().hex[:6]}.ass")
+            subtitle_ok = _generate_ass_subtitles(script, total_duration, width, height, ass_path)
+            if subtitle_ok:
+                burned = _burn_subtitles_ffmpeg(base_path, ass_path, output_path)
+                try:
+                    Path(ass_path).unlink(missing_ok=True)
+                except Exception:
+                    pass
+                if burned:
+                    try:
+                        Path(base_path).unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                    log.info(f"[VideoEngine] Final video with subtitles: {output_path}")
+                    return output_path
+            # Subtitle generation or burn failed — use base video
+            log.warning("[VideoEngine] Subtitle burn failed — returning base video without subtitles")
+
+        # No subtitles — rename base to final
+        try:
+            Path(base_path).rename(output_path)
+        except Exception:
+            output_path = base_path
 
         log.info(f"[VideoEngine] Video rendered: {output_path}")
         return output_path
@@ -275,24 +438,22 @@ def render_video(
         return None
 
 
-def _make_ken_burns_clip(image_path: str, duration: float, index: int):
+def _make_ken_burns_clip(image_path: str, duration: float, index: int, width: int = 1280, height: int = 720):
     """
-    Creates a VideoClip with Ken Burns effect (slow zoom in/out, slight pan).
+    Creates a VideoClip with Ken Burns effect (slow zoom in/out).
     Alternates zoom direction for visual variety.
-    Compatible with MoviePy v1.x and v2.x.
+    Supports both landscape (1280×720) and vertical (1080×1920).
     """
     import numpy as np
     from PIL import Image as PILImage
 
-    # Load and resize image to 1280x720
     try:
         img = PILImage.open(image_path).convert("RGB")
-        img = img.resize((1280, 720), PILImage.LANCZOS)
+        img = img.resize((width, height), PILImage.LANCZOS)
         img_array = np.array(img)
     except Exception:
         return None
 
-    # Ken Burns: zoom from 1.0 to 1.08 (subtle, not jarring)
     zoom_start = 1.0 if index % 2 == 0 else 1.08
     zoom_end = 1.08 if index % 2 == 0 else 1.0
 
@@ -304,22 +465,18 @@ def _make_ken_burns_clip(image_path: str, duration: float, index: int):
         new_h = int(h / zoom)
         new_w = int(w / zoom)
 
-        # Center crop
         y1 = (h - new_h) // 2
         x1 = (w - new_w) // 2
         cropped = img_array[y1:y1+new_h, x1:x1+new_w]
 
-        # Resize back to 1280x720
         pil_crop = PILImage.fromarray(cropped).resize((w, h), PILImage.LANCZOS)
         return np.array(pil_crop)
 
     try:
-        # MoviePy v2.x: use VideoClip with make_frame callable
         from moviepy import VideoClip
         clip = VideoClip(make_frame, duration=duration)
     except Exception:
         try:
-            # MoviePy v1.x fallback
             from moviepy.video.VideoClip import VideoClip as VideoClipV1
             clip = VideoClipV1(make_frame, duration=duration)
         except Exception:
@@ -328,14 +485,21 @@ def _make_ken_burns_clip(image_path: str, duration: float, index: int):
     return clip
 
 
-def _render_with_gradient(voice_path: str, audio, channel: str, topic: str) -> str | None:
+def _render_with_gradient(
+    voice_path: str,
+    audio,
+    channel: str,
+    topic: str,
+    width: int = 1080,
+    height: int = 1920,
+) -> str | None:
     """
     Fallback: render video with a solid color background + audio when no images available.
     """
     try:
         from moviepy import ColorClip
         color = [20, 10, 30] if "Riya" in channel else [25, 10, 45]
-        video = ColorClip(size=(1280, 720), color=color, duration=audio.duration)
+        video = ColorClip(size=(width, height), color=color, duration=audio.duration)
         video = video.with_audio(audio)
 
         output_path = os.path.join(VIDEO_DIR, f"video_{uuid.uuid4().hex[:8]}.mp4")
@@ -351,12 +515,15 @@ def _render_with_gradient(voice_path: str, audio, channel: str, topic: str) -> s
 if __name__ == "__main__":
     import sys
     voice = sys.argv[1] if len(sys.argv) > 1 else "temp_voice/test.mp3"
-    script = "A beautiful love story between two people who meet on a train..."
+    fmt = sys.argv[2] if len(sys.argv) > 2 else "shorts"
+    script = "एक खूबसूरत प्रेम कहानी जो ट्रेन में शुरू हुई। दो दिल, दो आत्माएं, एक सफर।"
     result = render_video(
         voice_path=voice,
         script=script,
         channel="Story With Aisha",
         topic="Train Romance",
         num_scenes=5,
+        format=fmt,
+        add_subtitles=True,
     )
     print(f"Video: {result}")

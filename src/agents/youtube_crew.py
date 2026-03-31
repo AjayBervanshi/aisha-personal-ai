@@ -262,6 +262,8 @@ Create:
                     channel=channel,
                     topic=topic,
                     thumbnail_path=self.results.get("thumbnail_path"),
+                    format="shorts",
+                    add_subtitles=True,
                 )
                 if video_path:
                     self.results["video_path"] = video_path
