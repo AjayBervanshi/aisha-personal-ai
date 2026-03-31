@@ -32,6 +32,10 @@ moviepy>=1.0.3                  # Audio + image → MP4 stitching
 Pillow>=10.0.0                  # Image processing for Ken Burns effect
 numpy>=1.24.0                   # Array ops for Ken Burns frame transforms
 
+# Pro Photo & Video Editing
+opencv-python-headless>=4.9.0   # CLAHE, white balance, unsharp mask (headless = no UI deps on Render)
+rembg>=2.0.50                   # Background removal via U-2-Net AI model
+
 # Trend Research
 pytrends>=4.9.2                 # Google Trends (free, no API key)
 duckduckgo_search>=6.0.0        # DuckDuckGo web search — API discovery agent (/findapi)

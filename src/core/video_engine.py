@@ -510,6 +510,176 @@ def _render_with_gradient(
         return None
 
 
+# ── Pro Post-Processing (FFmpeg) ─────────────────────────────
+#
+# Channel presets — call apply_channel_grade(video_path, channel) after render.
+#
+# "Story With Aisha" / "Aisha & Him" → warm_golden LUT, vignette 0.4, grain 8
+# "Riya's Dark Whisper" / "Riya's Dark Romance Library" → cinematic LUT, vignette 0.7, grain 18
+
+_CHANNEL_GRADE: dict = {
+    "Story With Aisha":            {"lut": "warm_golden",  "vignette": 0.4, "grain": 8},
+    "Aisha & Him":                 {"lut": "warm_golden",  "vignette": 0.4, "grain": 8},
+    "Riya's Dark Whisper":         {"lut": "cinematic",    "vignette": 0.7, "grain": 18},
+    "Riya's Dark Romance Library": {"lut": "cinematic",    "vignette": 0.7, "grain": 18},
+}
+
+# Inline 1D LUT curves stored as (r_pts, g_pts, b_pts) for ffmpeg curves filter
+_LUT_CURVES: dict = {
+    "cinematic": (
+        "0/0 0.25/0.314 0.502/0.580 0.753/0.824 1/1",   # R
+        "0/0 0.25/0.235 0.502/0.471 0.753/0.725 1/1",   # G
+        "0.078/0.078 0.25/0.275 0.502/0.431 0.753/0.647 0.824/0.824",  # B — teal shadows
+    ),
+    "warm_golden": (
+        "0/0 0.502/0.580 1/1",       # R — warm boost
+        "0/0 0.502/0.502 1/0.941",   # G — slight pull
+        "0/0 0.502/0.392 1/0.784",   # B — cool reduction
+    ),
+    "moody_blue": (
+        "0/0 0.502/0.431 1/0.863",   # R — desaturate
+        "0/0 0.502/0.451 1/0.902",   # G
+        "0.118/0.118 0.502/0.580 1/1",  # B — boost blues
+    ),
+}
+
+
+def add_film_grain(video_path: str, sigma: int = 10, output_path: str = None) -> str | None:
+    """Add subtle film grain to video using ffmpeg geq filter. Returns output path."""
+    try:
+        out = output_path or video_path.replace(".mp4", "_grain.mp4")
+        cmd = [
+            "ffmpeg", "-y", "-i", video_path,
+            "-vf", (
+                f"geq=lum='lum(X,Y)+({sigma}*(random(1)-0.5))':"
+                f"cb='cb(X,Y)':"
+                f"cr='cr(X,Y)'"
+            ),
+            "-c:a", "copy", "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+            out,
+        ]
+        result = subprocess.run(cmd, capture_output=True, timeout=120)
+        if result.returncode == 0:
+            return out
+        log.warning(f"[VideoEngine] film grain failed: {result.stderr.decode()[:200]}")
+        return None
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        log.warning(f"[VideoEngine] film grain error: {e}")
+        return None
+
+
+def add_vignette(video_path: str, opacity: float = 0.5, output_path: str = None) -> str | None:
+    """Add cinematic vignette overlay using ffmpeg. opacity 0.0–1.0. Returns output path."""
+    try:
+        out = output_path or video_path.replace(".mp4", "_vignette.mp4")
+        angle = 3.14159 / 5  # ~36° — classic cinema vignette angle
+        cmd = [
+            "ffmpeg", "-y", "-i", video_path,
+            "-vf", f"vignette=angle={angle}:mode=forward:eval=init",
+            "-c:a", "copy", "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+            out,
+        ]
+        result = subprocess.run(cmd, capture_output=True, timeout=120)
+        if result.returncode == 0:
+            return out
+        log.warning(f"[VideoEngine] vignette failed: {result.stderr.decode()[:200]}")
+        return None
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        log.warning(f"[VideoEngine] vignette error: {e}")
+        return None
+
+
+def apply_lut_curves(video_path: str, lut_name: str = "cinematic", output_path: str = None) -> str | None:
+    """Apply colour grading LUT curves via ffmpeg curves filter. Returns output path."""
+    curves = _LUT_CURVES.get(lut_name, _LUT_CURVES["cinematic"])
+    try:
+        out = output_path or video_path.replace(".mp4", f"_{lut_name}.mp4")
+        cmd = [
+            "ffmpeg", "-y", "-i", video_path,
+            "-vf", f"curves=red='{curves[0]}':green='{curves[1]}':blue='{curves[2]}'",
+            "-c:a", "copy", "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+            out,
+        ]
+        result = subprocess.run(cmd, capture_output=True, timeout=120)
+        if result.returncode == 0:
+            return out
+        log.warning(f"[VideoEngine] LUT curves failed: {result.stderr.decode()[:200]}")
+        return None
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        log.warning(f"[VideoEngine] LUT curves error: {e}")
+        return None
+
+
+def stabilize_video(video_path: str, output_path: str = None) -> str | None:
+    """
+    Apply ffmpeg vidstab two-pass stabilization.
+    Requires ffmpeg compiled with libvidstab. Falls back gracefully if not available.
+    """
+    try:
+        trf_path = video_path.replace(".mp4", ".trf")
+        out = output_path or video_path.replace(".mp4", "_stable.mp4")
+
+        # Pass 1: analyse
+        pass1 = subprocess.run(
+            ["ffmpeg", "-y", "-i", video_path,
+             "-vf", f"vidstabdetect=stepsize=6:shakiness=5:result={trf_path}",
+             "-f", "null", "-"],
+            capture_output=True, timeout=180,
+        )
+        if pass1.returncode != 0:
+            log.warning("[VideoEngine] vidstab pass1 failed (libvidstab may not be installed)")
+            return None
+
+        # Pass 2: apply
+        pass2 = subprocess.run(
+            ["ffmpeg", "-y", "-i", video_path,
+             "-vf", f"vidstabtransform=input={trf_path}:smoothing=10,unsharp=5:5:0.8:3:3:0.4",
+             "-c:a", "copy", "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+             out],
+            capture_output=True, timeout=180,
+        )
+        Path(trf_path).unlink(missing_ok=True)
+        if pass2.returncode == 0:
+            return out
+        log.warning(f"[VideoEngine] vidstab pass2 failed: {pass2.stderr.decode()[:200]}")
+        return None
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        log.warning(f"[VideoEngine] stabilize error: {e}")
+        return None
+
+
+def apply_channel_grade(video_path: str, channel: str) -> str:
+    """
+    Apply the full cinematic post-processing stack for a given channel.
+    Runs: LUT curves → vignette → film grain (sequentially via ffmpeg).
+    Falls back to the previous step's output if any ffmpeg call fails.
+    Returns the best available output path.
+    """
+    preset = _CHANNEL_GRADE.get(channel, {"lut": "cinematic", "vignette": 0.5, "grain": 10})
+    current = video_path
+
+    # Step 1 — LUT colour grade
+    lut_out = current.replace(".mp4", "_grade.mp4")
+    result = apply_lut_curves(current, preset["lut"], lut_out)
+    if result:
+        current = result
+
+    # Step 2 — Vignette
+    vig_out = current.replace(".mp4", "_vig.mp4")
+    result = add_vignette(current, preset["vignette"], vig_out)
+    if result:
+        current = result
+
+    # Step 3 — Film grain
+    grain_out = current.replace(".mp4", "_final.mp4")
+    result = add_film_grain(current, preset["grain"], grain_out)
+    if result:
+        current = result
+
+    log.info(f"[VideoEngine] Channel grade applied ({channel}): {current}")
+    return current
+
+
 # ── Quick Test ────────────────────────────────────────────────
 
 if __name__ == "__main__":
