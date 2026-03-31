@@ -99,8 +99,52 @@ def is_admin(message) -> bool:
     return get_user_role(message) == "admin"
 
 
+_pending_guests = set()
+
 def unauthorized_response(message):
-    bot.reply_to(message, "🔒 Access Denied. I am a private assistant and I don't know you. Please ask my creator for access! 💜")
+    user_id = message.from_user.id
+    username = message.from_user.username or "No Username"
+    first_name = message.from_user.first_name or "Unknown"
+
+    bot.reply_to(message, "🔒 Access Denied. I am a private assistant. I have sent a request to my creator. If he approves, I will talk to you! 💜")
+
+    if user_id not in _pending_guests:
+        _pending_guests.add(user_id)
+
+        # Ping Ajay
+        msg = (
+            f"🔔 **New User Wants to Chat**\n\n"
+            f"👤 Name: {first_name}\n"
+            f"🆔 ID: `{user_id}`\n"
+            f"🔗 Username: @{username}\n\n"
+            f"💬 Their message:\n_{message.text[:100]}..._\n\n"
+            f"Allow them to talk to me?"
+        )
+
+        import json
+        keyboard = {
+            "inline_keyboard": [
+                [
+                    {"text": "✅ Allow", "callback_data": f"allow_guest_{user_id}_{first_name}"},
+                    {"text": "❌ Ignore", "callback_data": f"ignore_guest_{user_id}"}
+                ]
+            ]
+        }
+
+        import requests
+        try:
+            requests.post(
+                f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                json={
+                    "chat_id": AUTHORIZED_ID,
+                    "text": msg,
+                    "parse_mode": "Markdown",
+                    "reply_markup": json.dumps(keyboard)
+                },
+                timeout=10
+            )
+        except Exception as e:
+            log.error(f"Failed to send guest request to Ajay: {e}")
 
 
 # ─── Keyboards ─────────────────────────────────────────────────────────────────
@@ -654,6 +698,60 @@ if __name__ == "__main__":
 
 # ─── Self Improvement Callbacks ──────────────────────────────────────────
 
+
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("allow_guest_"))
+def handle_allow_guest(call):
+    if not is_admin(call.message): return bot.answer_callback_query(call.id, text="Unauthorized", show_alert=True)
+
+    # allow_guest_ID_NAME
+    parts = call.data.split("_", 3)
+    if len(parts) >= 3:
+        guest_id = int(parts[2])
+        guest_name = parts[3] if len(parts) > 3 else "Friend"
+
+        try:
+            # 1. Save to DB permanently
+            db.table("aisha_users").upsert({
+                "telegram_id": guest_id,
+                "name": guest_name,
+                "role": "guest"
+            }).execute()
+
+            # 2. Update memory cache instantly so she doesn't ask again
+            _auth_cache[guest_id] = "guest"
+            if guest_id in _pending_guests:
+                _pending_guests.remove(guest_id)
+
+            bot.answer_callback_query(call.id, text="Guest Approved! ✅")
+            bot.edit_message_text(
+                f"✅ **{guest_name}** (`{guest_id}`) is now approved to chat with me.",
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                parse_mode="Markdown"
+            )
+
+            # Ping the guest
+            bot.send_message(guest_id, "🎉 Ajay has granted you access! You can now chat with me. Try saying 'Hi Aisha' 💜")
+
+        except Exception as e:
+            bot.answer_callback_query(call.id, text=f"Error saving to DB: {e}", show_alert=True)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("ignore_guest_"))
+def handle_ignore_guest(call):
+    if not is_admin(call.message): return bot.answer_callback_query(call.id, text="Unauthorized", show_alert=True)
+    guest_id = int(call.data.split("_")[2])
+
+    if guest_id in _pending_guests:
+        _pending_guests.remove(guest_id)
+
+    bot.answer_callback_query(call.id, text="Ignored! ❌")
+    bot.edit_message_text(
+        f"❌ Ignored guest request from ID `{guest_id}`.",
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        parse_mode="Markdown"
+    )
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("approve_req_"))
 def handle_approve_guest_req(call):
