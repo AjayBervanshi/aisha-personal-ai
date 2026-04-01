@@ -33,5 +33,20 @@ class TestSpeechRecognition(unittest.TestCase):
         result = parse_transcript(None)
         self.assertEqual(result, {})
 
+
+    def test_parse_transcript_with_punctuation(self):
+        result = parse_transcript("play, music!")
+        # The current implementation splits by whitespace,
+        # so punctuation will be kept.
+        self.assertEqual(result, {"command": "play,", "params": ["music!"]})
+
+    def test_parse_transcript_with_numbers(self):
+        result = parse_transcript("set timer 5 minutes")
+        self.assertEqual(result, {"command": "set", "params": ["timer", "5", "minutes"]})
+
+    def test_parse_transcript_mixed_case_params(self):
+        result = parse_transcript("Turn ON the LIGHTS")
+        self.assertEqual(result, {"command": "turn", "params": ["ON", "the", "LIGHTS"]})
+
 if __name__ == '__main__':
     unittest.main()
