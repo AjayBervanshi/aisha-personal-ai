@@ -144,21 +144,21 @@ def _parse_json_block(text: str) -> Optional[dict]:
     # Direct parse
     try:
         return json.loads(text)
-    except (TypeError, ValueError):
+    except json.JSONDecodeError:
         pass
     # Strip ```json ... ``` fence
     fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
     if fenced:
         try:
             return json.loads(fenced.group(1))
-        except (TypeError, ValueError):
+        except json.JSONDecodeError:
             pass
     # First bare { ... } block
     bare = re.search(r"\{.*\}", text, re.DOTALL)
     if bare:
         try:
             return json.loads(bare.group(0))
-        except (TypeError, ValueError):
+        except json.JSONDecodeError:
             pass
     return None
 
