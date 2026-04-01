@@ -53,23 +53,26 @@ class MemoryManager:
 
     # ── Memory (CRUD & Vector) ─────────────────────────────────
 
-    def get_top_memories(self, limit: int = 12) -> List[Dict[str, Any]]:
+    def get_top_memories(self, limit: int = 12, telegram_id: int = None) -> List[Dict[str, Any]]:
         """Get the highest importance static memories."""
         try:
-            res = (
-                self.db.table("aisha_memory")
-                .select("category, title, content, importance")
-                .eq("is_active", True)
-                .order("importance", desc=True)
-                .limit(limit)
-                .execute()
-            )
+            query = self.db.table("aisha_memory").select("category, title, content, importance").eq("is_active", True)
+
+            # If telegram_id is provided, only fetch global memories (null) or personal ones
+            # For simplicity using the Supabase Python client, we might just filter after,
+            # but since this is simple, we will fetch them. We'll use .or_() if supported,
+            # otherwise just fetch all and filter in python if needed.
+            # The client supports .or_() like: .or_(f"telegram_id.is.null,telegram_id.eq.{telegram_id}")
+            if telegram_id:
+                query = query.or_(f"telegram_id.is.null,telegram_id.eq.{telegram_id}")
+
+            res = query.order("importance", desc=True).limit(limit).execute()
             return res.data or []
         except Exception as e:
             print(f"[Memory] Error getting top memories: {e}")
             return []
 
-    def get_semantic_memories(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+    def get_semantic_memories(self, query: str, limit: int = 5, telegram_id: int = None) -> List[Dict[str, Any]]:
         """
         Search for relevant memories using pgvector!
         (Requires an embedding of the query first)
@@ -79,14 +82,15 @@ class MemoryManager:
             return []
 
         try:
-            res = self.db.rpc(
-                'match_memories',
-                {
-                    'query_embedding': embedding,
-                    'match_threshold': 0.7,
-                    'match_count': limit
-                }
-            ).execute()
+            params = {
+                'query_embedding': embedding,
+                'match_threshold': 0.7,
+                'match_count': limit
+            }
+            if telegram_id:
+                params['user_telegram_id'] = telegram_id
+
+            res = self.db.rpc('match_memories', params).execute()
             return res.data or []
         except Exception as e:
             print(f"[Memory] Error fetching semantic memories: {e}")
@@ -172,31 +176,32 @@ class MemoryManager:
 
     # ── Conversations ──────────────────────────────────────────
 
-    def save_conversation(self, role: str, message: str, platform: str = "telegram", language: str = "English", mood: str = "casual"):
+    def save_conversation(self, role: str, message: str, platform: str = "telegram", language: str = "English", mood: str = "casual", telegram_id: int = None):
         """Log conversation turn to Supabase."""
         embedding = self._generate_embedding(message)
         try:
-            self.db.table("aisha_conversations").insert({
+            data = {
                 "platform": platform,
                 "role": role,
                 "message": message,
                 "language": language,
                 "mood_detected": mood,
                 "embedding": embedding
-            }).execute()
+            }
+            if telegram_id:
+                data["telegram_id"] = telegram_id
+
+            self.db.table("aisha_conversations").insert(data).execute()
         except Exception as e:
             print(f"[Memory] Error saving conversation: {e}")
 
-    def get_recent_conversation(self, limit: int = 10) -> List[Dict[str, Any]]:
-        """Get recent conversation history for context continuity."""
+    def get_recent_conversation(self, limit: int = 10, telegram_id: int = None) -> List[Dict[str, Any]]:
+        """Get recent conversation history for context continuity. Isolated by user ID."""
         try:
-            res = (
-                self.db.table("aisha_conversations")
-                .select("role, message, created_at")
-                .order("created_at", desc=True)
-                .limit(limit)
-                .execute()
-            )
+            query = self.db.table("aisha_conversations").select("role, message, created_at")
+            if telegram_id:
+                query = query.eq("telegram_id", telegram_id)
+            res = query.order("created_at", desc=True).limit(limit).execute()
             return list(reversed(res.data or []))
         except Exception as e:
             print(f"[Memory] Error loading conversation: {e}")
@@ -204,7 +209,7 @@ class MemoryManager:
 
     # ── Context Loader ─────────────────────────────────────────
 
-    def load_context(self, user_message: str = "") -> Dict[str, Any]:
+    def load_context(self, user_message: str = "", telegram_id: int = None) -> Dict[str, Any]:
         """Load full context from Supabase for Aisha's system prompt."""
         try:
             profile = self.get_profile()
@@ -215,11 +220,11 @@ class MemoryManager:
             rules_list = rules_res.data or []
 
             # Combine top static memories and semantic memories
-            memories_list = self.get_top_memories(limit=5)
+            memories_list = self.get_top_memories(limit=5, telegram_id=telegram_id)
 
             # If user message is provided, fetch 3 semantic memories related to it
             if user_message:
-                semantic_mems = self.get_semantic_memories(user_message, limit=3)
+                semantic_mems = self.get_semantic_memories(user_message, limit=3, telegram_id=telegram_id)
                 # Deduplicate by title
                 existing_titles = {m.get('title') for m in memories_list}
                 for sm in semantic_mems:

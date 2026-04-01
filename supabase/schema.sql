@@ -20,6 +20,7 @@ create table if not exists aisha_memory (
     tags text[] default array[]::text[],
     is_active boolean default true,
     source text default 'conversation',
+    telegram_id bigint, -- Links memory to a specific user
     embedding vector(768), -- Added for semantic search!
     created_at timestamp with time zone default timezone('utc'::text, now())
 );
@@ -29,6 +30,7 @@ create table if not exists aisha_emotional_memory (
     id uuid primary key default gen_random_uuid(),
     mood_state text not null,
     trigger text,
+    telegram_id bigint,
     context_text text,
     embedding vector(768),
     created_at timestamp with time zone default timezone('utc'::text, now())
@@ -48,6 +50,7 @@ create table if not exists aisha_skill_memory (
 create table if not exists aisha_episodic_memory (
     id uuid primary key default gen_random_uuid(),
     entity text, -- 'Rahul', 'Mom', etc.
+    telegram_id bigint,
     event_description text not null,
     event_date timestamp with time zone,
     embedding vector(768),
@@ -58,6 +61,7 @@ create table if not exists aisha_episodic_memory (
 create table if not exists aisha_conversations (
     id uuid primary key default gen_random_uuid(),
     platform text not null,
+    telegram_id bigint, -- Separates conversation history by user
     role text not null,
     message text not null,
     language text,
@@ -109,7 +113,8 @@ create table if not exists aisha_mood_tracker (
 create or replace function match_memories (
   query_embedding vector(768),
   match_threshold float,
-  match_count int
+  match_count int,
+  user_telegram_id bigint default null
 )
 returns table (
   id uuid,
@@ -131,6 +136,7 @@ as $$
   from aisha_memory
   where 1 - (aisha_memory.embedding <=> query_embedding) > match_threshold
     and aisha_memory.is_active = true
+    and (aisha_memory.telegram_id is null or aisha_memory.telegram_id = user_telegram_id)
   order by similarity desc
   limit match_count;
 $$;

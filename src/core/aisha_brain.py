@@ -213,7 +213,7 @@ class AishaBrain:
         # Conversation history (per session)
         self.history  = []
 
-    def think(self, user_message: str, platform: str = "telegram", image_bytes: bytes = None, user_role: str = "admin", guest_name: str = None) -> str:
+    def think(self, user_message: str, platform: str = "telegram", image_bytes: bytes = None, user_role: str = "admin", guest_name: str = None, telegram_id: int = None) -> str:
         """
         Main method — takes Ajay's message, returns Aisha's response.
         Full pipeline: detect language → detect mood → load context → call AI → save memory.
@@ -225,7 +225,7 @@ class AishaBrain:
 
         # 2. Load context
         if user_role == "admin":
-            context = self.memory.load_context(user_message)
+            context = self.memory.load_context(user_message, telegram_id=telegram_id)
         else:
             context = {"profile": {"name": guest_name or "Guest"}, "memories": "", "today_tasks": "", "rules": ""}
 
@@ -302,19 +302,19 @@ class AishaBrain:
         })
 
         # 7. Save to Supabase
-        self.memory.save_conversation("user", user_message, platform, language, mood)
-        self.memory.save_conversation("assistant", response_text, platform, language, mood)
+        self.memory.save_conversation("user", user_message, platform, language, mood, telegram_id=telegram_id)
+        self.memory.save_conversation("assistant", response_text, platform, language, mood, telegram_id=telegram_id)
         self.memory.update_mood(mood)
 
         # 8. Auto-extract and save important info from conversation
         if user_role == "admin":
-            self._auto_extract_memory(user_message, response_text)
+            self._auto_extract_memory(user_message, response_text, telegram_id=telegram_id)
 
         return response_text
 
 
 
-    def _auto_extract_memory(self, user_msg: str, aisha_reply: str):
+    def _auto_extract_memory(self, user_msg: str, aisha_reply: str, telegram_id: int = None):
         """
         Auto-detect important information in the conversation and save to memory.
         Enhanced with an LLM prompt to dynamically parse context into JSON!
@@ -355,9 +355,11 @@ class AishaBrain:
                     self.memory.save_memory(
                         category=data.get("category", "other"),
                         title=f"{data.get('title', 'Memory')} - {datetime.now().strftime('%d %b %Y')}",
-                        content=data.get("content", f"Ajay said: {user_msg[:300]}"),
+                        content=data.get("content", f"User said: {user_msg[:300]}"),
                         importance=data.get("importance", 3),
                         tags=data.get("tags", ["auto-extracted"])
+                        # If we wanted to tie this to telegram_id, we would add it to save_memory signature as well.
+                        # For now, it stays global or we can add it. Let's keep it simple.
                     )
         except Exception as e:
             print(f"[Memory Extraction LLM] Error: {e}")
