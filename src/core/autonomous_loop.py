@@ -80,7 +80,9 @@ class AutonomousLoop:
             stuck = sb.table("content_jobs").select("id").eq("status", "processing").lt("updated_at", cutoff).execute()
             if stuck.data:
                 ids = [row["id"] for row in stuck.data]
-                sb.table("content_jobs").update({"status": "queued"}).in_("id", ids).execute()
+                for i in range(0, len(ids), 100):
+                    chunk = ids[i:i+100]
+                    sb.table("content_jobs").update({"status": "queued"}).in_("id", chunk).execute()
                 log.info(f"event=startup_recovery reset={len(stuck.data)}_stuck_jobs")
         except Exception as e:
             log.warning(f"event=startup_recovery_failed err={e}")
