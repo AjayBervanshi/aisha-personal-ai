@@ -40,7 +40,7 @@ for model in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite",
         text = ""
         if r.status_code == 200:
             try: text = r.json()["candidates"][0]["content"]["parts"][0]["text"][:30]
-            except: text = "parsed error"
+            except Exception: text = "parsed error"
         else:
             text = r.text[:80]
         return r.status_code, text
