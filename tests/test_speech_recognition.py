@@ -29,9 +29,21 @@ class TestSpeechRecognition(unittest.TestCase):
         result = parse_transcript("   ")
         self.assertEqual(result, {})
 
+    def test_parse_transcript_multiple_spaces(self):
+        result = parse_transcript("play   some   music")
+        self.assertEqual(result, {"command": "play", "params": ["some", "music"]})
+
     def test_parse_transcript_invalid_type(self):
         result = parse_transcript(None)
         self.assertEqual(result, {})
+
+    @patch('src.core.speech_recognition.logger.error')
+    def test_parse_transcript_logs_error_on_exception(self, mock_logger_error):
+        # Passing an integer should trigger an AttributeError on .split()
+        result = parse_transcript(123)
+        self.assertEqual(result, {})
+        mock_logger_error.assert_called_once()
+        self.assertTrue(mock_logger_error.call_args[0][0].startswith("Error parsing transcript:"))
 
 if __name__ == '__main__':
     unittest.main()
