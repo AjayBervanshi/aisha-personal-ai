@@ -74,11 +74,11 @@ class TestAutoErrorLogger(unittest.TestCase):
         args, kwargs = MockLogger.call_args
         config = args[0]
 
-        self.assertEqual(config['from'], 'aisha.ai@example.com')
-        self.assertEqual(config['to'], 'developer@example.com')
-        self.assertEqual(config['smtp_server'], 'smtp.example.com')
+        self.assertIsNone(config['from'])
+        self.assertIsNone(config['to'])
+        self.assertIsNone(config['smtp_server'])
         self.assertEqual(config['smtp_port'], 465)
-        self.assertEqual(config['password'], 'password')
+        self.assertIsNone(config['password'])
 
 if __name__ == '__main__':
     unittest.main()
