@@ -88,6 +88,8 @@ class MemoryCompressor:
         # Only process memories that have embeddings
         embedded = [r for r in rows if r.get("embedding")]
         archived_ids = set()
+        to_archive_ids = []
+        archive_logs = []
         archived_count = 0
 
         for i in range(len(embedded)):
@@ -103,18 +105,29 @@ class MemoryCompressor:
                         archive_id = embedded[j]["id"]
                     else:
                         archive_id = embedded[i]["id"]
-                    archived_ids.add(archive_id)
-                    try:
-                        self.db.table("aisha_memory").update({
-                            "is_active": False,
-                        }).eq("id", archive_id).execute()
-                        archived_count += 1
-                        log.info("event=duplicate_archived",
-                                 title_a=embedded[i]["title"][:40],
-                                 title_b=embedded[j]["title"][:40],
-                                 similarity=round(sim, 3))
-                    except Exception as e:
-                        log.warning("event=archive_failed", memory_id=archive_id, error=str(e))
+
+                    if archive_id not in archived_ids:
+                        archived_ids.add(archive_id)
+                        to_archive_ids.append(archive_id)
+                        archive_logs.append({
+                            "title_a": embedded[i]["title"][:40],
+                            "title_b": embedded[j]["title"][:40],
+                            "similarity": round(sim, 3)
+                        })
+
+        if to_archive_ids:
+            # Batch updates by 100 items at a time to avoid URL length issues with Supabase
+            batch_size = 100
+            for i in range(0, len(to_archive_ids), batch_size):
+                batch_ids = to_archive_ids[i:i + batch_size]
+                try:
+                    self.db.table("aisha_memory").update({"is_active": False}).in_("id", batch_ids).execute()
+                    archived_count += len(batch_ids)
+                except Exception as e:
+                    log.warning("event=archive_failed", error=str(e))
+
+            for log_data in archive_logs:
+                log.info("event=duplicate_archived", **log_data)
 
         return archived_count
 
