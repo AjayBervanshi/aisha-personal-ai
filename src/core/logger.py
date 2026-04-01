@@ -52,7 +52,9 @@ class _JsonFormatter(logging.Formatter):
 
         try:
             return json.dumps(payload, ensure_ascii=False, default=str)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError) as e:
+            import sys
+            print(f"Log formatting failed: {e}", file=sys.stderr)
             return json.dumps({"level": "error", "event": "log_format_failed"})
 
 
@@ -70,8 +72,9 @@ def _get_supabase():
         try:
             from supabase import create_client
             _supabase_client = create_client(url, key)
-        except Exception:
-            pass
+        except (ImportError, ValueError) as e:
+            import sys
+            print(f"Supabase init failed: {e}", file=sys.stderr)
     return _supabase_client
 
 
@@ -97,8 +100,9 @@ class _SupabaseSinkHandler(logging.Handler):
                     if record.exc_info else None
                 ),
             }).execute()
-        except Exception:
-            pass  # Never let logging crash the app
+        except Exception as e:
+            import sys
+            print(f"Supabase logging failed: {e}", file=sys.stderr)
 
 
 # ── Factory ──────────────────────────────────────────────────────────────────
