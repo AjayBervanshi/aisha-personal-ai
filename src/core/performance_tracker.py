@@ -543,6 +543,9 @@ def _sync_content_jobs() -> int:
             log.warning("[PerformanceTracker] No stats returned — quota issue or all IDs invalid?")
             return 0
 
+        updates = []
+        now_iso = datetime.now(timezone.utc).isoformat()
+
         for video_id, stats in stats_map.items():
             job_id = video_id_map.get(video_id)
             if not job_id:
@@ -553,21 +556,25 @@ def _sync_content_jobs() -> int:
             comments = stats["comments"]
             score = _compute_performance_score(views, likes, comments)
 
+            updates.append({
+                "id": job_id,
+                "yt_views": views,
+                "yt_likes": likes,
+                "yt_comments": comments,
+                "performance_score": score,
+                "updated_at": now_iso,
+            })
+            log.info(
+                "[PerformanceTracker] content_job=%s video=%s views=%d likes=%d score=%.2f",
+                job_id[:8], video_id, views, likes, score,
+            )
+
+        if updates:
             try:
-                sb.table("content_jobs").update({
-                    "yt_views": views,
-                    "yt_likes": likes,
-                    "yt_comments": comments,
-                    "performance_score": score,
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                }).eq("id", job_id).execute()
-                updated += 1
-                log.info(
-                    "[PerformanceTracker] content_job=%s video=%s views=%d likes=%d score=%.2f",
-                    job_id[:8], video_id, views, likes, score,
-                )
+                sb.table("content_jobs").upsert(updates).execute()
+                updated += len(updates)
             except Exception as exc:
-                log.error("[PerformanceTracker] Update failed for job %s: %s", job_id[:8], exc)
+                log.error("[PerformanceTracker] Bulk update failed: %s", exc)
 
         log.info(
             "[PerformanceTracker] content_jobs sync done: %d/%d updated", updated, len(rows)
