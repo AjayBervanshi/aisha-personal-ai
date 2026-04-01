@@ -202,8 +202,7 @@ class AIRouter:
         self._gemini_fallback_models: list = []
         self._init_clients()
 
-    def _init_clients(self):
-        """Initialize available AI clients."""
+    def _init_gemini(self):
         # Gemini — direct REST API via requests (avoids httpx/DNS issues on Windows)
         try:
             import requests as _req
@@ -230,6 +229,7 @@ class AIRouter:
         except Exception as e:
             log.warning(f"Gemini init failed: {e}")
 
+    def _init_openai(self):
         # OpenAI (ChatGPT)
         try:
             from openai import OpenAI
@@ -240,6 +240,7 @@ class AIRouter:
         except Exception as e:
             log.warning(f"OpenAI init failed: {e}")
 
+    def _init_anthropic(self):
         # Claude (Anthropic)
         try:
             from anthropic import Anthropic
@@ -250,16 +251,7 @@ class AIRouter:
         except Exception as e:
             log.warning(f"Claude init failed: {e}")
 
-        # Groq (ultra-fast Llama)
-        try:
-            from groq import Groq
-            key = os.getenv("GROQ_API_KEY", "")
-            if key and "your_" not in key:
-                self._clients["groq"] = Groq(api_key=key)
-                log.info("✅ Groq initialized")
-        except Exception as e:
-            log.warning(f"Groq init failed: {e}")
-
+    def _init_xai(self):
         # xAI (Grok) — uses OpenAI-compatible API
         try:
             from openai import OpenAI
@@ -270,6 +262,18 @@ class AIRouter:
         except Exception as e:
             log.warning(f"xAI init failed: {e}")
 
+    def _init_groq(self):
+        # Groq (ultra-fast Llama)
+        try:
+            from groq import Groq
+            key = os.getenv("GROQ_API_KEY", "")
+            if key and "your_" not in key:
+                self._clients["groq"] = Groq(api_key=key)
+                log.info("✅ Groq initialized")
+        except Exception as e:
+            log.warning(f"Groq init failed: {e}")
+
+    def _init_mistral(self):
         # Mistral (optional)
         try:
             from mistralai.client import MistralClient
@@ -280,6 +284,7 @@ class AIRouter:
         except Exception:
             pass  # Optional — no warning
 
+    def _init_nvidia(self):
         # NVIDIA NIM Pool (22 keys × 1,000 credits/month = 22,000 total)
         try:
             try:
@@ -298,6 +303,7 @@ class AIRouter:
         except Exception as e:
             log.warning(f"NVIDIA NIM Pool init failed: {e}")
 
+    def _init_ollama(self):
         # Ollama (local — no key needed!)
         try:
             import requests
@@ -307,6 +313,17 @@ class AIRouter:
                 log.info("✅ Ollama (local) detected")
         except Exception:
             pass  # Not running locally
+
+    def _init_clients(self):
+        """Initialize available AI clients."""
+        self._init_gemini()
+        self._init_openai()
+        self._init_anthropic()
+        self._init_xai()
+        self._init_groq()
+        self._init_mistral()
+        self._init_nvidia()
+        self._init_ollama()
 
     # ── SDK provider re-init ──────────────────────────────────
 
