@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import patch
-from src.core.trend_engine import get_duckduckgo_trends
+from src.core.trend_engine import get_duckduckgo_trends, _fallback_trend_report
 
 class TestTrendEngine(unittest.TestCase):
 
@@ -59,6 +59,23 @@ class TestTrendEngine(unittest.TestCase):
 
         result = get_duckduckgo_trends("test query")
         self.assertEqual(result, [])
+
+
+    def test_fallback_trend_report(self):
+        expected_keys = {
+            "top_angles",
+            "trending_topics",
+            "viral_keywords",
+            "recommended_topic",
+            "hook_idea",
+            "best_thumbnail_concept"
+        }
+
+        channels = ["Story With Aisha", "Riya's Dark Whisper", "Unknown Channel"]
+        for channel in channels:
+            result = _fallback_trend_report(channel)
+            self.assertIsInstance(result, dict)
+            self.assertEqual(set(result.keys()), expected_keys)
 
 if __name__ == "__main__":
     unittest.main()
