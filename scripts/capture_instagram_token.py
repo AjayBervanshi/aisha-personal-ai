@@ -81,7 +81,7 @@ with sync_playwright() as p:
                     document.body.appendChild(div);
                 }
             """)
-        except:
+        except Exception:
             pass
         time.sleep(4)
     else:
