@@ -403,7 +403,11 @@ class AishaBrain:
                             blocked.append((uid, row.get("first_name", f"User {uid}")))
 
                     if uids_to_block:
-                        self.supabase.table("aisha_approved_users").update({"is_active": False}).in_("telegram_user_id", uids_to_block).execute()
+                        # Batch in chunks of 100 to avoid PostgREST URL length limits
+                        chunk_size = 100
+                        for i in range(0, len(uids_to_block), chunk_size):
+                            chunk = uids_to_block[i:i + chunk_size]
+                            self.supabase.table("aisha_approved_users").update({"is_active": False}).in_("telegram_user_id", chunk).execute()
 
                     if blocked:
                         names = ", ".join(f"{n} ({uid})" for uid, n in blocked)
