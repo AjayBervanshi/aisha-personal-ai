@@ -60,5 +60,19 @@ class TestVoiceEngine(unittest.TestCase):
         mock_exists.assert_called_once_with(filepath)
         mock_remove.assert_called_once_with(filepath)
 
+    @patch('src.core.voice_engine.os.remove')
+    @patch('src.core.voice_engine.os.path.exists')
+    def test_cleanup_voice_file_exists_exception(self, mock_exists, mock_remove):
+        """Test cleanup handles exception when os.path.exists fails."""
+        mock_exists.side_effect = Exception("Cannot check path")
+
+        filepath = "locked_dir/audio.mp3"
+        # This should not raise an exception, as it's caught in the function
+        cleanup_voice_file(filepath)
+
+        mock_exists.assert_called_once_with(filepath)
+        mock_remove.assert_not_called()
+
 if __name__ == '__main__':
+
     unittest.main()
