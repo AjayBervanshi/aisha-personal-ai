@@ -149,21 +149,27 @@ def check_ai_providers() -> dict:
     return results
 
 
-def check_supabase_tables() -> dict:
+async def check_supabase_tables() -> dict:
     """Check each required table exists and is reachable. Returns {table: 'ok'/'error: msg'}"""
+    import asyncio
     results = {}
+
+    async def _check_table(sb, table):
+        try:
+            await sb.table(table).select("id", count="exact").limit(1).execute()
+            return table, "ok"
+        except Exception as e:
+            return table, f"error: {e}"
+
     try:
-        from supabase import create_client
-        sb = create_client(
+        from supabase import create_async_client
+        sb = await create_async_client(
             os.getenv("SUPABASE_URL", ""),
             os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""),
         )
-        for table in REQUIRED_TABLES:
-            try:
-                resp = sb.table(table).select("id", count="exact").limit(1).execute()
-                results[table] = "ok"
-            except Exception as e:
-                results[table] = f"error: {e}"
+        tasks = [_check_table(sb, table) for table in REQUIRED_TABLES]
+        res = await asyncio.gather(*tasks)
+        return dict(res)
     except Exception as e:
         for table in REQUIRED_TABLES:
             results[table] = f"error: supabase client failed: {e}"
@@ -369,7 +375,7 @@ async def run_daily_audit() -> dict:
 
     results = {}
     results["ai_providers"] = check_ai_providers()
-    results["supabase_tables"] = check_supabase_tables()
+    results["supabase_tables"] = await check_supabase_tables()
     results["critical_files"] = check_critical_files()
     results["env_vars"] = check_env_vars()
     results["self_improvement"] = check_self_improvement_freshness()
