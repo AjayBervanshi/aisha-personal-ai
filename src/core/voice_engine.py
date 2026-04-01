@@ -141,8 +141,8 @@ def _get_elevenlabs_chars_left(api_key: str) -> int:
             left = sub.get("character_limit", 0) - sub.get("character_count", 0)
             _EL_QUOTA_CACHE[api_key] = left
             return left
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("elevenlabs_quota_check_failed", extra={"error": str(e)})
     _EL_QUOTA_CACHE[api_key] = 0
     return 0
 
@@ -315,8 +315,8 @@ def cleanup_voice_file(filepath: str):
     try:
         if filepath and os.path.exists(filepath):
             os.remove(filepath)
-    except Exception:
-        pass
+    except Exception as e:
+        log.error("cleanup_voice_file_failed", extra={"filepath": filepath, "error": str(e)})
 
 
 def _clean_for_speech(text: str) -> str:
