@@ -65,7 +65,13 @@ def _split_script_into_scenes(script: str) -> List[Dict[str, str]]:
     return scenes
 
 def _get_audio_duration(audio_path: str) -> float:
-    """Uses ffprobe to get the exact duration of an audio file in seconds."""
+    """Uses ffprobe to get the exact duration of an audio file in seconds.
+    Falls back to a safe calculation if ffprobe is missing or fails."""
+
+    if not os.path.exists(audio_path):
+        log.error(f"File not found: {audio_path}")
+        return 0.0
+
     cmd = [
         "ffprobe", "-v", "error", "-show_entries",
         "format=duration", "-of",
@@ -75,8 +81,23 @@ def _get_audio_duration(audio_path: str) -> float:
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, check=True)
         return float(result.stdout.strip())
     except Exception as e:
-        log.error(f"Failed to get audio duration for {audio_path}: {e}")
-        return 5.0 # Fallback 5 seconds
+        log.error(f"Failed to get audio duration via ffprobe: {e}")
+        # Fallback 1: Try mutagen if installed
+        try:
+            from mutagen.mp3 import MP3
+            audio = MP3(audio_path)
+            return float(audio.info.length)
+        except Exception as mut_e:
+            log.warning(f"Mutagen fallback failed: {mut_e}")
+
+        # Fallback 2: Estimate based on file size (assuming standard 192k mp3)
+        # 192 kbps = 24 KB/s. So seconds = size_in_kb / 24
+        size_kb = os.path.getsize(audio_path) / 1024
+        est_duration = size_kb / 24.0
+        if est_duration > 0.5:
+            return float(est_duration)
+
+        return 5.0 # Absolute worst-case fallback
 
 def generate_scene_images(scenes: List[Dict[str, str]]) -> List[Dict[str, str]]:
     """
@@ -115,7 +136,6 @@ def produce_video(script: str, output_filename: str) -> str:
     4. Burns in the Hindi subtitles over the image.
     5. Stitches the perfectly synced scene-videos into a master .mp4.
     """
-    import tempfile
     from src.core.voice_engine import generate_voice
 
     log.info("🎬 Starting Video Production Pipeline...")

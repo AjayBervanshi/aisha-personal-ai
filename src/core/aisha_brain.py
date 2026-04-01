@@ -20,11 +20,11 @@ from supabase import create_client
 from src.core.ai_router import AIRouter
 
 from src.core.config import (
-    GEMINI_API_KEY, GROQ_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_KEY,
-    GEMINI_MODEL, GROQ_MODEL, AI_TEMPERATURE, AI_MAX_TOKENS, AI_HISTORY_LIMIT, USER_NAME
+    SUPABASE_URL, SUPABASE_SERVICE_KEY,
+    AI_HISTORY_LIMIT
 )
 from src.core.language_detector import detect_language, get_response_language_instruction
-from src.core.mood_detector import detect_mood, get_mood_prompt_addon
+from src.core.mood_detector import detect_mood
 from src.memory.memory_manager import MemoryManager
 from src.skills.skill_registry import SkillRegistry
 
@@ -306,9 +306,15 @@ class AishaBrain:
         self.memory.save_conversation("assistant", response_text, platform, language, mood, telegram_id=telegram_id)
         self.memory.update_mood(mood)
 
-        # 8. Auto-extract and save important info from conversation
+        # 8. Manage History Limit (Prevent context overflow)
+        if len(self.history) > AI_HISTORY_LIMIT:
+            # Keep the most recent messages, ensuring we don't sever a tool_call pair
+            self.history = self.history[-AI_HISTORY_LIMIT:]
+
+        # 9. Auto-extract and save important info in a background thread
         if user_role == "admin":
-            self._auto_extract_memory(user_message, response_text, telegram_id=telegram_id)
+            import threading
+            threading.Thread(target=self._auto_extract_memory, args=(user_message, response_text, telegram_id), daemon=True).start()
 
         return response_text
 
