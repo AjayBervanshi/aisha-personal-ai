@@ -97,8 +97,50 @@ class TestRateLimit(unittest.TestCase):
         mock_time.return_value = 1000.0
         req_unknown = self.create_mock_request(None)
 
-        rate_limit(req_unknown)
-        self.assertEqual(len(_request_counts["unknown"]), 1)
+        # Max out limit for unknown IP
+        for _ in range(_RATE_LIMIT):
+            rate_limit(req_unknown)
+
+        with self.assertRaises(HTTPException) as context:
+            rate_limit(req_unknown)
+
+        self.assertEqual(context.exception.status_code, 429)
+        self.assertEqual(len(_request_counts["unknown"]), _RATE_LIMIT)
+
+    @patch('src.api.server.time.time')
+    def test_partial_window_expiration(self, mock_time):
+        req = self.create_mock_request("172.16.0.1")
+
+        # 10 requests at time 1000.0
+        mock_time.return_value = 1000.0
+        for _ in range(10):
+            rate_limit(req)
+
+        # 10 requests at time 1030.0 (30 seconds later)
+        mock_time.return_value = 1030.0
+        for _ in range(10):
+            rate_limit(req)
+
+        # We've reached 20 requests (assuming limit is 20)
+        # Any more at 1030.0 should fail
+        if _RATE_LIMIT == 20:
+            with self.assertRaises(HTTPException):
+                rate_limit(req)
+
+        # Move to 1061.0 (61 seconds after the first batch)
+        # The first 10 requests should expire. We should have room for 10 more.
+        mock_time.return_value = 1061.0
+        for _ in range(10):
+            rate_limit(req)
+
+        # Now we should be at the limit again
+        if _RATE_LIMIT == 20:
+            with self.assertRaises(HTTPException):
+                rate_limit(req)
+
+        # Check that only the last 20 requests remain
+        self.assertEqual(len(_request_counts["172.16.0.1"]), 20)
+
 
 if __name__ == '__main__':
     unittest.main()
