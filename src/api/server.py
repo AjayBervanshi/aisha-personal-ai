@@ -1,5 +1,6 @@
 import os
 import sys
+import traceback
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -84,9 +85,8 @@ async def chat_endpoint(
         reply = aisha.think(req.message, platform="web")
         return {"reply": reply}
     except Exception as e:
-        import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="An internal server error occurred.")
 
 
 @app.get("/health")
@@ -102,7 +102,8 @@ async def get_digest(_auth=Depends(verify_token), _rate=Depends(rate_limit)):
         digest = DigestEngine(aisha.memory, aisha.ai).generate_daily_digest()
         return {"digest": digest}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="An internal server error occurred.")
 
 
 @app.get("/health-summary")
@@ -113,7 +114,8 @@ async def get_health_summary(_auth=Depends(verify_token), _rate=Depends(rate_lim
         summary = HealthTracker(aisha.supabase).get_daily_summary()
         return summary
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="An internal server error occurred.")
 
 
 class HealthLogRequest(BaseModel):
@@ -141,7 +143,8 @@ async def log_health(
             tracker.log_workout(parts[0], parts[1] if len(parts) > 1 else "")
         return {"ok": True}
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail="Invalid request data or format.")
 
 
 if __name__ == "__main__":
