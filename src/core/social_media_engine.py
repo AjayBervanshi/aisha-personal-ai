@@ -171,8 +171,8 @@ class SocialMediaEngine:
                 if existing.data and existing.data.get("instagram_post_id"):
                     log.info(f"[Instagram] Job {job_id} already posted: {existing.data['instagram_post_id']}")
                     return {"success": True, "post_id": existing.data["instagram_post_id"], "skipped": True}
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning(f"[Instagram] Idempotency check failed: {e}")
 
         token, biz_id = self._get_instagram_creds(channel)
         if not token or not biz_id:
@@ -242,8 +242,8 @@ class SocialMediaEngine:
             if job_id:
                 try:
                     _get_supabase().table("content_queue").update({"instagram_status": "failed"}).eq("id", job_id).execute()
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning(f"[Instagram] Failed to update status to failed: {e}")
             return {"success": False, "error": str(e)}
 
     def post_instagram_image(self, image_url: str, caption: str, hashtags: list | None = None, channel: str = "Story With Aisha") -> dict:
@@ -297,8 +297,8 @@ class SocialMediaEngine:
                 if existing.data and existing.data.get("youtube_video_id"):
                     log.info(f"[YouTube] Job {job_id} already uploaded: {existing.data['youtube_url']}")
                     return {"success": True, "video_id": existing.data["youtube_video_id"], "url": existing.data["youtube_url"], "skipped": True}
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning(f"[YouTube] Idempotency check failed: {e}")
 
         try:
             from googleapiclient.discovery import build
@@ -348,8 +348,8 @@ class SocialMediaEngine:
             if job_id:
                 try:
                     _get_supabase().table("content_queue").update({"youtube_status": "failed"}).eq("id", job_id).execute()
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning(f"[YouTube] Failed to update status to failed: {e}")
             return {"success": False, "error": str(e)}
 
     def cross_post(self, content_package: dict) -> dict:
@@ -382,8 +382,8 @@ class SocialMediaEngine:
         try:
             self._get_youtube_credentials(channel)
             yt_ok = True
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug(f"[YouTube] Credentials check failed: {e}")
 
         lines = ["=== Social Media Status ==="]
         lines.append(f"Channel       : {channel}")
