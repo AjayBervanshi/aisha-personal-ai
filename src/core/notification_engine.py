@@ -208,20 +208,20 @@ class NotificationEngine:
             if evening:
                 done = (
                     self.memory.db.table("aisha_schedule")
-                    .select("title")
+                    .select("id", count="exact").limit(1)
                     .eq("due_date", today)
                     .eq("status", "done")
                     .execute()
-                ).data or []
+                )
                 missed = (
                     self.memory.db.table("aisha_schedule")
-                    .select("title")
+                    .select("id", count="exact").limit(1)
                     .eq("due_date", today)
                     .eq("status", "missed")
                     .execute()
-                ).data or []
-                lines.append(f"Tasks completed: {len(done)}")
-                lines.append(f"Tasks missed: {len(missed)}")
+                )
+                lines.append(f"Tasks completed: {getattr(done, 'count', 0) or 0}")
+                lines.append(f"Tasks missed: {getattr(missed, 'count', 0) or 0}")
             else:
                 pending = self.memory.get_today_tasks()
                 if pending:
