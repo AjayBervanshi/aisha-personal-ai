@@ -514,6 +514,8 @@ ALTER TABLE content_performance
 
 -- Unique constraint so analytics_engine upsert on_conflict="content_id" works
 ALTER TABLE content_performance
+  DROP CONSTRAINT IF EXISTS content_performance_content_id_key;
+ALTER TABLE content_performance
   ADD CONSTRAINT content_performance_content_id_key UNIQUE (content_id);
 
 -- Fast lookups
