@@ -70,7 +70,7 @@ def _get_supabase():
         try:
             from supabase import create_client
             _supabase_client = create_client(url, key)
-        except Exception:
+        except (ImportError, ValueError):
             pass
     return _supabase_client
 
@@ -87,6 +87,8 @@ class _SupabaseSinkHandler(logging.Handler):
         if not db:
             return
         try:
+            import httpx
+            import postgrest
             db.table("aisha_system_log").insert({
                 "level": record.levelname.lower(),
                 "module": record.name,
@@ -97,7 +99,7 @@ class _SupabaseSinkHandler(logging.Handler):
                     if record.exc_info else None
                 ),
             }).execute()
-        except Exception:
+        except (httpx.RequestError, postgrest.exceptions.APIError):
             pass  # Never let logging crash the app
 
 
