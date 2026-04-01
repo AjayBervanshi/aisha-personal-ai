@@ -28,6 +28,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 import requests
+from dataclasses import dataclass
 
 log = logging.getLogger("Aisha.VideoEngine")
 
@@ -279,15 +280,19 @@ def _burn_subtitles_ffmpeg(video_path: str, ass_path: str, output_path: str) -> 
 
 # ── Video Rendering ──────────────────────────────────────────
 
+@dataclass
+class VideoSettings:
+    thumbnail_path: str | None = None
+    num_scenes: int = 7
+    format: str = "shorts"
+    add_subtitles: bool = True
+
 def render_video(
     voice_path: str,
     script: str,
     channel: str,
     topic: str,
-    thumbnail_path: str = None,
-    num_scenes: int = 7,
-    format: str = "shorts",
-    add_subtitles: bool = True,
+    settings: VideoSettings | None = None,
 ) -> str | None:
     """
     Main function: render a full MP4 from voice audio + AI scene images.
@@ -297,14 +302,13 @@ def render_video(
         script:         Full script text (for scene extraction + subtitles)
         channel:        YouTube channel name (for visual style)
         topic:          Video topic (for naming)
-        thumbnail_path: Optional pre-generated thumbnail to include as first frame
-        num_scenes:     Number of scene images to generate (default 7)
-        format:         "shorts" (9:16, 1080×1920) or "landscape" (16:9, 1280×720)
-        add_subtitles:  Burn Hindi subtitles into video (default True)
+        settings:       Video settings containing format, scenes, subtitles configuration.
 
     Returns:
         Path to rendered .mp4 file, or None on failure.
     """
+    if settings is None:
+        settings = VideoSettings()
     try:
         from moviepy import (
             AudioFileClip, ImageClip, CompositeVideoClip,
@@ -318,8 +322,8 @@ def render_video(
         log.error(f"Voice file not found: {voice_path}")
         return None
 
-    width, height = _FORMATS.get(format, _FORMATS["shorts"])
-    log.info(f"[VideoEngine] Rendering {format} ({width}×{height}) for '{channel}': {topic}")
+    width, height = _FORMATS.get(settings.format, _FORMATS["shorts"])
+    log.info(f"[VideoEngine] Rendering {settings.format} ({width}×{height}) for '{channel}': {topic}")
 
     try:
         # Load audio and get duration
@@ -329,14 +333,14 @@ def render_video(
 
         # Step 1: Extract scene descriptions
         log.info("[VideoEngine] Extracting scene descriptions...")
-        scene_descriptions = extract_scene_descriptions(script, channel, num_scenes)
+        scene_descriptions = extract_scene_descriptions(script, channel, settings.num_scenes)
 
         # Step 2: Generate scene images
         log.info(f"[VideoEngine] Generating {len(scene_descriptions)} scene images...")
         image_paths = []
 
-        if thumbnail_path and os.path.exists(thumbnail_path):
-            image_paths.append(thumbnail_path)
+        if settings.thumbnail_path and os.path.exists(thumbnail_path):
+            image_paths.append(settings.thumbnail_path)
             scenes_to_generate = scene_descriptions[1:]
         else:
             scenes_to_generate = scene_descriptions
@@ -395,7 +399,7 @@ def render_video(
 
         # Cleanup scene images
         for p in image_paths:
-            if p != thumbnail_path:
+            if p != settings.thumbnail_path:
                 try:
                     Path(p).unlink(missing_ok=True)
                 except Exception:
@@ -405,7 +409,7 @@ def render_video(
         output_filename = f"video_{uuid.uuid4().hex[:8]}.mp4"
         output_path = os.path.join(VIDEO_DIR, output_filename)
 
-        if add_subtitles and script.strip():
+        if settings.add_subtitles and script.strip():
             ass_path = os.path.join(VIDEO_DIR, f"subs_{uuid.uuid4().hex[:6]}.ass")
             subtitle_ok = _generate_ass_subtitles(script, total_duration, width, height, ass_path)
             if subtitle_ok:
@@ -692,8 +696,10 @@ if __name__ == "__main__":
         script=script,
         channel="Story With Aisha",
         topic="Train Romance",
-        num_scenes=5,
-        format=fmt,
-        add_subtitles=True,
+        settings=VideoSettings(
+            num_scenes=5,
+            format=fmt,
+            add_subtitles=True,
+        )
     )
     print(f"Video: {result}")

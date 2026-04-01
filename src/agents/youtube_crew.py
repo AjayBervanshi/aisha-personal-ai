@@ -10,7 +10,7 @@ import logging
 from src.core.ai_router import AIRouter
 from src.core.voice_engine import generate_voice
 from src.core.image_engine import generate_image
-from src.core.video_engine import render_video
+from src.core.video_engine import render_video, VideoSettings
 from src.core.trend_engine import get_trends_for_channel
 from src.core.prompts.personality import CHANNEL_PROMPTS
 from src.core.config import CHANNEL_VOICE_IDS
@@ -261,9 +261,11 @@ Create:
                     script=self.results["script"],
                     channel=channel,
                     topic=topic,
-                    thumbnail_path=self.results.get("thumbnail_path"),
-                    format="shorts",
-                    add_subtitles=True,
+                    settings=VideoSettings(
+                        thumbnail_path=self.results.get("thumbnail_path"),
+                        format="shorts",
+                        add_subtitles=True,
+                    )
                 )
                 if video_path:
                     self.results["video_path"] = video_path
