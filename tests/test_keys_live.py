@@ -13,7 +13,7 @@ PASS = "[PASS]"
 FAIL = "[FAIL]"
 results = {}
 
-def test(name, fn):
+def _test(name, fn):
     t = time.time()
     try:
         code, msg = fn()
@@ -44,7 +44,7 @@ for model in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite",
         else:
             text = r.text[:80]
         return r.status_code, text
-    test(f"gemini/{model}", _g)
+    _test(f"gemini/{model}", _g)
 
 # Groq
 def test_groq():
@@ -56,7 +56,7 @@ def test_groq():
         timeout=15
     )
     return r.status_code, r.text[:80]
-test("groq/llama-3.3-70b", test_groq)
+_test("groq/llama-3.3-70b", test_groq)
 
 # Groq free models
 for gmodel in ["llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"]:
@@ -69,7 +69,7 @@ for gmodel in ["llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"]:
             timeout=15
         )
         return r.status_code, r.text[:60]
-    test(f"groq/{gmodel}", _gq)
+    _test(f"groq/{gmodel}", _gq)
 
 # OpenAI
 def test_openai():
@@ -81,7 +81,7 @@ def test_openai():
         timeout=15
     )
     return r.status_code, r.text[:80]
-test("openai/gpt-4o-mini", test_openai)
+_test("openai/gpt-4o-mini", test_openai)
 
 # Anthropic
 def test_anthropic():
@@ -93,7 +93,7 @@ def test_anthropic():
         timeout=15
     )
     return r.status_code, r.text[:80]
-test("anthropic/claude-haiku", test_anthropic)
+_test("anthropic/claude-haiku", test_anthropic)
 
 # xAI - grok-3-mini (model from .env)
 def test_xai_mini():
@@ -105,7 +105,7 @@ def test_xai_mini():
         timeout=15
     )
     return r.status_code, r.text[:80]
-test("xai/grok-3-mini", test_xai_mini)
+_test("xai/grok-3-mini", test_xai_mini)
 
 # xAI - grok-2-latest
 def test_xai_grok2():
@@ -117,7 +117,7 @@ def test_xai_grok2():
         timeout=15
     )
     return r.status_code, r.text[:80]
-test("xai/grok-2-latest", test_xai_grok2)
+_test("xai/grok-2-latest", test_xai_grok2)
 
 # HuggingFace
 def test_hf():
@@ -129,7 +129,7 @@ def test_hf():
         timeout=20
     )
     return r.status_code, r.text[:80]
-test("huggingface/zephyr-7b", test_hf)
+_test("huggingface/zephyr-7b", test_hf)
 
 # NVIDIA NIM
 def test_nvidia():
@@ -141,7 +141,7 @@ def test_nvidia():
         timeout=25
     )
     return r.status_code, r.text[:60]
-test("nvidia/llama-3.3-70b", test_nvidia)
+_test("nvidia/llama-3.3-70b", test_nvidia)
 
 print("\n=== SUMMARY ===")
 working = [k for k,v in results.items() if v[0]]
