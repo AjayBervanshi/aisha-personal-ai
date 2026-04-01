@@ -501,7 +501,7 @@ on conflict (channel_name) do update
 
 -- Add content_id as unique identifier (YouTube video ID or Instagram media ID)
 ALTER TABLE content_performance
-  ADD COLUMN IF NOT EXISTS content_id       TEXT,
+  ADD COLUMN IF NOT EXISTS content_id       TEXT UNIQUE,
   ADD COLUMN IF NOT EXISTS title            TEXT,
   ADD COLUMN IF NOT EXISTS channel_name     TEXT,
   ADD COLUMN IF NOT EXISTS watch_time_minutes NUMERIC(12,2) DEFAULT 0,
@@ -511,10 +511,6 @@ ALTER TABLE content_performance
   ADD COLUMN IF NOT EXISTS reach           BIGINT DEFAULT 0,
   ADD COLUMN IF NOT EXISTS saved           BIGINT DEFAULT 0,
   ADD COLUMN IF NOT EXISTS pulled_at       TIMESTAMPTZ DEFAULT NOW();
-
--- Unique constraint so analytics_engine upsert on_conflict="content_id" works
-ALTER TABLE content_performance
-  ADD CONSTRAINT content_performance_content_id_key UNIQUE (content_id);
 
 -- Fast lookups
 CREATE INDEX IF NOT EXISTS idx_content_performance_platform_channel
