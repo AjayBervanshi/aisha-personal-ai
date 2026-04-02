@@ -2203,119 +2203,6 @@ def handle_photo(message):
     finally:
         lock.release()
 
-# ─── Main Text Handler ─────────────────────────────────────────────────────────
-
-@bot.message_handler(func=lambda message: True)
-def handle_text(message, override_text=None):
-    if not is_authorized(message): return unauthorized_response(message)
-
-    user_text = override_text or message.text
-    if not user_text or not user_text.strip():
-        return
-
-    chat_id    = message.chat.id
-    message_id = message.message_id
-
-    # Track the latest message for this chat so we can detect stale replies
-    _last_message_id[chat_id] = message_id
-
-    # Acquire the per-chat lock — only one message processed at a time per chat
-    lock = _get_chat_lock(chat_id)
-    if not lock.acquire(timeout=120):
-        # Could not acquire within 2 min — give up silently
-        log.warning(f"handle_text lock_timeout chat_id={chat_id} msg_id={message_id}")
-        return
-
-    try:
-        # After acquiring the lock, check whether this message is still current.
-        # If a newer message arrived while we were waiting, drop this one.
-        if _last_message_id.get(chat_id) != message_id:
-            log.info(f"handle_text dropped_stale chat_id={chat_id} msg_id={message_id}")
-            return
-
-        # Identify who is talking so Aisha addresses them correctly
-        caller_id   = message.from_user.id
-        caller_name = message.from_user.first_name or "Guest"
-        admin       = is_admin(message)
-
-        # ── "Share with owner" intent ─────────────────────────────────────────
-        # If an approved non-owner user says "share this with Ajay/owner", forward it.
-        if not admin and any(kw in user_text.lower() for kw in [
-            "share with", "tell ajay", "tell your owner", "tell the owner",
-            "forward to", "send to ajay", "notify ajay", "let ajay know"
-        ]):
-            forward_msg = (
-                f"📨 *{caller_name}* wants you to know:\n\n"
-                f"_{user_text[:800]}_"
-            )
-            try:
-                bot.send_message(AUTHORIZED_ID, forward_msg, parse_mode="Markdown")
-            except Exception:
-                pass
-            bot.send_message(
-                chat_id,
-                f"Done! I've flagged that for Ajay, {caller_name}. He'll see it shortly."
-            )
-            return
-
-        # Show typing indicator
-        bot.send_chat_action(chat_id, "typing")
-
-        try:
-            log.info(f"[{caller_name}] {user_text[:80]}")
-            response = aisha.think(
-                user_text,
-                platform="telegram",
-                caller_name=caller_name,
-                caller_id=caller_id,
-                is_owner=admin,
-            )
-
-            # Guard: don't send if a newer message has already arrived
-            if _last_message_id.get(chat_id) != message_id:
-                log.info(f"handle_text reply_dropped_stale chat_id={chat_id} msg_id={message_id}")
-                return
-
-            # Send text response
-            if len(response) > 4000:
-                chunks = [response[i:i+4000] for i in range(0, len(response), 4000)]
-                for chunk in chunks:
-                    bot.send_message(chat_id, chunk)
-            else:
-                bot.send_message(chat_id, response)
-
-            # Send voice note if voice mode is enabled
-            if VOICE_MODE_ENABLED and len(response) < 1000:
-                try:
-                    bot.send_chat_action(chat_id, "record_voice")
-
-                    # Detect language and mood for voice tuning
-                    from src.core.mood_detector import detect_mood
-                    from src.core.language_detector import detect_language
-                    mood_res = detect_mood(user_text)
-                    mood = mood_res.mood if hasattr(mood_res, "mood") else str(mood_res)
-                    lang_tuple = detect_language(user_text)
-                    language = lang_tuple[0] if isinstance(lang_tuple, tuple) else "English"
-
-                    voice_path = generate_voice(response, language=language, mood=mood)
-                    if voice_path:
-                        # Final guard before sending voice
-                        if _last_message_id.get(chat_id) == message_id:
-                            with open(voice_path, "rb") as voice_file:
-                                bot.send_voice(chat_id, voice_file)
-                        cleanup_voice_file(voice_path)
-                except Exception as ve:
-                    log.warning(f"Voice generation skipped: {ve}")
-
-        except Exception as e:
-            log.error(f"Error processing message: {e}")
-            fallback_msg = _get_fallback_msg(chat_id, error=e)
-            if fallback_msg:
-                bot.send_message(chat_id, fallback_msg)
-    finally:
-        lock.release()
-
-
 # ─── Health Tracking Commands ─────────────────────────────────────────────────
 
 @bot.message_handler(commands=["water"])
@@ -2541,6 +2428,119 @@ def cmd_instagram_setup(message):
         parse_mode="Markdown",
         disable_web_page_preview=False,
     )
+
+
+# ─── Main Text Handler ─────────────────────────────────────────────────────────
+
+@bot.message_handler(func=lambda message: True)
+def handle_text(message, override_text=None):
+    if not is_authorized(message): return unauthorized_response(message)
+
+    user_text = override_text or message.text
+    if not user_text or not user_text.strip():
+        return
+
+    chat_id    = message.chat.id
+    message_id = message.message_id
+
+    # Track the latest message for this chat so we can detect stale replies
+    _last_message_id[chat_id] = message_id
+
+    # Acquire the per-chat lock — only one message processed at a time per chat
+    lock = _get_chat_lock(chat_id)
+    if not lock.acquire(timeout=120):
+        # Could not acquire within 2 min — give up silently
+        log.warning(f"handle_text lock_timeout chat_id={chat_id} msg_id={message_id}")
+        return
+
+    try:
+        # After acquiring the lock, check whether this message is still current.
+        # If a newer message arrived while we were waiting, drop this one.
+        if _last_message_id.get(chat_id) != message_id:
+            log.info(f"handle_text dropped_stale chat_id={chat_id} msg_id={message_id}")
+            return
+
+        # Identify who is talking so Aisha addresses them correctly
+        caller_id   = message.from_user.id
+        caller_name = message.from_user.first_name or "Guest"
+        admin       = is_admin(message)
+
+        # ── "Share with owner" intent ─────────────────────────────────────────
+        # If an approved non-owner user says "share this with Ajay/owner", forward it.
+        if not admin and any(kw in user_text.lower() for kw in [
+            "share with", "tell ajay", "tell your owner", "tell the owner",
+            "forward to", "send to ajay", "notify ajay", "let ajay know"
+        ]):
+            forward_msg = (
+                f"📨 *{caller_name}* wants you to know:\n\n"
+                f"_{user_text[:800]}_"
+            )
+            try:
+                bot.send_message(AUTHORIZED_ID, forward_msg, parse_mode="Markdown")
+            except Exception:
+                pass
+            bot.send_message(
+                chat_id,
+                f"Done! I've flagged that for Ajay, {caller_name}. He'll see it shortly."
+            )
+            return
+
+        # Show typing indicator
+        bot.send_chat_action(chat_id, "typing")
+
+        try:
+            log.info(f"[{caller_name}] {user_text[:80]}")
+            response = aisha.think(
+                user_text,
+                platform="telegram",
+                caller_name=caller_name,
+                caller_id=caller_id,
+                is_owner=admin,
+            )
+
+            # Guard: don't send if a newer message has already arrived
+            if _last_message_id.get(chat_id) != message_id:
+                log.info(f"handle_text reply_dropped_stale chat_id={chat_id} msg_id={message_id}")
+                return
+
+            # Send text response
+            if len(response) > 4000:
+                chunks = [response[i:i+4000] for i in range(0, len(response), 4000)]
+                for chunk in chunks:
+                    bot.send_message(chat_id, chunk)
+            else:
+                bot.send_message(chat_id, response)
+
+            # Send voice note if voice mode is enabled
+            if VOICE_MODE_ENABLED and len(response) < 1000:
+                try:
+                    bot.send_chat_action(chat_id, "record_voice")
+
+                    # Detect language and mood for voice tuning
+                    from src.core.mood_detector import detect_mood
+                    from src.core.language_detector import detect_language
+                    mood_res = detect_mood(user_text)
+                    mood = mood_res.mood if hasattr(mood_res, "mood") else str(mood_res)
+                    lang_tuple = detect_language(user_text)
+                    language = lang_tuple[0] if isinstance(lang_tuple, tuple) else "English"
+
+                    voice_path = generate_voice(response, language=language, mood=mood)
+                    if voice_path:
+                        # Final guard before sending voice
+                        if _last_message_id.get(chat_id) == message_id:
+                            with open(voice_path, "rb") as voice_file:
+                                bot.send_voice(chat_id, voice_file)
+                        cleanup_voice_file(voice_path)
+                except Exception as ve:
+                    log.warning(f"Voice generation skipped: {ve}")
+
+        except Exception as e:
+            log.error(f"Error processing message: {e}")
+            fallback_msg = _get_fallback_msg(chat_id, error=e)
+            if fallback_msg:
+                bot.send_message(chat_id, fallback_msg)
+    finally:
+        lock.release()
 
 
 def _fire_in_thread(fn):
