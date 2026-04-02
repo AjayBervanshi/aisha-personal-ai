@@ -90,6 +90,9 @@ class MemoryCompressor:
         archived_ids = set()
         archived_count = 0
 
+        to_archive_ids = []
+        archive_logs = []
+
         for i in range(len(embedded)):
             if embedded[i]["id"] in archived_ids:
                 continue
@@ -104,17 +107,28 @@ class MemoryCompressor:
                     else:
                         archive_id = embedded[i]["id"]
                     archived_ids.add(archive_id)
-                    try:
-                        self.db.table("aisha_memory").update({
-                            "is_active": False,
-                        }).eq("id", archive_id).execute()
-                        archived_count += 1
+                    to_archive_ids.append(archive_id)
+                    archive_logs.append({
+                        "title_a": embedded[i].get("title", "")[:40],
+                        "title_b": embedded[j].get("title", "")[:40],
+                        "similarity": round(sim, 3)
+                    })
+
+        if to_archive_ids:
+            batch_size = 100
+            for i in range(0, len(to_archive_ids), batch_size):
+                batch_ids = to_archive_ids[i:i + batch_size]
+                batch_logs = archive_logs[i:i + batch_size]
+                try:
+                    self.db.table("aisha_memory").update({"is_active": False}).in_("id", batch_ids).execute()
+                    archived_count += len(batch_ids)
+                    for log_data in batch_logs:
                         log.info("event=duplicate_archived",
-                                 title_a=embedded[i]["title"][:40],
-                                 title_b=embedded[j]["title"][:40],
-                                 similarity=round(sim, 3))
-                    except Exception as e:
-                        log.warning("event=archive_failed", memory_id=archive_id, error=str(e))
+                                 title_a=log_data["title_a"],
+                                 title_b=log_data["title_b"],
+                                 similarity=log_data["similarity"])
+                except Exception as e:
+                    log.warning("event=archive_failed", error=str(e))
 
         return archived_count
 
