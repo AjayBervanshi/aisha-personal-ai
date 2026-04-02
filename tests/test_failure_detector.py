@@ -113,3 +113,21 @@ def test_detect_failure_patterns_multiple():
     assert "false_action_claim" in types
     assert "command_error" in types
     assert len(patterns) == 3
+
+def test_failure_to_improvement_task_malformed_input():
+    # Test with None values
+    pattern = {"pattern_type": None, "suggested_fix": None}
+    result = failure_to_improvement_task(pattern)
+    assert result == "Add better error handling and logging to src/telegram/bot.py for unknown command inputs."
+
+def test_failure_to_improvement_task_empty_suggested_fix():
+    # Test with empty suggested_fix
+    pattern = {"pattern_type": "api_failure", "suggested_fix": ""}
+    result = failure_to_improvement_task(pattern)
+    assert result == "Add NVIDIA NIM as immediate fallback in src/core/ai_router.py when primary providers return 401/403/429 errors."
+
+def test_failure_to_improvement_task_missing_keys():
+    # Test with entirely missing keys but not empty dict
+    pattern = {"other_key": "value"}
+    result = failure_to_improvement_task(pattern)
+    assert result == "Add better error handling and logging to src/telegram/bot.py for unknown command inputs."
