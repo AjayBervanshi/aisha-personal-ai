@@ -264,18 +264,12 @@ def get_top_performing_topics(channel: str, limit: int = 5) -> list:
             os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""),
         )
 
-        # Get all series IDs for the given channel
-        series_resp = sb.table("aisha_series").select("id").eq("channel", channel).execute()
-        if not series_resp.data:
-            return []
-
-        series_ids = [row["id"] for row in series_resp.data]
-
-        # Fetch episodes with views, ordered by views desc
+        # Fetch episodes with views for the given channel, ordered by views desc
+        # Inner join to filter by channel in a single query
         ep_resp = (
             sb.table("aisha_episodes")
-            .select("title,views")
-            .in_("series_id", series_ids)
+            .select("title, views, aisha_series!inner(channel)")
+            .eq("aisha_series.channel", channel)
             .not_.is_("views", "null")
             .order("views", desc=True)
             .limit(limit)
@@ -313,7 +307,7 @@ def generate_performance_report() -> str:
             os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""),
         )
 
-        # 1. Fetch all series for all channels in bulk
+        # 1. Fetch all series for all channels in bulk (optimized away from N+1 loop)
         series_resp = sb.table("aisha_series").select("id, channel").in_("channel", channels).execute()
         series_data = series_resp.data or []
 
