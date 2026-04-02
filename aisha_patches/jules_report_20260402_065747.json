@@ -1,0 +1,76 @@
+{
+    "timestamp": "2026-04-02T06:57:46.948864",
+    "scanned_files": 36,
+    "findings": {
+        "src/core/autonomous_loop.py": [
+            "print() statement found at line 50. Consider using Aisha's logger."
+        ],
+        "src/core/aisha_brain.py": [
+            "print() statement found at line 376. Consider using Aisha's logger.",
+            "print() statement found at line 275. Consider using Aisha's logger.",
+            "print() statement found at line 371. Consider using Aisha's logger."
+        ],
+        "src/core/jules_subagent.py": [
+            "print() statement found at line 55. Consider using Aisha's logger.",
+            "print() statement found at line 75. Consider using Aisha's logger.",
+            "print() statement found at line 76. Consider using Aisha's logger.",
+            "print() statement found at line 91. Consider using Aisha's logger."
+        ],
+        "src/core/language_detector.py": [
+            "print() statement found at line 109. Consider using Aisha's logger.",
+            "print() statement found at line 112. Consider using Aisha's logger."
+        ],
+        "src/core/voice_engine.py": [
+            "print() statement found at line 239. Consider using Aisha's logger.",
+            "print() statement found at line 257. Consider using Aisha's logger.",
+            "print() statement found at line 249. Consider using Aisha's logger.",
+            "print() statement found at line 128. Consider using Aisha's logger.",
+            "print() statement found at line 155. Consider using Aisha's logger.",
+            "print() statement found at line 191. Consider using Aisha's logger.",
+            "print() statement found at line 201. Consider using Aisha's logger.",
+            "print() statement found at line 253. Consider using Aisha's logger.",
+            "print() statement found at line 255. Consider using Aisha's logger."
+        ],
+        "src/core/config.py": [
+            "print() statement found at line 99. Consider using Aisha's logger.",
+            "print() statement found at line 110. Consider using Aisha's logger.",
+            "print() statement found at line 111. Consider using Aisha's logger.",
+            "print() statement found at line 112. Consider using Aisha's logger.",
+            "print() statement found at line 113. Consider using Aisha's logger.",
+            "print() statement found at line 114. Consider using Aisha's logger.",
+            "print() statement found at line 115. Consider using Aisha's logger.",
+            "print() statement found at line 116. Consider using Aisha's logger.",
+            "print() statement found at line 117. Consider using Aisha's logger.",
+            "print() statement found at line 118. Consider using Aisha's logger.",
+            "print() statement found at line 119. Consider using Aisha's logger.",
+            "print() statement found at line 23. Consider using Aisha's logger.",
+            "print() statement found at line 24. Consider using Aisha's logger.",
+            "print() statement found at line 25. Consider using Aisha's logger.",
+            "print() statement found at line 93. Consider using Aisha's logger.",
+            "print() statement found at line 96. Consider using Aisha's logger.",
+            "print() statement found at line 95. Consider using Aisha's logger."
+        ],
+        "src/core/mood_detector.py": [
+            "print() statement found at line 197. Consider using Aisha's logger.",
+            "print() statement found at line 200. Consider using Aisha's logger."
+        ],
+        "src/telegram/bot.py": [
+            "print() statement found at line 696. Consider using Aisha's logger."
+        ],
+        "src/memory/memory_manager.py": [
+            "print() statement found at line 35. Consider using Aisha's logger.",
+            "print() statement found at line 52. Consider using Aisha's logger.",
+            "print() statement found at line 72. Consider using Aisha's logger.",
+            "print() statement found at line 96. Consider using Aisha's logger.",
+            "print() statement found at line 118. Consider using Aisha's logger.",
+            "print() statement found at line 135. Consider using Aisha's logger.",
+            "print() statement found at line 150. Consider using Aisha's logger.",
+            "print() statement found at line 162. Consider using Aisha's logger.",
+            "print() statement found at line 175. Consider using Aisha's logger.",
+            "print() statement found at line 196. Consider using Aisha's logger.",
+            "print() statement found at line 207. Consider using Aisha's logger.",
+            "print() statement found at line 265. Consider using Aisha's logger.",
+            "print() statement found at line 281. Consider using Aisha's logger."
+        ]
+    }
+}
