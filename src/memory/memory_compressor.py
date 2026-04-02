@@ -65,7 +65,7 @@ class MemoryCompressor:
         except Exception as e:
             log.error("event=decay_failed — %s", str(e))
             stats["errors"] += 1
-        log.info("event=weekly_cleanup_done", **stats)
+        log.info("event=weekly_cleanup_done", extra=stats)
         return stats
 
     def deduplicate_memories(self) -> int:
@@ -109,12 +109,9 @@ class MemoryCompressor:
                             "is_active": False,
                         }).eq("id", archive_id).execute()
                         archived_count += 1
-                        log.info("event=duplicate_archived",
-                                 title_a=embedded[i]["title"][:40],
-                                 title_b=embedded[j]["title"][:40],
-                                 similarity=round(sim, 3))
+                        log.info("event=duplicate_archived", extra={"title_a": embedded[i]["title"][:40], "title_b": embedded[j]["title"][:40], "similarity": round(sim, 3)})
                     except Exception as e:
-                        log.warning("event=archive_failed", memory_id=archive_id, error=str(e))
+                        log.warning("event=archive_failed", extra={"memory_id": archive_id, "error": str(e)})
 
         return archived_count
 
@@ -164,9 +161,9 @@ class MemoryCompressor:
                     self.db.table("aisha_memory").update({"is_active": False}).in_("id", batch_ids).execute()
                     decayed += len(batch_ids)
                     for title in batch_titles:
-                        log.info("event=memory_archived", title=title)
+                        log.info("event=memory_archived", extra={"title": title})
                 except Exception as e:
-                    log.warning("event=archive_failed", error=str(e))
+                    log.warning("event=archive_failed", extra={"error": str(e)})
 
         # Process batch decay
         for new_importance, ids in to_decay_by_new_importance.items():
@@ -179,7 +176,7 @@ class MemoryCompressor:
                     }).in_("id", batch_ids).execute()
                     decayed += len(batch_ids)
                 except Exception as e:
-                    log.warning("event=decay_update_failed", error=str(e))
+                    log.warning("event=decay_update_failed", extra={"error": str(e)})
 
         return decayed
 
@@ -206,7 +203,7 @@ class MemoryCompressor:
                 }).eq("id", memory_id).execute()
             return True
         except Exception as e:
-            log.warning("event=promote_failed", memory_id=memory_id, error=str(e))
+            log.warning("event=promote_failed", extra={"memory_id": memory_id, "error": str(e)})
             return False
 
     # ── Internal ───────────────────────────────────────────────────────────
