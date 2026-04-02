@@ -1,0 +1,6 @@
+🧹 remove unused os import in spawn_ai.py
+
+🎯 **What:** Removed unused `os` import from `src/skills/spawn_ai.py`.
+💡 **Why:** `os` is never used at the top-level scope of the file. It is only required inside the generated `bot_template` where it is correctly imported. Removing it from the file level improves code cleanliness and readability.
+✅ **Verification:** Verified by checking functionality and running test suites `PYTHONPATH=. python scripts/run_tests.py` and `PYTHONPATH=. pytest tests/`.
+✨ **Result:** A cleaner file with no unused imports.
