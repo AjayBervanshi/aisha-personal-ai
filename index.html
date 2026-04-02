@@ -659,12 +659,12 @@
     </div>
 
     <!-- Mode Pills -->
-    <div class="mode-strip">
-      <div class="mode-pill active" data-mode="auto" onclick="setMode(this)">✨ Auto</div>
-      <div class="mode-pill" data-mode="motivational" onclick="setMode(this)">⚡ Motivate</div>
-      <div class="mode-pill" data-mode="finance" onclick="setMode(this)">💰 Finance</div>
-      <div class="mode-pill" data-mode="professional" onclick="setMode(this)">💼 Work</div>
-      <div class="mode-pill" data-mode="casual" onclick="setMode(this)">😄 Casual</div>
+    <div class="mode-strip" role="radiogroup" aria-label="Chat mode">
+      <button class="mode-pill active" data-mode="auto" onclick="setMode(this)" role="radio" aria-checked="true">✨ Auto</button>
+      <button class="mode-pill" data-mode="motivational" onclick="setMode(this)" role="radio" aria-checked="false">⚡ Motivate</button>
+      <button class="mode-pill" data-mode="finance" onclick="setMode(this)" role="radio" aria-checked="false">💰 Finance</button>
+      <button class="mode-pill" data-mode="professional" onclick="setMode(this)" role="radio" aria-checked="false">💼 Work</button>
+      <button class="mode-pill" data-mode="casual" onclick="setMode(this)" role="radio" aria-checked="false">😄 Casual</button>
     </div>
 
     <!-- Chat Area -->
@@ -1021,8 +1021,12 @@
 
     // ── Mode & Language ──────────────────────────────────────────
     function setMode(el) {
-      document.querySelectorAll(".mode-pill").forEach(p => p.classList.remove("active"));
+      document.querySelectorAll(".mode-pill").forEach(p => {
+        p.classList.remove("active");
+        p.setAttribute("aria-checked", "false");
+      });
       el.classList.add("active");
+      el.setAttribute("aria-checked", "true");
       state.currentMode = el.dataset.mode;
     }
 
