@@ -61,6 +61,10 @@ class AutoErrorLogger:
         self.logger.log(level, error)
 
     def send_notification(self, error):
+        if not self.notification_config or not self.notification_config.get('password') or not self.notification_config.get('smtp_server'):
+            self.logger.error("Missing SMTP credentials. Notification skipped.")
+            return
+
         msg = EmailMessage()
         msg.set_content(error)
         msg['subject'] = 'Critical Error Occurred'
@@ -78,13 +82,20 @@ class AutoErrorLogger:
             self.send_notification(error)
 
 def main():
-    notification_config = {
-        'from': os.environ.get('SMTP_FROM'),
-        'to': os.environ.get('SMTP_TO'),
-        'smtp_server': os.environ.get('SMTP_SERVER'),
-        'smtp_port': int(os.environ.get('SMTP_PORT', 465)),
-        'password': os.environ.get('SMTP_PASSWORD')
-    }
+    smtp_password = os.environ.get('SMTP_PASSWORD')
+    smtp_server = os.environ.get('SMTP_SERVER')
+
+    if not smtp_password or not smtp_server:
+        print("SMTP credentials missing. Notifications disabled.")
+        notification_config = None
+    else:
+        notification_config = {
+            'from': os.environ.get('SMTP_FROM'),
+            'to': os.environ.get('SMTP_TO'),
+            'smtp_server': smtp_server,
+            'smtp_port': int(os.environ.get('SMTP_PORT', 465)),
+            'password': smtp_password
+        }
     logger = AutoErrorLogger(notification_config)
 
     try:

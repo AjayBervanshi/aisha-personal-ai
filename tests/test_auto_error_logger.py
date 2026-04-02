@@ -65,7 +65,7 @@ class TestAutoErrorLogger(unittest.TestCase):
 
     @patch.dict(os.environ, {}, clear=True)
     @patch('skills.auto_error_logger.AutoErrorLogger')
-    def test_main_uses_defaults_when_env_vars_missing(self, MockLogger):
+    def test_main_uses_none_when_env_vars_missing(self, MockLogger):
         from skills.auto_error_logger import main
 
         main()
@@ -74,11 +74,7 @@ class TestAutoErrorLogger(unittest.TestCase):
         args, kwargs = MockLogger.call_args
         config = args[0]
 
-        self.assertEqual(config['from'], 'aisha.ai@example.com')
-        self.assertEqual(config['to'], 'developer@example.com')
-        self.assertEqual(config['smtp_server'], 'smtp.example.com')
-        self.assertEqual(config['smtp_port'], 465)
-        self.assertEqual(config['password'], 'password')
+        self.assertIsNone(config)
 
 if __name__ == '__main__':
     unittest.main()
