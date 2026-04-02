@@ -1,7 +1,7 @@
 import importlib
 import inspect
 import pkgutil
-from typing import Dict, Any, Callable
+from typing import Dict, Callable
 
 class SkillRegistry:
     def __init__(self):
