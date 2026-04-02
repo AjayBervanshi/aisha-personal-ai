@@ -1,6 +1,5 @@
 import requests
 from src.skills.skill_registry import aisha_skill
-
 @aisha_skill
 def get_weather(location: str) -> str:
     """Gets the current weather for a given location using wttr.in (No API key required)"""
