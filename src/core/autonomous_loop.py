@@ -77,10 +77,8 @@ class AutonomousLoop:
             )
             from datetime import datetime, timezone, timedelta
             cutoff = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
-            stuck = sb.table("content_jobs").select("id").eq("status", "processing").lt("updated_at", cutoff).execute()
+            stuck = sb.table("content_jobs").update({"status": "queued"}).eq("status", "processing").lt("updated_at", cutoff).execute()
             if stuck.data:
-                ids = [row["id"] for row in stuck.data]
-                sb.table("content_jobs").update({"status": "queued"}).in_("id", ids).execute()
                 log.info(f"event=startup_recovery reset={len(stuck.data)}_stuck_jobs")
         except Exception as e:
             log.warning(f"event=startup_recovery_failed err={e}")
