@@ -60,5 +60,44 @@ class TestVoiceEngine(unittest.TestCase):
         mock_exists.assert_called_once_with(filepath)
         mock_remove.assert_called_once_with(filepath)
 
+
+class TestGetNextElKey(unittest.TestCase):
+    def setUp(self):
+        import src.core.voice_engine as voice_engine
+        self.ve = voice_engine
+        self.ve._EL_KEYS = []
+        self.ve._EL_INDEX = 0
+
+    @patch('src.core.voice_engine.os.getenv')
+    def test_get_next_el_key_no_keys(self, mock_getenv):
+        """Test behavior when no valid keys are found."""
+        mock_getenv.return_value = ""
+        self.assertIsNone(self.ve._get_next_el_key())
+
+        mock_getenv.return_value = "   ,   "
+        # Since _EL_KEYS might be modified by the first call, reset it just in case
+        self.ve._EL_KEYS = []
+        self.assertIsNone(self.ve._get_next_el_key())
+
+    @patch('src.core.voice_engine.os.getenv')
+    def test_get_next_el_key_valid_keys(self, mock_getenv):
+        """Test round-robin distribution with valid keys."""
+        mock_getenv.return_value = "key1,key2,key3"
+
+        self.assertEqual(self.ve._get_next_el_key(), "key1")
+        self.assertEqual(self.ve._get_next_el_key(), "key2")
+        self.assertEqual(self.ve._get_next_el_key(), "key3")
+        self.assertEqual(self.ve._get_next_el_key(), "key1")
+        self.assertEqual(self.ve._get_next_el_key(), "key2")
+
+    @patch('src.core.voice_engine.os.getenv')
+    def test_get_next_el_key_filter_invalid(self, mock_getenv):
+        """Test filtering out placeholder keys containing 'your_'."""
+        mock_getenv.return_value = "key1, your_api_key_here, key2, your_other_key"
+
+        self.assertEqual(self.ve._get_next_el_key(), "key1")
+        self.assertEqual(self.ve._get_next_el_key(), "key2")
+        self.assertEqual(self.ve._get_next_el_key(), "key1")
+
 if __name__ == '__main__':
     unittest.main()
