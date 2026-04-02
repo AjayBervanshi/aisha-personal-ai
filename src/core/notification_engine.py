@@ -55,7 +55,7 @@ class NotificationEngine:
             "Reference his actual tasks and goals. Keep it under 200 words. "
             "You are initiating this conversation — he hasn't messaged you yet."
         )
-        text = self.brain.think(prompt, platform="autonomous")
+        text = self.brain.think(prompt, config=ThinkConfig(platform="autonomous"))
         self.send_telegram(text)
         log.info("event=morning_briefing_sent", chars=len(text))
         return text
@@ -73,7 +73,7 @@ class NotificationEngine:
             "Be gentle about what he missed. Encourage him for tomorrow. "
             "Keep it under 200 words. You are initiating this."
         )
-        text = self.brain.think(prompt, platform="autonomous")
+        text = self.brain.think(prompt, config=ThinkConfig(platform="autonomous"))
         self.send_telegram(text)
         log.info("event=evening_wrapup_sent")
         return text
@@ -123,7 +123,7 @@ class NotificationEngine:
                     "Send him a warm, caring check-in message. Ask how he's doing. "
                     "Be natural, not alarming. Keep it short."
                 )
-                text = self.brain.think(prompt, platform="autonomous")
+                text = self.brain.think(prompt, config=ThinkConfig(platform="autonomous"))
                 self.send_telegram(text)
                 log.info("event=inactivity_check_sent", hours_silent=int(hours_silent))
         except Exception as e:

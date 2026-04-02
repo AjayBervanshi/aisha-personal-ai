@@ -27,7 +27,7 @@ from telebot import types
 from supabase import create_client
 from dotenv import load_dotenv
 
-from src.core.aisha_brain import AishaBrain
+from src.core.aisha_brain import AishaBrain, ThinkConfig
 from src.core.voice_engine import generate_voice, cleanup_voice_file
 
 load_dotenv()
@@ -1948,10 +1948,12 @@ def handle_user_approval(call):
                 pending_name   = pending_user.first_name if pending_user else "Guest"
                 response = aisha.think(
                     pending["text"],
-                    platform="telegram",
-                    caller_name=pending_name,
-                    caller_id=user_id,
-                    is_owner=False,
+                    config=ThinkConfig(
+                        platform="telegram",
+                        caller_name=pending_name,
+                        caller_id=user_id,
+                        is_owner=False,
+                    )
                 )
                 bot.send_message(pending["message"].chat.id, response)
             except Exception as e:
@@ -2080,10 +2082,12 @@ def handle_voice(message):
             voice_is_admin    = is_admin(message)
             response = aisha.think(
                 transcribed_text,
-                platform="telegram",
-                caller_name=voice_caller_name,
-                caller_id=voice_caller_id,
-                is_owner=voice_is_admin,
+                config=ThinkConfig(
+                    platform="telegram",
+                    caller_name=voice_caller_name,
+                    caller_id=voice_caller_id,
+                    is_owner=voice_is_admin
+                )
             )
 
             # Guard before sending reply
@@ -2163,11 +2167,13 @@ def handle_photo(message):
             photo_is_admin    = is_admin(message)
             response = aisha.think(
                 user_text,
-                platform="telegram",
-                image_bytes=downloaded_bytes,
-                caller_name=photo_caller_name,
-                caller_id=photo_caller_id,
-                is_owner=photo_is_admin,
+                config=ThinkConfig(
+                    platform="telegram",
+                    image_bytes=downloaded_bytes,
+                    caller_name=photo_caller_name,
+                    caller_id=photo_caller_id,
+                    is_owner=photo_is_admin
+                )
             )
 
             # Guard: don't send if a newer message has already arrived
@@ -2265,10 +2271,12 @@ def handle_text(message, override_text=None):
             log.info(f"[{caller_name}] {user_text[:80]}")
             response = aisha.think(
                 user_text,
-                platform="telegram",
-                caller_name=caller_name,
-                caller_id=caller_id,
-                is_owner=admin,
+                config=ThinkConfig(
+                    platform="telegram",
+                    caller_name=caller_name,
+                    caller_id=caller_id,
+                    is_owner=admin
+                )
             )
 
             # Guard: don't send if a newer message has already arrived
@@ -2407,7 +2415,7 @@ def cmd_retry(message):
             return
         failed = rows[0]
         bot.send_message(message.chat.id, f"Retrying: _{failed['user_message'][:80]}..._", parse_mode="Markdown")
-        response = aisha.think(failed["user_message"], platform=failed.get("platform", "telegram"))
+        response = aisha.think(failed["user_message"], config=ThinkConfig(platform=failed.get("platform", "telegram")))
         # Mark as retried
         aisha.supabase.table("aisha_message_queue").update({
             "status": "retried",

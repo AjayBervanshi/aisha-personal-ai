@@ -15,6 +15,7 @@ import json
 import re
 import threading
 from datetime import datetime
+from dataclasses import dataclass
 from typing import Optional
 from pathlib import Path
 
@@ -37,6 +38,15 @@ from src.memory.memory_manager import MemoryManager
 
 # Logic moved to src.core.prompts.builder and src.core.mood_detector
 
+
+
+@dataclass
+class ThinkConfig:
+    platform: str = "telegram"
+    image_bytes: bytes = None
+    caller_name: str = "Ajay"
+    caller_id: int = None
+    is_owner: bool = True
 
 
 # ─── Aisha Brain (Main AI Class) ───────────────────────────────────────────────
@@ -464,18 +474,24 @@ class AishaBrain:
         # Default: chat pool (6 × LLaMA-3.3-70B keys — fast, reliable)
         return "chat"
 
-    def think(self, user_message: str, platform: str = "telegram",
-              image_bytes: bytes = None, caller_name: str = "Ajay",
-              caller_id: int = None, is_owner: bool = True) -> str:
+    def think(self, user_message: str, config: ThinkConfig = None) -> str:
         """
         Main method — takes a message, returns Aisha's response.
         Full pipeline: detect language → detect mood → load context → call AI → save memory.
 
         Args:
-            caller_name: First name of who is talking (used in system prompt).
-            caller_id:   Telegram user ID of the caller.
-            is_owner:    True if Ajay himself is talking (full access + private data).
+            user_message: The message to process.
+            config: Configuration for the thinking process.
         """
+        if config is None:
+            config = ThinkConfig()
+
+        platform = config.platform
+        image_bytes = config.image_bytes
+        caller_name = config.caller_name
+        caller_id = config.caller_id
+        is_owner = config.is_owner
+
         # 1. Detect language and mood
         language, _ = detect_language(user_message)
         mood_res = detect_mood(user_message)

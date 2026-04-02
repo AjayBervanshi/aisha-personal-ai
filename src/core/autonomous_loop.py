@@ -22,7 +22,7 @@ _STARTUP_MSG_COOLDOWN: int = 1800  # 30 minutes
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 from src.core.config import TIMEZONE
-from src.core.aisha_brain import AishaBrain
+from src.core.aisha_brain import AishaBrain, ThinkConfig
 from src.core.logger import get_logger
 from src.core.token_manager import run_token_health_check
 from src.core.ai_router import _log_to_db
@@ -203,7 +203,7 @@ class AutonomousLoop:
             "Be highly contextual — reference his actual tasks, goals, or mood if relevant. "
             "You are starting the conversation, not replying to him."
         )
-        morning_text = self.brain.think(prompt, platform="telegram")
+        morning_text = self.brain.think(prompt, config=ThinkConfig(platform="telegram"))
 
         log.info(f"[Aisha] Morning message: {morning_text[:100]}...")
 

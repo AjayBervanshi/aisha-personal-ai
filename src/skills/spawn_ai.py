@@ -1,3 +1,4 @@
+from src.core.aisha_brain import ThinkConfig
 import logging
 from src.core.self_improvement import create_github_pr
 
@@ -29,7 +30,7 @@ brain = {name}Brain()
 
 @bot.message_handler(func=lambda m: True)
 def handle(m):
-    res = brain.think(m.text, platform="telegram")
+    res = brain.think(m.text, config=ThinkConfig(platform="telegram"))
     bot.reply_to(m, res)
 
 if __name__ == "__main__":

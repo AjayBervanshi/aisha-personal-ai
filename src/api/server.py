@@ -9,7 +9,7 @@ from typing import List, Optional
 # Ensure Aisha brain imports work
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from src.core.aisha_brain import AishaBrain
+from src.core.aisha_brain import AishaBrain, ThinkConfig
 
 app = FastAPI(title="Aisha Master Brain API")
 
@@ -81,7 +81,7 @@ async def chat_endpoint(
     _rate=Depends(rate_limit),
 ):
     try:
-        reply = aisha.think(req.message, platform="web")
+        reply = aisha.think(req.message, config=ThinkConfig(platform="web"))
         return {"reply": reply}
     except Exception as e:
         import traceback
