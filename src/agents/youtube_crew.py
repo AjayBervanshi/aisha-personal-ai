@@ -81,28 +81,32 @@ class YouTubeCrew:
         )
         return result.text.strip()
 
-    def kickoff(self, inputs: dict) -> str:
-        channel = inputs.get("channel", "Story With Aisha")
-        fmt = inputs.get("format", "Long Form")
-        master_prompt = inputs.get("master_prompt", "")
-        render_mp4 = inputs.get("render_video", False)  # Set True to also render MP4
 
-        identity = CHANNEL_IDENTITY.get(channel, CHANNEL_IDENTITY["Story With Aisha"])
-
-        from src.core.config import CHANNEL_AI_PROVIDER, CHANNEL_AI_TASK_TYPE
-
-        preferred_ai = CHANNEL_AI_PROVIDER.get(channel, "gemini")
-        nvidia_task = CHANNEL_AI_TASK_TYPE.get(channel, "writing")
-
-        # Fetch real-time trends first — then use as topic if none given
+    def _fetch_trends(self, channel: str) -> dict:
         print("[TrendEngine] Fetching real-time trends...")
         trends = {}
         try:
+            from src.core.trend_engine import get_trends_for_channel
             trends = get_trends_for_channel(channel)
         except Exception as e:
             print(f"[TrendEngine] Warning: trend fetch failed ({e}), using fallback")
+        return trends
 
-        # Use trending topic if none provided, or enhance provided topic with trend data
+    def _prepare_context(self, inputs: dict) -> tuple:
+        channel = inputs.get("channel", "Story With Aisha")
+        fmt = inputs.get("format", "Long Form")
+        master_prompt = inputs.get("master_prompt", "")
+        render_mp4 = inputs.get("render_video", False)
+
+        from src.agents.youtube_crew import CHANNEL_IDENTITY, CHANNEL_PROMPTS
+        identity = CHANNEL_IDENTITY.get(channel, CHANNEL_IDENTITY["Story With Aisha"])
+
+        from src.core.config import CHANNEL_AI_PROVIDER, CHANNEL_AI_TASK_TYPE
+        preferred_ai = CHANNEL_AI_PROVIDER.get(channel, "gemini")
+        nvidia_task = CHANNEL_AI_TASK_TYPE.get(channel, "writing")
+
+        trends = self._fetch_trends(channel)
+
         raw_topic = inputs.get("topic", "")
         if not raw_topic and trends.get("recommended_topic"):
             topic = trends["recommended_topic"]
@@ -110,7 +114,6 @@ class YouTubeCrew:
         else:
             topic = raw_topic or "A Late Night Secret"
 
-        # Append trend context to enrich research
         trend_context = ""
         if trends.get("viral_keywords"):
             trend_context = (
@@ -123,7 +126,6 @@ class YouTubeCrew:
 
         print(f"[Crew] {channel} | {topic} | AI: {preferred_ai.upper()}")
 
-        # Use full channel identity prompt → minimal fallback
         channel_context = (
             master_prompt
             or CHANNEL_PROMPTS.get(channel)
@@ -137,6 +139,14 @@ class YouTubeCrew:
             )
         )
 
+        continuity_ctx = ""
+        if inputs.get("series_id"):
+            from src.core.series_tracker import get_continuity_context
+            continuity_ctx = get_continuity_context(inputs["series_id"])
+
+        return channel, fmt, render_mp4, identity, preferred_ai, nvidia_task, topic, trend_context, channel_context, continuity_ctx
+
+    def _generate_research(self, channel: str, topic: str, trend_context: str, channel_context: str, preferred_ai: str, nvidia_task: str):
         print("[Riya] Researching trending angles + story brief...")
         self.results["research"] = self._generate(
             f"""You are Riya, the Story Researcher.
@@ -155,14 +165,10 @@ STEP 2 — STORY BRIEF (using the top trending angle):
 
 Output: 300 words max. Be specific and concrete.""",
             preferred_provider=preferred_ai,
-                nvidia_task_type=nvidia_task,
+            nvidia_task_type=nvidia_task,
         )
 
-        # Inject series continuity context if this is part of an episodic series
-        continuity_ctx = ""
-        if inputs.get("series_id"):
-            continuity_ctx = get_continuity_context(inputs["series_id"])
-
+    def _generate_script(self, channel_context: str, continuity_ctx: str, fmt: str, preferred_ai: str, nvidia_task: str):
         print("[Lexi] Writing full script...")
         self.results["script"] = self._generate(
             f"""You are Lexi, the Master Scriptwriter.
@@ -180,9 +186,10 @@ Write the complete script. Include:
 Length: {'30-60 second reel script with punchy dialogue' if fmt == 'Short/Reel' else 'Full story script (8-15 minutes of narration)'}
 Make every line count.""",
             preferred_provider=preferred_ai,
-                nvidia_task_type=nvidia_task,
+            nvidia_task_type=nvidia_task,
         )
 
+    def _generate_visuals(self, channel: str, channel_context: str, preferred_ai: str, nvidia_task: str):
         print("[Mia] Designing visuals...")
         self.results["visuals"] = self._generate(
             f"""You are Mia, the Visual Director.
@@ -197,9 +204,10 @@ Create:
 2. 5 scene prompts for AI image generation
 3. Background music mood""",
             preferred_provider=preferred_ai,
-                nvidia_task_type=nvidia_task,
+            nvidia_task_type=nvidia_task,
         )
 
+    def _generate_marketing(self, topic: str, channel_context: str, preferred_ai: str, nvidia_task: str):
         print("[Cappy] Building SEO package...")
         self.results["marketing"] = self._generate(
             f"""You are Cappy, the SEO and Viral Marketing Expert.
@@ -214,20 +222,20 @@ Create:
 4. 30 hashtags
 5. Thumbnail text (3-5 words)""",
             preferred_provider=preferred_ai,
-                nvidia_task_type=nvidia_task,
+            nvidia_task_type=nvidia_task,
         )
 
+    def _generate_assets(self, channel: str, topic: str, identity: dict):
         print("[Aria+Mia] Generating voice + thumbnail assets...")
         self.results["voice_path"] = None
         self.results["thumbnail_path"] = None
 
         mood_for_voice = "romantic" if ("Riya" in channel or "Aisha & Him" in channel) else "personal"
-        # Both Aisha and Riya channels use Devanagari Hindi scripts
         voice_language = "Hindi" if channel in ("Story With Aisha", "Riya's Dark Whisper", "Riya's Dark Romance Library") else "English"
-        # No hard truncation — generate_voice handles chunking internally for long scripts
         voice_text = self.results["script"]
 
         try:
+            from src.core.voice_engine import generate_voice
             voice_path = generate_voice(voice_text, language=voice_language, mood=mood_for_voice, channel=channel)
             if voice_path:
                 self.results["voice_path"] = voice_path
@@ -240,6 +248,8 @@ Create:
                 f"Topic: {topic}. Tone: {identity['tone']}. "
                 "High emotional impact, dramatic lighting, ultra-detailed portrait framing."
             )
+            from src.core.image_engine import generate_image
+            import os
             image_bytes = generate_image(thumbnail_prompt)
             if image_bytes:
                 assets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "temp_assets")
@@ -251,11 +261,12 @@ Create:
         except Exception as e:
             print(f"[Mia] Thumbnail generation failed: {e}")
 
-        # Step: Render final MP4 if requested
+    def _render_final_video(self, render_mp4: bool, channel: str, topic: str):
         self.results["video_path"] = None
         if render_mp4 and self.results.get("voice_path"):
             print("[VideoEngine] Rendering final MP4 (voice + AI scenes)...")
             try:
+                from src.core.video_engine import render_video
                 video_path = render_video(
                     voice_path=self.results["voice_path"],
                     script=self.results["script"],
@@ -271,6 +282,7 @@ Create:
             except Exception as e:
                 print(f"[VideoEngine] Video render failed: {e}")
 
+    def _format_final_output(self, channel: str, fmt: str, topic: str) -> str:
         final = (
             f"{'='*60}\n"
             f"CHANNEL: {channel}\n"
@@ -291,6 +303,17 @@ Create:
             f"[STORY BRIEF]\n{self.results['research']}\n"
             f"{'='*60}"
         )
-
         print("[Crew] Production complete!")
         return final
+
+    def kickoff(self, inputs: dict) -> str:
+        channel, fmt, render_mp4, identity, preferred_ai, nvidia_task, topic, trend_context, channel_context, continuity_ctx = self._prepare_context(inputs)
+
+        self._generate_research(channel, topic, trend_context, channel_context, preferred_ai, nvidia_task)
+        self._generate_script(channel_context, continuity_ctx, fmt, preferred_ai, nvidia_task)
+        self._generate_visuals(channel, channel_context, preferred_ai, nvidia_task)
+        self._generate_marketing(topic, channel_context, preferred_ai, nvidia_task)
+        self._generate_assets(channel, topic, identity)
+        self._render_final_video(render_mp4, channel, topic)
+
+        return self._format_final_output(channel, fmt, topic)
