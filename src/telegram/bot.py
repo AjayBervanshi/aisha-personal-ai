@@ -406,9 +406,7 @@ def cmd_selfaudit(message):
     bot.send_message(message.chat.id, "Starting self-audit now, Ajju! Reading my own code, finding bugs, fixing what I can. I'll report back in a few minutes. 💜🧠")
     import subprocess, sys as _sys
     project_root = str(Path(__file__).parent.parent.parent)
-    subprocess.Popen([_sys.executable, "-c",
-        f"import sys; sys.path.insert(0,'{project_root}'); from src.core.self_editor import SelfEditor; e=SelfEditor(); e.run_improvement_session()"
-    ], cwd=project_root)
+    subprocess.Popen([_sys.executable, "-m", "src.core.self_editor"], cwd=project_root)
 
 
 @bot.message_handler(commands=["upgrade"])

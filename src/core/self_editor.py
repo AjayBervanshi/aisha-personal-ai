@@ -367,3 +367,10 @@ TASK: <detailed description of what to build — 2-3 sentences>
 
         log.info(f"[SelfEditor] Self-improvement complete: {skill_name}")
         return pr_url
+
+
+if __name__ == '__main__':
+    # Setup logging for direct execution
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+    editor = SelfEditor()
+    editor.run_improvement_session()
