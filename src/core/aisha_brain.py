@@ -89,7 +89,7 @@ class AishaBrain:
         try:
             from src.core.config import AUTHORIZED_ID
             return int(AUTHORIZED_ID)
-        except Exception:
+        except (ImportError, AttributeError, ValueError, TypeError):
             return None
 
     def _load_history_from_db(self, user_id: Optional[int] = None) -> list:
