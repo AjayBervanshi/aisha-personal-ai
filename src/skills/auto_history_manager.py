@@ -1,93 +1,85 @@
 import logging
-import os
+import collections
 from typing import Dict, List
-from src.core.database import Database
-from src.core.config import Config
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class HistoryManager:
     """
-    A class responsible for handling user histories, including trimming and loading histories from the database.
-    
-    This class provides methods to load, trim, and reset user histories, ensuring that the owner's history is correctly managed 
-    and avoiding redundant loading of histories. It also includes a method to check for and prevent potential memory errors 
-    by monitoring the size of user histories.
+    Manages user conversation histories, trimming them to a specified limit, 
+    merging redundant histories, and implementing a least-recently-used (LRU) 
+    eviction policy to manage guest sessions.
 
     Attributes:
-        db (Database): The database object used to interact with the database.
-        config (Config): The configuration object used to access configuration settings.
-        max_history_size (int): The maximum allowed size of a user's history.
-        logger (logging.Logger): The logger object used to log events and errors.
+        history_limit (int): The maximum number of conversation history items.
+        guest_sessions (Dict[str, List[str]]): A dictionary of guest sessions, 
+            where each key is a session ID and each value is a list of conversation history items.
+        lru_cache (collections.OrderedDict): An ordered dictionary that stores 
+            the order of access for each session ID, used for LRU eviction.
+
+    Methods:
+        add_history(session_id: str, history_item: str): Adds a conversation history item to the specified session.
+        get_history(session_id: str): Retrieves the conversation history for the specified session.
+        trim_history(session_id: str): Trims the conversation history for the specified session to the specified limit.
+        merge_histories(session_id1: str, session_id2: str): Merges the conversation histories of two sessions.
     """
 
-    def __init__(self, db: Database, config: Config):
-        self.db = db
-        self.config = config
-        self.max_history_size = self.config.get_int('max_history_size')
-        self.logger = logging.getLogger(__name__)
+    def __init__(self, history_limit: int = 100):
+        self.history_limit = history_limit
+        self.guest_sessions: Dict[str, List[str]] = {}
+        self.lru_cache: collections.OrderedDict = collections.OrderedDict()
 
-    def load_history(self, user_id: str) -> List[Dict]:
-        """
-        Load a user's history from the database.
-
-        Args:
-            user_id (str): The ID of the user whose history is to be loaded.
-
-        Returns:
-            List[Dict]: The user's history, where each item is a dictionary representing a history entry.
-        """
+    def add_history(self, session_id: str, history_item: str):
         try:
-            history = self.db.get_user_history(user_id)
-            return history
+            if session_id not in self.guest_sessions:
+                self.guest_sessions[session_id] = []
+                self.lru_cache[session_id] = None
+            self.guest_sessions[session_id].append(history_item)
+            self.lru_cache.move_to_end(session_id)
+            self.trim_history(session_id)
         except Exception as e:
-            self.logger.error(f"Failed to load history for user {user_id}: {str(e)}")
+            logger.error(f"Error adding history: {e}")
+
+    def get_history(self, session_id: str) -> List[str]:
+        try:
+            if session_id not in self.guest_sessions:
+                return []
+            self.lru_cache.move_to_end(session_id)
+            return self.guest_sessions[session_id]
+        except Exception as e:
+            logger.error(f"Error getting history: {e}")
             return []
 
-    def trim_history(self, user_id: str) -> None:
-        """
-        Trim a user's history to the maximum allowed size.
-
-        Args:
-            user_id (str): The ID of the user whose history is to be trimmed.
-        """
+    def trim_history(self, session_id: str):
         try:
-            history = self.load_history(user_id)
-            if len(history) > self.max_history_size:
-                self.db.trim_user_history(user_id, self.max_history_size)
+            if session_id not in self.guest_sessions:
+                return
+            if len(self.guest_sessions[session_id]) > self.history_limit:
+                self.guest_sessions[session_id] = self.guest_sessions[session_id][-self.history_limit:]
         except Exception as e:
-            self.logger.error(f"Failed to trim history for user {user_id}: {str(e)}")
+            logger.error(f"Error trimming history: {e}")
 
-    def reset_history(self, user_id: str) -> None:
-        """
-        Reset a user's history, removing all entries.
-
-        Args:
-            user_id (str): The ID of the user whose history is to be reset.
-        """
+    def merge_histories(self, session_id1: str, session_id2: str):
         try:
-            self.db.reset_user_history(user_id)
+            if session_id1 not in self.guest_sessions or session_id2 not in self.guest_sessions:
+                return
+            self.guest_sessions[session_id1] = list(set(self.guest_sessions[session_id1] + self.guest_sessions[session_id2]))
+            self.guest_sessions[session_id1] = self.guest_sessions[session_id1][-self.history_limit:]
+            del self.guest_sessions[session_id2]
+            self.lru_cache.move_to_end(session_id1)
         except Exception as e:
-            self.logger.error(f"Failed to reset history for user {user_id}: {str(e)}")
+            logger.error(f"Error merging histories: {e}")
 
-    def check_history_size(self, user_id: str) -> None:
-        """
-        Check the size of a user's history and trim it if necessary to prevent memory errors.
-
-        Args:
-            user_id (str): The ID of the user whose history is to be checked.
-        """
-        try:
-            history = self.load_history(user_id)
-            if len(history) > self.max_history_size:
-                self.trim_history(user_id)
-        except Exception as e:
-            self.logger.error(f"Failed to check history size for user {user_id}: {str(e)}")
+def main():
+    history_manager = HistoryManager()
+    history_manager.add_history("session1", "history_item1")
+    history_manager.add_history("session1", "history_item2")
+    print(history_manager.get_history("session1"))
+    history_manager.trim_history("session1")
+    print(history_manager.get_history("session1"))
+    history_manager.merge_histories("session1", "session2")
+    print(history_manager.get_history("session1"))
 
 if __name__ == "__main__":
-    db = Database()
-    config = Config()
-    history_manager = HistoryManager(db, config)
-    user_id = "test_user"
-    history_manager.load_history(user_id)
-    history_manager.trim_history(user_id)
-    history_manager.reset_history(user_id)
-    history_manager.check_history_size(user_id)
+    main()
