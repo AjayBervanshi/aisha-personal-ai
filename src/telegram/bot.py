@@ -1970,6 +1970,7 @@ def handle_user_approval(call):
                 db.table("aisha_rejected_users")
                 .select("rejection_count")
                 .eq("telegram_user_id", user_id)
+                .limit(1)
                 .execute()
             ).data
             count = (existing[0]["rejection_count"] + 1) if existing else 1

@@ -1,3 +1,5 @@
 ## 2024-05-18 - [Batch Updates to Avoid N+1 Problem with Supabase]
 **Learning:** O(N^2) memory analysis loops (like cosine similarity computations) with individual synchronous database updates for each match result in severe network IO overhead and N+1 query patterns. Supabase has PostgREST URL length limits, meaning batched `.in_()` statements should chunk requests.
-**Action:** Always accumulate entity IDs inside loops and apply updates in batches outside the loop using `.in_()` (chunked at max 100 items) to prevent blocking the main thread and ensure scalability over time.
+**Action:** Always accumulate entity IDs inside loops and apply updates in batches outside the loop using `.in_()` (chunked at max 100 items) to prevent blocking the main thread and ensure scalability over time.## 2024-05-20 - [Optimize Supabase Count Queries with .limit(1)]
+**Learning:** Fetching a table row count in Supabase using `.select("id", count="exact").execute()` fetches all matching rows over the network, resulting in an O(N) memory/network bottleneck. PostgREST evaluates `count` independently of the data limits.
+**Action:** Always append `.limit(1)` when doing a `.select("id", count="exact")` just to get the `count` attribute, avoiding downloading large datasets.
