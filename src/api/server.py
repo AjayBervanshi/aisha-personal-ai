@@ -11,6 +11,7 @@ from typing import List, Optional
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from src.core.aisha_brain import AishaBrain
+from src.core.config import IS_DEV
 
 app = FastAPI(title="Aisha Master Brain API")
 
@@ -32,8 +33,10 @@ _API_TOKEN = os.getenv("API_SECRET_TOKEN", "")
 def verify_token(credentials: HTTPAuthorizationCredentials = Depends(_security)):
     """Require Bearer token on all API calls.  Set API_SECRET_TOKEN in .env."""
     if not _API_TOKEN:
-        # No token configured → dev mode, allow all
-        return True
+        if IS_DEV:
+            # No token configured → dev mode, allow all
+            return True
+        raise HTTPException(status_code=401, detail="Server configuration error: API authentication is required but not configured")
     if not credentials or credentials.credentials != _API_TOKEN:
         raise HTTPException(status_code=401, detail="Invalid or missing API token")
     return True

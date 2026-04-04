@@ -7,3 +7,8 @@
 **Vulnerability:** API endpoints in `src/api/server.py` were catching generic `Exception`s and directly passing the raw exception string `str(e)` to the `HTTPException` detail field, potentially exposing sensitive database errors, internal paths, or API failures to unauthenticated users or malicious actors.
 **Learning:** Using `str(e)` in an exception response acts as an information disclosure leak. Raw error messages can provide valuable context to attackers during reconnaissance.
 **Prevention:** Catch specific exceptions whenever possible. For generic fallback `except Exception:` blocks, log the error internally using `traceback.print_exc()` or a logging framework, and return a sanitized, generic error message (e.g., "An internal server error occurred.") to the client.
+
+## 2025-05-18 - Missing API Authentication configuration in production
+**Vulnerability:** The API server `verify_token` implementation failed open if `API_SECRET_TOKEN` was unconfigured, returning `True` to bypass authentication for sensitive API endpoints (`/chat`, `/digest`) regardless of the application environment (`APP_ENV`).
+**Learning:** Returning early or `True` on a missing authentication token causes a fail-open security bypass. In production, a missing secret key configuration should securely fail by explicitly rejecting incoming requests (e.g., returning 401 Unauthorized or 500 Internal Server Error) instead of defaulting to a bypass.
+**Prevention:** Explicitly check the environment logic (e.g. `IS_DEV`) before allowing authentication bypasses. Otherwise, default to securely throwing an authentication exception.

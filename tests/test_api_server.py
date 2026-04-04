@@ -13,9 +13,16 @@ import src.api.server
 class TestApiServerAuth(unittest.TestCase):
     def test_verify_token_dev_mode(self):
         # Set _API_TOKEN to empty
-        with patch.object(src.api.server, '_API_TOKEN', ''):
+        with patch.object(src.api.server, '_API_TOKEN', ''), patch.object(src.api.server, 'IS_DEV', True):
             self.assertTrue(verify_token(None))
             self.assertTrue(verify_token(HTTPAuthorizationCredentials(scheme="Bearer", credentials="foo")))
+
+    def test_verify_token_prod_missing_token_env_var(self):
+        with patch.object(src.api.server, '_API_TOKEN', ''), patch.object(src.api.server, 'IS_DEV', False):
+            with self.assertRaises(HTTPException) as cm:
+                verify_token(None)
+            self.assertEqual(cm.exception.status_code, 401)
+            self.assertEqual(cm.exception.detail, "Server configuration error: API authentication is required but not configured")
 
     def test_verify_token_prod_missing_credentials(self):
         with patch.object(src.api.server, '_API_TOKEN', 'secret123'):
