@@ -1,3 +1,6 @@
 ## 2024-05-18 - [Batch Updates to Avoid N+1 Problem with Supabase]
 **Learning:** O(N^2) memory analysis loops (like cosine similarity computations) with individual synchronous database updates for each match result in severe network IO overhead and N+1 query patterns. Supabase has PostgREST URL length limits, meaning batched `.in_()` statements should chunk requests.
 **Action:** Always accumulate entity IDs inside loops and apply updates in batches outside the loop using `.in_()` (chunked at max 100 items) to prevent blocking the main thread and ensure scalability over time.
+## 2024-04-04 - [Direct Update to Avoid Database N+1 in Supabase]
+**Learning:** For database records where you want to increment a value or insert if it doesn't exist (an upsert pattern) where the update criteria is not the primary key, it is faster to attempt an `UPDATE` query first and fall back to `INSERT` if no rows were updated (`res.data` is empty), rather than performing an initial `SELECT` query to check for existence.
+**Action:** Replace `SELECT` -> `UPDATE`/`INSERT` patterns with `UPDATE` -> `INSERT` (if no rows updated) when the update payload does not strictly depend on a specific pre-existing value fetched from the initial query.

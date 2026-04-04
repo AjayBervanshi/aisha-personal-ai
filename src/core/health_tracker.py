@@ -75,22 +75,15 @@ class HealthTracker:
         quality = quality.lower() if quality.lower() in valid_quality else "okay"
         today = datetime.now().date().isoformat()
         try:
-            existing = (
-                self.db.table("aisha_health").select("id")
-                .eq("date", today).limit(1).execute()
-            ).data
-            if existing:
-                self.db.table("aisha_health").update({
-                    "sleep_hours": hours,
-                    "sleep_quality": quality,
-                    "updated_at": datetime.now().isoformat(),
-                }).eq("id", existing[0]["id"]).execute()
-            else:
-                self.db.table("aisha_health").insert({
-                    "date": today,
-                    "sleep_hours": hours,
-                    "sleep_quality": quality,
-                }).execute()
+            update_data = {
+                "sleep_hours": hours,
+                "sleep_quality": quality,
+                "updated_at": datetime.now().isoformat(),
+            }
+            res = self.db.table("aisha_health").update(update_data).eq("date", today).execute()
+            if not res.data:
+                update_data["date"] = today
+                self.db.table("aisha_health").insert(update_data).execute()
             log.info("event=sleep_logged", hours=hours, quality=quality)
             return True
         except Exception as e:
@@ -108,10 +101,6 @@ class HealthTracker:
             duration_mins = int(match.group(1))
 
         try:
-            existing = (
-                self.db.table("aisha_health").select("id")
-                .eq("date", today).limit(1).execute()
-            ).data
             update_data: Dict[str, Any] = {
                 "workout_type": workout_type,
                 "updated_at": datetime.now().isoformat(),
@@ -119,9 +108,8 @@ class HealthTracker:
             if duration_mins:
                 update_data["workout_duration_mins"] = duration_mins
 
-            if existing:
-                self.db.table("aisha_health").update(update_data).eq("id", existing[0]["id"]).execute()
-            else:
+            res = self.db.table("aisha_health").update(update_data).eq("date", today).execute()
+            if not res.data:
                 update_data["date"] = today
                 self.db.table("aisha_health").insert(update_data).execute()
             log.info("event=workout_logged", type=workout_type, duration=duration_mins)
