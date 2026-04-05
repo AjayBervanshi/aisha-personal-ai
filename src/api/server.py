@@ -25,6 +25,7 @@ app.add_middleware(
 )
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
+import secrets
 
 _security = HTTPBearer(auto_error=False)
 _API_TOKEN = os.getenv("API_SECRET_TOKEN", "")
@@ -34,7 +35,7 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(_security))
     if not _API_TOKEN:
         # No token configured → dev mode, allow all
         return True
-    if not credentials or credentials.credentials != _API_TOKEN:
+    if not credentials or not secrets.compare_digest(credentials.credentials, _API_TOKEN):
         raise HTTPException(status_code=401, detail="Invalid or missing API token")
     return True
 
