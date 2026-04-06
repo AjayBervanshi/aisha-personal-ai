@@ -5,10 +5,10 @@ This document outlines the systematic plan to enhance Aisha with the OS-level, a
 ## 🏗️ Phase 1: Core Orchestration (The Brain Upgrade)
 To support complex tasks, Aisha's brain must evolve beyond single-prompt responses.
 
-- [ ] **Feature 1.1: Autonomous Sub-Agent Delegation (In Progress)**
+- [x] **Feature 1.1: Autonomous Sub-Agent Delegation (Done)**
   - **What:** An Agent Task Manager that allows Aisha to spin up "specialist" agents (e.g., Researcher, Analyst).
   - **Autonomy:** Aisha decides *when* to wake them up based on the user's request complexity.
-- [ ] **Feature 1.2: Tool Execution Loop (200 Iterations)**
+- [x] **Feature 1.2: Tool Execution Loop (200 Iterations) (Done)**
   - **What:** Give Aisha the ability to execute tools, read the result, and decide the next step autonomously in a loop until the task is complete.
 - [ ] **Feature 1.3: Knowledge Graph Vault**
   - **What:** Upgrade Supabase memory to an entity-relationship graph for deeper, structured context injection.
@@ -41,3 +41,17 @@ Allowing Aisha to see what Ajay is doing without being explicitly spoken to.
 
 ---
 *Note: Each feature will be implemented in a dedicated Pull Request to ensure stability and proper integration.*
+
+## 🎙️ Phase 5: Voice & Audio Streaming
+- [ ] **Feature 5.1: Bi-directional Voice WebSocket**
+  - **What:** Send mic audio (WebM) and receive TTS audio (MP3) over the same persistent connection.
+- [ ] **Feature 5.2: In-Browser Wake Word**
+  - **What:** Implement openwakeword (ONNX) to allow voice awakening without cloud latency.
+
+## 🛡️ Phase 6: Authority & Security
+- [ ] **Feature 6.1: Runtime Authority Engine**
+  - **What:** Soft-gate approvals for sensitive actions (e.g., sending emails, deleting files).
+- [ ] **Feature 6.2: Emergency Kill Switch**
+  - **What:** Dashboard/Telegram command to instantly pause/kill all agent loops.
+- [ ] **Feature 6.3: Consecutive-Approval Learning**
+  - **What:** Aisha learns which actions Ajay always approves and suggests auto-approve rules.
