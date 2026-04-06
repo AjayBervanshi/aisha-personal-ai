@@ -167,14 +167,19 @@ class LearningEngine:
     def get_success_rate(self) -> float:
         """Returns 0.0–1.0 success rate across all improvement sessions."""
         try:
-            total_resp = self._sb.table(self.TABLE).select("id", count="exact").execute()
+            # OPTIMIZATION: Append .limit(1) to avoid O(N) memory/network overhead from downloading rows
+            # PostgREST computes count="exact" independently, returning correct count with minimal payload.
+            total_resp = self._sb.table(self.TABLE).select("id", count="exact").limit(1).execute()
             total = total_resp.count or 0
             if total == 0:
                 return 0.0
+
+            # OPTIMIZATION: Append .limit(1) to prevent fetching all IDs for matching rows.
             success_resp = (
                 self._sb.table(self.TABLE)
                 .select("id", count="exact")
                 .in_("status", ["success", "deployed"])
+                .limit(1)
                 .execute()
             )
             successes = success_resp.count or 0
