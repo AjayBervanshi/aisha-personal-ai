@@ -616,9 +616,35 @@ class AishaBrain:
                 subprocess.Popen(["python", "-m", "src.agents.run_youtube", f"--topic={user_message}"], cwd=str(PROJECT_ROOT))
                 response_text += "\n\nSure thing, Ajju! 💜 I've just started the production crew on the studio floor. I'll notify you via email and Telegram the moment the first draft is ready for you! 🎬💸"
 
-            # 7. CAPABILITY GAP DETECTION (The "Jules" Research Loop)
+            # 7. AUTONOMOUS SUB-AGENT DELEGATION (JARVIS Upgrade)
+            # Aisha detects if the task is complex and requires specialized help before responding.
+            delegation_triggers = ["research", "analyze", "deep dive", "find out", "calculate"]
+            if any(t in user_message.lower() for t in delegation_triggers):
+                import logging
+                logging.getLogger(__name__).info("[Brain] Complex task detected. Waking up AgentTaskManager...")
+                try:
+                    from src.agents.agent_manager import agent_manager
 
-            # 7. Update History & Save to Supabase
+                    # Determine which agent to use
+                    target_agent = "researcher"
+                    if "analyze" in user_message.lower() or "calculate" in user_message.lower():
+                        target_agent = "analyst"
+
+                    # Delegate the task to the specialized agent
+                    agent_result = agent_manager.delegate(
+                        agent_name=target_agent,
+                        task=user_message,
+                        context={"history": history[-3:]}
+                    )
+
+                    # Append the agent's work to Aisha's response
+                    response_text += f"\n\n*(Behind the scenes: I woke up my {target_agent.capitalize()} agent to look into this for you. Here is what it found: {agent_result})*"
+                except Exception as e:
+                    print(f"Error calling sub-agent: {e}")
+
+            # 8. CAPABILITY GAP DETECTION (The "Jules" Research Loop)
+
+            # 9. Update History & Save to Supabase
             history.append({"role": "assistant", "content": response_text})
 
             # Persist to DB — guest turns are tagged with their user_id so they
