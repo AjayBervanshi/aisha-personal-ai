@@ -11,11 +11,13 @@ from src.api.server import verify_token
 import src.api.server
 
 class TestApiServerAuth(unittest.TestCase):
-    def test_verify_token_dev_mode(self):
+    def test_verify_token_fail_secure(self):
         # Set _API_TOKEN to empty
         with patch.object(src.api.server, '_API_TOKEN', ''):
-            self.assertTrue(verify_token(None))
-            self.assertTrue(verify_token(HTTPAuthorizationCredentials(scheme="Bearer", credentials="foo")))
+            with self.assertRaises(HTTPException) as cm:
+                verify_token(None)
+            self.assertEqual(cm.exception.status_code, 401)
+            self.assertEqual(cm.exception.detail, "Server configuration error.")
 
     def test_verify_token_prod_missing_credentials(self):
         with patch.object(src.api.server, '_API_TOKEN', 'secret123'):
