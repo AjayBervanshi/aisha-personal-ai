@@ -178,6 +178,7 @@
       cursor: pointer;
       transition: all 0.2s;
       flex-shrink: 0;
+      font-family: inherit;
     }
 
     .mode-pill:hover,
@@ -550,6 +551,10 @@
       cursor: pointer;
       border: 1px solid transparent;
       transition: all 0.2s;
+      width: 100%;
+      text-align: left;
+      font-family: inherit;
+      color: inherit;
     }
 
     .setting-row:hover {
@@ -659,12 +664,12 @@
     </div>
 
     <!-- Mode Pills -->
-    <div class="mode-strip">
-      <div class="mode-pill active" data-mode="auto" onclick="setMode(this)">✨ Auto</div>
-      <div class="mode-pill" data-mode="motivational" onclick="setMode(this)">⚡ Motivate</div>
-      <div class="mode-pill" data-mode="finance" onclick="setMode(this)">💰 Finance</div>
-      <div class="mode-pill" data-mode="professional" onclick="setMode(this)">💼 Work</div>
-      <div class="mode-pill" data-mode="casual" onclick="setMode(this)">😄 Casual</div>
+    <div class="mode-strip" role="tablist" aria-label="Chat modes">
+      <button class="mode-pill active" data-mode="auto" onclick="setMode(this)" role="tab" aria-selected="true">✨ Auto</button>
+      <button class="mode-pill" data-mode="motivational" onclick="setMode(this)" role="tab" aria-selected="false">⚡ Motivate</button>
+      <button class="mode-pill" data-mode="finance" onclick="setMode(this)" role="tab" aria-selected="false">💰 Finance</button>
+      <button class="mode-pill" data-mode="professional" onclick="setMode(this)" role="tab" aria-selected="false">💼 Work</button>
+      <button class="mode-pill" data-mode="casual" onclick="setMode(this)" role="tab" aria-selected="false">😄 Casual</button>
     </div>
 
     <!-- Chat Area -->
@@ -714,10 +719,10 @@
             <span class="setting-name">🔊 Voice Output</span>
             <button class="toggle on" id="voice-toggle" onclick="toggleVoiceOutput()" aria-label="Toggle voice output"></button>
           </div>
-          <div class="setting-row" onclick="changeVoice()">
+          <button class="setting-row" onclick="changeVoice()">
             <span class="setting-name">🎵 Voice Style</span>
             <span class="setting-val" id="voice-style-val">Indian English</span>
-          </div>
+          </button>
           <div class="setting-row">
             <span class="setting-name">🎙️ Voice Input</span>
             <button class="toggle on" id="mic-toggle" aria-label="Toggle voice input"></button>
@@ -725,10 +730,10 @@
         </div>
         <div class="setting-section">
           <div class="setting-label">Language</div>
-          <div class="setting-row" onclick="cycleLang()">
+          <button class="setting-row" onclick="cycleLang()">
             <span class="setting-name">🌐 Default Language</span>
             <span class="setting-val" id="lang-val">Auto-detect</span>
-          </div>
+          </button>
         </div>
         <div class="setting-section">
           <div class="setting-label">Appearance</div>
@@ -747,10 +752,10 @@
             <span class="setting-name">🧠 AI Model</span>
             <span class="setting-val">Gemini 1.5 Flash</span>
           </div>
-          <div class="setting-row" onclick="clearMemory()">
+          <button class="setting-row" onclick="clearMemory()">
             <span class="setting-name">🗑️ Clear Memory</span>
             <span class="setting-val">Tap to reset</span>
-          </div>
+          </button>
         </div>
       </div>
     </div>
@@ -1021,8 +1026,12 @@
 
     // ── Mode & Language ──────────────────────────────────────────
     function setMode(el) {
-      document.querySelectorAll(".mode-pill").forEach(p => p.classList.remove("active"));
+      document.querySelectorAll(".mode-pill").forEach(p => {
+        p.classList.remove("active");
+        p.setAttribute("aria-selected", "false");
+      });
       el.classList.add("active");
+      el.setAttribute("aria-selected", "true");
       state.currentMode = el.dataset.mode;
     }
 
