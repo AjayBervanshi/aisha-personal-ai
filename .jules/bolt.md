@@ -1,3 +1,6 @@
 ## 2024-05-18 - [Batch Updates to Avoid N+1 Problem with Supabase]
 **Learning:** O(N^2) memory analysis loops (like cosine similarity computations) with individual synchronous database updates for each match result in severe network IO overhead and N+1 query patterns. Supabase has PostgREST URL length limits, meaning batched `.in_()` statements should chunk requests.
 **Action:** Always accumulate entity IDs inside loops and apply updates in batches outside the loop using `.in_()` (chunked at max 100 items) to prevent blocking the main thread and ensure scalability over time.
+## 2025-02-14 - [Direct Update to Avoid 1+1 Read/Write in Supabase]
+**Learning:** When conditionally updating rows in Supabase, using a `.select("id")` query first to identify matching IDs and then updating them using `.in_()` is a common but inefficient pattern that incurs unnecessary memory allocation and dual database round-trips. Supabase updates naturally process conditions inline via `eq`, `lt`, etc., and return the modified rows in `.data`.
+**Action:** Replace `SELECT-then-UPDATE` blocks with single conditional updates (e.g., `.update({...}).eq(...).lt(...)`) to fully eliminate the pre-fetch query and improve throughput.

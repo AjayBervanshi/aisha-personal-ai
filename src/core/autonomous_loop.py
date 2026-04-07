@@ -77,14 +77,12 @@ class AutonomousLoop:
             )
             from datetime import datetime, timezone, timedelta
             cutoff = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
-            stuck = sb.table("content_jobs").select("id").eq("status", "processing").lt("updated_at", cutoff).execute()
-            if stuck.data:
-                ids = [row["id"] for row in stuck.data]
-                chunk_size = 100
-                for i in range(0, len(ids), chunk_size):
-                    chunk = ids[i:i + chunk_size]
-                    sb.table("content_jobs").update({"status": "queued"}).in_("id", chunk).execute()
-                log.info(f"event=startup_recovery reset={len(stuck.data)}_stuck_jobs")
+
+            # Bolt: Optimize by doing a single conditional update instead of fetching IDs and chunking
+            res = sb.table("content_jobs").update({"status": "queued"}).eq("status", "processing").lt("updated_at", cutoff).execute()
+
+            if res.data:
+                log.info(f"event=startup_recovery reset={len(res.data)}_stuck_jobs")
         except Exception as e:
             log.warning(f"event=startup_recovery_failed err={e}")
 
