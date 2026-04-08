@@ -167,13 +167,18 @@ class LearningEngine:
     def get_success_rate(self) -> float:
         """Returns 0.0–1.0 success rate across all improvement sessions."""
         try:
-            total_resp = self._sb.table(self.TABLE).select("id", count="exact").execute()
+            # ⚡ Bolt Optimization: Using .limit(1) avoids downloading O(N) row data over the network
+            # when we only care about the count='exact' header response.
+            total_resp = self._sb.table(self.TABLE).select("id", count="exact").limit(1).execute()
             total = total_resp.count or 0
             if total == 0:
                 return 0.0
+
+            # ⚡ Bolt Optimization: .limit(1) applied here as well for O(1) performance
             success_resp = (
                 self._sb.table(self.TABLE)
                 .select("id", count="exact")
+                .limit(1)
                 .in_("status", ["success", "deployed"])
                 .execute()
             )
