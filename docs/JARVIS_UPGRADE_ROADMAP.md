@@ -7,7 +7,7 @@ This document outlines an exhaustive, granular plan to enhance Aisha with the OS
   - *Details:* Agent Task Manager, role-discovery, multi-agent hierarchy (`manage_agents`, `delegate_task`).
 - [x] **Feature 1.2: Tool Execution Loop (200 Iterations) (Done)**
   - *Details:* ReAct loop, Thought/Action/Observation paradigm, max iterations, error handling.
-- [ ] **Feature 1.3: Knowledge Graph Vault (Memory)**
+- [x] **Feature 1.3: Knowledge Graph Vault (Memory) (Done)**
   - *Details:* SQLite/Supabase entity-relationship graph, automatic fact extraction post-conversation, semantic search injection per message, relationship mappings.
 - [ ] **Feature 1.4: Personality Engine**
   - *Details:* Adaptive learning from user feedback, dynamic verbosity/formality/humor scoring, trust-level progression based on message count, channel-specific personality overrides (e.g., Telegram vs Web).

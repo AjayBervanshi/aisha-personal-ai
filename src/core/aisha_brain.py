@@ -528,6 +528,17 @@ class AishaBrain:
         # 3. Build dynamic system prompt
         system_prompt = build_system_prompt(context)
 
+        # 3.5. Inject Vault Knowledge Graph context
+        try:
+            from src.memory.vault_manager import vault
+            # Simple heuristic: inject Ajay's base graph if owner is talking
+            if is_owner:
+                ajay_graph = vault.retrieve_entity_graph("Ajay")
+                if ajay_graph:
+                    system_prompt += f"\n\n[Vault Knowledge Graph - Ajay]:\n{ajay_graph}"
+        except Exception as e:
+            print(f"[Vault Injection] Error: {e}")
+
         # 4. Resolve per-user history and append the incoming message
         history = self._get_user_history(uid, is_owner)
         history.append({"role": "user", "content": user_message})
@@ -731,53 +742,63 @@ class AishaBrain:
 
 
 
+
     def _auto_extract_memory(self, user_msg: str, aisha_reply: str):
         """
-        Auto-detect important information in the conversation and save to memory.
-        Enhanced with an LLM prompt to dynamically parse context into JSON!
+        JARVIS Upgrade (Feature 1.3): Auto-detect entities, facts, and relationships
+        and store them in the structured Knowledge Graph Vault.
         """
         try:
             extraction_prompt = f"""
-            Analyze the following message from Ajay and Aisha's reply.
+            Analyze the following conversation:
             Ajay: {user_msg}
             Aisha: {aisha_reply}
             
-            Does this conversation contain important new long-term information about Ajay's life, goals, finances, preferences, or significant events that Aisha should remember forever?
-            If YES, extract it in the following strictly valid JSON format:
+            Does this conversation contain important long-term factual information about Ajay, people he knows, places, or his projects?
+            If YES, extract it into this strict JSON format for a Knowledge Graph:
             {{
                 "extract": true,
-                "category": "finance" | "goal" | "preference" | "event" | "other",
-                "title": "Short descriptive title",
-                "content": "Detailed description of what Ajay said and any plans discussed",
-                "importance": 1-5,
-                "tags": ["list", "of", "relevant", "string", "tags"]
+                "entities": [
+                    {{"name": "Entity Name", "type": "person|place|project|concept", "description": "Brief description"}}
+                ],
+                "facts": [
+                    {{"entity_name": "Entity Name", "entity_type": "type", "fact": "The factual statement"}}
+                ],
+                "relationships": [
+                    {{"source": "Entity 1", "source_type": "type", "target": "Entity 2", "target_type": "type", "relation": "e.g., likes, owns, works_at"}}
+                ]
             }}
-            If NO important new standalone information is present, return:
+            If NO important standalone facts are present, return:
             {{ "extract": false }}
             
             Return ONLY valid JSON. No backticks.
             """
             import re
             import json
-            # Ask the router to generate the extraction data
+            from src.memory.vault_manager import vault
+
             result = self.ai.generate(
-                system_prompt="You are an expert JSON parser.", 
+                system_prompt="You are an expert JSON parser and Knowledge Graph extractor.",
                 user_message=extraction_prompt
             )
             match = re.search(r'\{.*\}', result.text, re.DOTALL)
             if match:
                 data = json.loads(match.group(0))
                 if data.get("extract"):
-                    from datetime import datetime
-                    self.memory.save_memory(
-                        category=data.get("category", "other"),
-                        title=f"{data.get('title', 'Memory')} - {datetime.now().strftime('%d %b %Y')}",
-                        content=data.get("content", f"Ajay said: {user_msg[:300]}"),
-                        importance=data.get("importance", 3),
-                        tags=data.get("tags", ["auto-extracted"])
-                    )
+                    # Extract Facts
+                    for fact in data.get("facts", []):
+                        vault.add_fact(fact["entity_name"], fact["entity_type"], fact["fact"])
+
+                    # Extract Relationships
+                    for rel in data.get("relationships", []):
+                        vault.add_relationship(
+                            rel["source"], rel["source_type"],
+                            rel["target"], rel["target_type"],
+                            rel["relation"]
+                        )
+                    print(f"[Vault] Extracted facts and entities from conversation.")
         except Exception as e:
-            print(f"[Memory Extraction LLM] Error: {e}")
+            print(f"[Vault Extraction LLM] Error: {e}")
 
     def reset_session(self, caller_id: Optional[int] = None):
         """Clear in-memory conversation history for a specific user (or all users).
