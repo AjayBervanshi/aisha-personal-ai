@@ -648,8 +648,10 @@ class AishaBrain:
                         context={"history": history[-3:]}
                     )
 
-                    # Append the agent's work to Aisha's response
-                    response_text += f"\n\n*(Behind the scenes: I woke up my {target_agent.capitalize()} agent to look into this for you. Here is what it found: {agent_result})*"
+                    # In a full implementation, Aisha would read agent_result and generate a natural response.
+                    # For this prototype, we only append it if it actually found something useful.
+                    if "Task completed:" in agent_result:
+                        response_text += f"\n\n*(Behind the scenes: My {target_agent.capitalize()} agent found: {agent_result})*"
                 except Exception as e:
                     print(f"Error calling sub-agent: {e}")
 
@@ -796,7 +798,18 @@ class AishaBrain:
                             rel["target"], rel["target_type"],
                             rel["relation"]
                         )
-                    print(f"[Vault] Extracted facts and entities from conversation.")
+
+                    # Backward Compatibility: Also save the legacy text memory so existing UI features don't break
+                    from datetime import datetime
+                    self.memory.save_memory(
+                        category="other",
+                        title=f"Extracted Vault Memory - {datetime.now().strftime('%d %b %Y')}",
+                        content=json.dumps(data, indent=2),
+                        importance=3,
+                        tags=["auto-extracted", "vault"]
+                    )
+
+                    print(f"[Vault] Extracted facts and entities from conversation and updated legacy memory.")
         except Exception as e:
             print(f"[Vault Extraction LLM] Error: {e}")
 
