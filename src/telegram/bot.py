@@ -12,6 +12,7 @@ import sys
 import asyncio
 import logging
 import tempfile
+import concurrent.futures
 from datetime import datetime
 from pathlib import Path
 
@@ -150,31 +151,26 @@ db    = create_client(SUPABASE_URL, SUPABASE_KEY)
 def load_users_from_db():
     """Query aisha_users and populate in-memory role cache."""
     try:
-        # 1. Load from the new RBAC table
-        rows = (
-            db.table("aisha_users")
-            .select("telegram_user_id, role")
-            .execute()
-        ).data or []
-        for row in rows:
-            uid = row["telegram_user_id"]
-            role = row["role"]
-            _user_roles[uid] = role
-            _approved_users.add(uid)
+        # Optimization: Fetch both tables in parallel to reduce startup latency
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            f1 = executor.submit(lambda: db.table("aisha_users").select("telegram_user_id, role").execute().data or [])
+            f2 = executor.submit(lambda: db.table("aisha_approved_users").select("telegram_user_id").eq("is_active", True).execute().data or [])
 
-        # 2. Legacy: also load from aisha_approved_users if not already in cache
-        # This ensures existing users don't lose access during migration
-        legacy_rows = (
-            db.table("aisha_approved_users")
-            .select("telegram_user_id")
-            .eq("is_active", True)
-            .execute()
-        ).data or []
-        for row in legacy_rows:
-            uid = row["telegram_user_id"]
-            if uid not in _user_roles:
-                _user_roles[uid] = "guest" # Legacy approved users default to guests
-                _approved_users.add(uid)
+            rows = f1.result()
+            legacy_rows = f2.result()
+
+        # Optimization: Use bulk updates (C-implemented in Python) instead of explicit loops
+        # 1. Load RBAC users first
+        rbac_dict = {row["telegram_user_id"]: row["role"] for row in rows}
+        _user_roles.update(rbac_dict)
+        _approved_users.update(rbac_dict.keys())
+
+        # 2. Legacy: load if not already in cache (RBAC takes precedence)
+        legacy_uids = {row["telegram_user_id"] for row in legacy_rows}
+        new_legacy_uids = legacy_uids - _approved_users
+
+        _user_roles.update({uid: "guest" for uid in new_legacy_uids})
+        _approved_users.update(new_legacy_uids)
 
         log.info(f"load_users count={len(_approved_users)} (rbac={len(rows)}, legacy={len(legacy_rows)})")
     except Exception as e:
