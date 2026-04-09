@@ -33,3 +33,4 @@ opencv-python-headless
 rembg
 numpy
 Pillow
+PyGithub==2.3.0

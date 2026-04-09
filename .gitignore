@@ -31,3 +31,4 @@ tmp/
 *.tmp
 *.log
 Aisha_Antigravity_log.txt
+secrets.json

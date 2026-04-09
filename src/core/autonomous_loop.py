@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from src.core.config import TIMEZONE
 from src.core.aisha_brain import AishaBrain
 from src.agents.boss_aisha import AishaManager
+from src.core.pr_reviewer import PRReviewer
 import telebot
 
 log = logging.getLogger("Aisha.Autonomous")
@@ -96,6 +97,15 @@ class AutonomousLoop:
         except Exception as e:
             log.error(f"Memory consolidation failed: {e}")
 
+    def review_and_merge_prs(self):
+        """Runs hourly: Evaluates and merges/rejects open Pull Requests."""
+        log.info(f"[{datetime.now()}] Waking up to review Pull Requests...")
+        try:
+            reviewer = PRReviewer()
+            reviewer.process_open_prs()
+        except Exception as e:
+            log.error(f"Failed to review PRs: {e}")
+
     def monitor_health_and_fix_bugs(self):
         """Runs periodically: Checks Aisha's own logs for exceptions and dispatches the Dev crew to fix them."""
         log.info(f"[{datetime.now()}] Checking system health logs...")
@@ -150,6 +160,9 @@ def start_loop():
     
     # Check for bugs every 6 hours
     schedule.every(6).hours.do(bot.monitor_health_and_fix_bugs)
+
+    # Automatically review and merge PRs every hour
+    schedule.every(1).hours.do(bot.review_and_merge_prs)
 
     log.info("⏰ Aisha's autonomous biological clock is ticking. Running 24/7...")
     
