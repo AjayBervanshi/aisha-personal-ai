@@ -15,6 +15,7 @@ from supabase import create_client
 from scripts.desktop_automation import DesktopController
 from scripts.browser_automation import CDPBrowserSession
 from scripts.filesystem_automation import FilesystemExecutor
+from scripts.awareness_engine import AwarenessEngine
 
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(message)s', datefmt='%H:%M:%S')
 log = logging.getLogger("AishaSidecar")
@@ -37,6 +38,8 @@ class LocalSidecar:
         self.desktop = DesktopController()
         self.browser = CDPBrowserSession()
         self.fs = FilesystemExecutor()
+        self.awareness = AwarenessEngine(self.supabase, self.machine_id)
+        self.awareness.start()
         log.info(f"Starting Aisha Sidecar on {self.machine_id}...")
         log.info("Successfully connected to the Cloud Brain broker.")
 
@@ -125,6 +128,7 @@ class LocalSidecar:
 
                 time.sleep(2)
         except KeyboardInterrupt:
+            self.awareness.stop()
             log.info("Shutting down sidecar...")
         except Exception as e:
             log.error(f"Sidecar error: {e}")

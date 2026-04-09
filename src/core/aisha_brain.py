@@ -528,6 +528,36 @@ class AishaBrain:
         # 3. Build dynamic system prompt
         system_prompt = build_system_prompt(context)
 
+        # 3.4. Inject Continuous Awareness (JARVIS Phase 3)
+        # Pull the last 5 minutes of screen context from the sidecar
+        try:
+            if not is_owner:
+                pass # Do not leak screen context to guests
+            else:
+                from datetime import datetime, timedelta, timezone
+                five_mins_ago = datetime.now(timezone.utc) - timedelta(minutes=5)
+                # Get latest 3 unique window logs
+                awareness_res = self.supabase.table("aisha_awareness_logs")\
+                    .select("active_window, screen_text, created_at")\
+                    .eq("sidecar_id", "local-laptop")\
+                    .gte("created_at", five_mins_ago.isoformat())\
+                    .order("created_at", desc=True)\
+                    .limit(3)\
+                    .execute()
+
+                if awareness_res.data:
+                    system_prompt += "\n\n[AWARENESS CONTEXT - What Ajay is looking at right now]:\n"
+                    for log in awareness_res.data:
+                        ts = log['created_at'].split('.')[0]
+                        win = log.get('active_window', 'Unknown App')
+                        text = log.get('screen_text', '')[:500] # truncate to save tokens
+                        system_prompt += f"[{ts}] Active Window: {win}\n"
+                        if text:
+                            system_prompt += f"Screen Text: {text}...\n"
+                    system_prompt += "\n(Use this context if Ajay says 'look at this', 'what am I doing', or needs help with what's on screen.)\n"
+        except Exception as e:
+            print(f"[Awareness Injection] Error: {e}")
+
         # 3.5. Inject Vault Knowledge Graph context
         try:
             from src.memory.vault_manager import vault
@@ -664,6 +694,9 @@ class AishaBrain:
             fs_triggers = ["read my file", "write to file", "what's in my folder", "list directory"]
 
             if any(t in user_message.lower() for t in fs_triggers):
+                if not is_owner:
+                    return "Sorry, I can only execute local filesystem commands for my owner, Ajay. 🚫"
+
                 from src.api.sidecar_server import sidecar_manager
                 action = "list_dir"
                 args = {}
@@ -689,6 +722,9 @@ class AishaBrain:
                     response_text += f"\n\n*(I have dispatched a filesystem action [{action}] to your laptop. Awaiting execution...)*"
 
             elif any(t in user_message.lower() for t in browser_triggers):
+                if not is_owner:
+                    return "Sorry, I can only control the local browser for my owner, Ajay. 🚫"
+
                 from src.api.sidecar_server import sidecar_manager
                 action = "navigate"
                 args = {}
@@ -711,6 +747,9 @@ class AishaBrain:
                     response_text += f"\n\n*(I have dispatched a browser action [{action}] to your laptop. Awaiting execution...)*"
 
             elif any(t in user_message.lower() for t in desktop_triggers):
+                if not is_owner:
+                    return "Sorry, I can only control the local desktop for my owner, Ajay. 🚫"
+
                 from src.api.sidecar_server import sidecar_manager
                 action = "list_windows"
                 args = {}
@@ -731,6 +770,9 @@ class AishaBrain:
                     response_text += f"\n\n*(I have dispatched a desktop action [{action}] to your laptop. Awaiting execution...)*"
 
             elif any(t in user_message.lower() for t in sidecar_triggers):
+                if not is_owner:
+                    return "Sorry, I can only execute local shell commands for my owner, Ajay. 🚫"
+
                 from src.api.sidecar_server import sidecar_manager
                 intent_prompt = f"""
                 The user wants to execute a command on their local laptop.

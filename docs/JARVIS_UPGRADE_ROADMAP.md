@@ -23,7 +23,7 @@ This document outlines an exhaustive, granular plan to enhance Aisha with the OS
   - *Details:* Shell command executor with streaming support, WSL bridge integration (run Windows commands from WSL), filesystem read/write/watch tools.
 
 ## 👁️ Phase 3: Continuous Awareness (The Eyes)
-- [ ] **Feature 3.1: Desktop Screen Capture & OCR**
+- [x] **Feature 3.1: Desktop Screen Capture & OCR (Smart Diffing) (Done)**
   - *Details:* Hybrid OCR (Tesseract.js) + Cloud Vision, 5-10 second interval capture, entity-linked context graph from screen text.
 - [ ] **Feature 3.2: Activity & Struggle Detection**
   - *Details:* Application state tracking, activity session inference, detecting repeated errors or stuck states ("struggle detection").
