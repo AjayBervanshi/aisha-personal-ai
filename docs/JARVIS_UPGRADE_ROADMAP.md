@@ -17,7 +17,7 @@ This document outlines an exhaustive, granular plan to enhance Aisha with the OS
   - *Details:* Lightweight Go binary, JWT-authenticated WebSocket connection, multi-machine support (orchestrate laptop, server, and VM simultaneously).
 - [x] **Feature 2.2: Cross-Platform Desktop Automation (Done)**
   - *Details:* Win32 API (UIAutomation, EnumWindows, SendKeys) for Windows, X11 tools (`xdotool`, `wmctrl`) for Linux, macOS (`AXUIElement`).
-- [ ] **Feature 2.3: CDP Browser Automation**
+- [x] **Feature 2.3: CDP Browser Automation (Done)**
   - *Details:* Chrome DevTools Protocol client, session management, 7 browser tools (navigation, interaction, extraction, form filling).
 - [ ] **Feature 2.4: Terminal & Filesystem Executor**
   - *Details:* Shell command executor with streaming support, WSL bridge integration (run Windows commands from WSL), filesystem read/write/watch tools.

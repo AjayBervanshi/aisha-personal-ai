@@ -13,6 +13,7 @@ except ImportError:
 
 from supabase import create_client
 from scripts.desktop_automation import DesktopController
+from scripts.browser_automation import CDPBrowserSession
 
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(message)s', datefmt='%H:%M:%S')
 log = logging.getLogger("AishaSidecar")
@@ -33,6 +34,7 @@ class LocalSidecar:
 
         self.supabase = create_client(url, key)
         self.desktop = DesktopController()
+        self.browser = CDPBrowserSession()
         log.info(f"Starting Aisha Sidecar on {self.machine_id}...")
         log.info("Successfully connected to the Cloud Brain broker.")
 
@@ -81,6 +83,20 @@ class LocalSidecar:
                             output = self.desktop.type_text(args.get('text', ''))
                         else:
                             output = f"Unknown desktop action: {action}"
+
+                    elif cmd['command_type'] == 'browser_action':
+                        action = cmd['payload'].get('action')
+                        args = cmd['payload'].get('args', {})
+
+                        if action == 'navigate':
+                            output = self.browser.navigate(args.get('url', ''))
+                        elif action == 'extract_text':
+                            output = self.browser.extract_text()
+                        elif action == 'list_tabs':
+                            tabs = self.browser.list_tabs()
+                            output = "\n".join([f"- {t.get('title')} ({t.get('url')})" for t in tabs])
+                        else:
+                            output = f"Unknown browser action: {action}"
 
                     else:
                         output = f"Unknown command type: {cmd['command_type']}"
