@@ -13,9 +13,9 @@ This document outlines an exhaustive, granular plan to enhance Aisha with the OS
   - *Details:* Adaptive learning from user feedback, dynamic verbosity/formality/humor scoring, trust-level progression based on message count, channel-specific personality overrides (e.g., Telegram vs Web).
 
 ## 💻 Phase 2: OS-Level Action (The Hands)
-- [ ] **Feature 2.1: The Local Go Sidecar**
+- [x] **Feature 2.1: The Local Python Sidecar (Done)**
   - *Details:* Lightweight Go binary, JWT-authenticated WebSocket connection, multi-machine support (orchestrate laptop, server, and VM simultaneously).
-- [ ] **Feature 2.2: Cross-Platform Desktop Automation**
+- [x] **Feature 2.2: Cross-Platform Desktop Automation (Done)**
   - *Details:* Win32 API (UIAutomation, EnumWindows, SendKeys) for Windows, X11 tools (`xdotool`, `wmctrl`) for Linux, macOS (`AXUIElement`).
 - [ ] **Feature 2.3: CDP Browser Automation**
   - *Details:* Chrome DevTools Protocol client, session management, 7 browser tools (navigation, interaction, extraction, form filling).

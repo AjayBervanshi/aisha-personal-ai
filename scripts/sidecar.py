@@ -12,6 +12,7 @@ except ImportError:
     pass
 
 from supabase import create_client
+from scripts.desktop_automation import DesktopController
 
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(message)s', datefmt='%H:%M:%S')
 log = logging.getLogger("AishaSidecar")
@@ -31,6 +32,7 @@ class LocalSidecar:
             sys.exit(1)
 
         self.supabase = create_client(url, key)
+        self.desktop = DesktopController()
         log.info(f"Starting Aisha Sidecar on {self.machine_id}...")
         log.info("Successfully connected to the Cloud Brain broker.")
 
@@ -67,11 +69,28 @@ class LocalSidecar:
                     if cmd['command_type'] == 'shell_exec':
                         output = self.run_command(cmd['payload'].get('command', ''))
 
-                        # Return result
-                        self.supabase.table("sidecar_commands").update({
-                            "status": "completed",
-                            "result": {"output": output}
-                        }).eq("id", task_id).execute()
+                    elif cmd['command_type'] == 'desktop_action':
+                        action = cmd['payload'].get('action')
+                        args = cmd['payload'].get('args', {})
+
+                        if action == 'list_windows':
+                            output = self.desktop.list_windows()
+                        elif action == 'focus_window':
+                            output = self.desktop.focus_window(args.get('title', ''))
+                        elif action == 'type_text':
+                            output = self.desktop.type_text(args.get('text', ''))
+                        else:
+                            output = f"Unknown desktop action: {action}"
+
+                    else:
+                        output = f"Unknown command type: {cmd['command_type']}"
+
+                    # Return result
+                    self.supabase.table("sidecar_commands").update({
+                        "status": "completed",
+                        "result": {"output": output}
+                    }).eq("id", task_id).execute()
+
 
                 time.sleep(2)
         except KeyboardInterrupt:
