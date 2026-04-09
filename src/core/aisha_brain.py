@@ -655,7 +655,104 @@ class AishaBrain:
                 except Exception as e:
                     print(f"Error calling sub-agent: {e}")
 
-            # 8. CAPABILITY GAP DETECTION (The "Jules" Research Loop)
+
+            # 8. OS-LEVEL SIDECAR INTEGRATION (JARVIS Phase 2)
+            # Aisha detects if the user wants to execute a command on their machine.
+            sidecar_triggers = ["on my laptop", "run command", "on my computer"]
+            desktop_triggers = ["what windows", "focus on", "type this"]
+            browser_triggers = ["open website", "go to", "read page", "what tabs"]
+            fs_triggers = ["read my file", "write to file", "what's in my folder", "list directory"]
+
+            if any(t in user_message.lower() for t in fs_triggers):
+                from src.api.sidecar_server import sidecar_manager
+                action = "list_dir"
+                args = {}
+
+                # Basic heuristic extraction for prototype
+                if "read" in user_message.lower() or "cat" in user_message.lower():
+                    action = "read_file"
+                    args = {"path": user_message.split()[-1].strip()}
+                elif "write" in user_message.lower():
+                    action = "write_file"
+                    args = {"path": "output.txt", "content": user_message}
+                else:
+                    action = "list_dir"
+                    args = {"path": user_message.split()[-1].strip() if len(user_message.split()) > 3 else "."}
+
+                target_sidecar = "local-laptop"
+                task_id = sidecar_manager.dispatch_command(
+                    sidecar_id=target_sidecar,
+                    command_type="fs_action",
+                    payload={"action": action, "args": args}
+                )
+                if task_id:
+                    response_text += f"\n\n*(I have dispatched a filesystem action [{action}] to your laptop. Awaiting execution...)*"
+
+            elif any(t in user_message.lower() for t in browser_triggers):
+                from src.api.sidecar_server import sidecar_manager
+                action = "navigate"
+                args = {}
+                if "what tabs" in user_message.lower():
+                    action = "list_tabs"
+                elif "read page" in user_message.lower():
+                    action = "extract_text"
+                else:
+                    words = user_message.split()
+                    url = next((w for w in words if "http" in w or ".com" in w), "https://google.com")
+                    args = {"url": url}
+
+                target_sidecar = "local-laptop"
+                task_id = sidecar_manager.dispatch_command(
+                    sidecar_id=target_sidecar,
+                    command_type="browser_action",
+                    payload={"action": action, "args": args}
+                )
+                if task_id:
+                    response_text += f"\n\n*(I have dispatched a browser action [{action}] to your laptop. Awaiting execution...)*"
+
+            elif any(t in user_message.lower() for t in desktop_triggers):
+                from src.api.sidecar_server import sidecar_manager
+                action = "list_windows"
+                args = {}
+                if "focus" in user_message.lower():
+                    action = "focus_window"
+                    args = {"title": user_message.split("focus on")[-1].strip()}
+                elif "type" in user_message.lower():
+                    action = "type_text"
+                    args = {"text": user_message.split("type")[-1].strip()}
+
+                target_sidecar = "local-laptop"
+                task_id = sidecar_manager.dispatch_command(
+                    sidecar_id=target_sidecar,
+                    command_type="desktop_action",
+                    payload={"action": action, "args": args}
+                )
+                if task_id:
+                    response_text += f"\n\n*(I have dispatched a desktop action [{action}] to your laptop. Awaiting execution...)*"
+
+            elif any(t in user_message.lower() for t in sidecar_triggers):
+                from src.api.sidecar_server import sidecar_manager
+                intent_prompt = f"""
+                The user wants to execute a command on their local laptop.
+                User Request: {user_message}
+
+                If you understand the exact terminal/shell command they want to run, reply with ONLY the exact command.
+                For example: "open https://google.com" or "ls -la"
+                If you are unsure or the request is dangerous, reply with "NONE".
+                """
+                cmd_result = self.ai.generate(system_prompt="You are a strict command translator.", user_message=intent_prompt)
+
+                if cmd_result and cmd_result.text.strip() != "NONE":
+                    target_sidecar = "local-laptop"
+                    task_id = sidecar_manager.dispatch_command(
+                        sidecar_id=target_sidecar,
+                        command_type="shell_exec",
+                        payload={"command": cmd_result.text.strip()}
+                    )
+                    if task_id:
+                        response_text += f"\n\n*(I have dispatched the command `{cmd_result.text.strip()}` to your laptop. Awaiting execution...)*"
+
+            # 9. CAPABILITY GAP DETECTION (The "Jules" Research Loop)
 
             # 9. Update History & Save to Supabase
             history.append({"role": "assistant", "content": response_text})

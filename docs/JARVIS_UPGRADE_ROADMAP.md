@@ -19,7 +19,7 @@ This document outlines an exhaustive, granular plan to enhance Aisha with the OS
   - *Details:* Win32 API (UIAutomation, EnumWindows, SendKeys) for Windows, X11 tools (`xdotool`, `wmctrl`) for Linux, macOS (`AXUIElement`).
 - [x] **Feature 2.3: CDP Browser Automation (Done)**
   - *Details:* Chrome DevTools Protocol client, session management, 7 browser tools (navigation, interaction, extraction, form filling).
-- [ ] **Feature 2.4: Terminal & Filesystem Executor**
+- [x] **Feature 2.4: Terminal & Filesystem Executor (Done)**
   - *Details:* Shell command executor with streaming support, WSL bridge integration (run Windows commands from WSL), filesystem read/write/watch tools.
 
 ## 👁️ Phase 3: Continuous Awareness (The Eyes)

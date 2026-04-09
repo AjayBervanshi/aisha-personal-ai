@@ -14,6 +14,7 @@ except ImportError:
 from supabase import create_client
 from scripts.desktop_automation import DesktopController
 from scripts.browser_automation import CDPBrowserSession
+from scripts.filesystem_automation import FilesystemExecutor
 
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(message)s', datefmt='%H:%M:%S')
 log = logging.getLogger("AishaSidecar")
@@ -35,6 +36,7 @@ class LocalSidecar:
         self.supabase = create_client(url, key)
         self.desktop = DesktopController()
         self.browser = CDPBrowserSession()
+        self.fs = FilesystemExecutor()
         log.info(f"Starting Aisha Sidecar on {self.machine_id}...")
         log.info("Successfully connected to the Cloud Brain broker.")
 
@@ -97,6 +99,19 @@ class LocalSidecar:
                             output = "\n".join([f"- {t.get('title')} ({t.get('url')})" for t in tabs])
                         else:
                             output = f"Unknown browser action: {action}"
+
+                    elif cmd['command_type'] == 'fs_action':
+                        action = cmd['payload'].get('action')
+                        args = cmd['payload'].get('args', {})
+
+                        if action == 'list_dir':
+                            output = self.fs.list_directory(args.get('path', ''))
+                        elif action == 'read_file':
+                            output = self.fs.read_file(args.get('path', ''))
+                        elif action == 'write_file':
+                            output = self.fs.write_file(args.get('path', ''), args.get('content', ''))
+                        else:
+                            output = f"Unknown filesystem action: {action}"
 
                     else:
                         output = f"Unknown command type: {cmd['command_type']}"
