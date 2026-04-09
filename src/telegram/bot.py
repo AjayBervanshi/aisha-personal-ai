@@ -2838,7 +2838,7 @@ class _AishaHTTPHandler(BaseHTTPRequestHandler):
 
         # ── pg_cron trigger endpoint ───────────────────────────────────────────
         secret = self.headers.get("X-Trigger-Secret", "")
-        if TRIGGER_SECRET and secret != TRIGGER_SECRET:
+        if not TRIGGER_SECRET or secret != TRIGGER_SECRET:
             self.send_response(403)
             self.end_headers()
             self.wfile.write(b'{"error":"forbidden"}')
