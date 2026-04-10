@@ -33,9 +33,9 @@ This document outlines an exhaustive, granular plan to enhance Aisha with the OS
 ## 🎯 Phase 4: Goal Pursuit & Workflows (The Drive)
 - [x] **Feature 4.1: OKR Goal Engine (Done)**
   - *Details:* Objective -> Key Result -> Daily Action hierarchy, 0.0-1.0 scoring, morning planning / evening review rhythms, drill-sergeant escalation (pressure -> root cause -> suggest kill).
-- [ ] **Feature 4.2: Visual & NLP Workflow Engine**
+- [x] **Feature 4.2: Visual & NLP Workflow Engine (Done)**
   - *Details:* ReactFlow visual builder, topological sort execution, 50+ nodes across 5 categories, template expression resolution (`{{var}}`).
-- [ ] **Feature 4.3: Workflow Triggers & Self-Healing**
+- [x] **Feature 4.3: Workflow Triggers & Self-Healing (Done)**
   - *Details:* Cron, webhook, file watch, screen events, clipboard, process polling. Self-heal flow: retry -> LLM analysis -> fixed config -> re-execute.
 - [ ] **Feature 4.4: Workflow Auto-Suggestions**
   - *Details:* Detect patterns (app switches, recurring errors, scheduled behavior) and auto-suggest workflow definitions.

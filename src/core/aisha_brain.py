@@ -686,6 +686,19 @@ class AishaBrain:
                     print(f"Error calling sub-agent: {e}")
 
 
+            # 8.5. WORKFLOW ENGINE (JARVIS Phase 4)
+            # Detects if user is asking to automate a routine or background script
+            workflow_triggers = ["automate this", "every morning at", "every day", "create a workflow", "schedule a task"]
+            if any(t in user_message.lower() for t in workflow_triggers):
+                if is_owner:
+                    from src.core.workflow_engine import WorkflowEngine
+                    engine = WorkflowEngine(self.supabase, self.ai)
+                    summary = engine.build_from_nl(user_message)
+                    if summary:
+                        response_text += f"\n\n{summary}"
+                else:
+                    response_text += "\n\n*(Guest mode: Workflow automation disabled)*"
+
             # 8. GOAL ENGINE (JARVIS Phase 4)
             # Detects if user is setting a new long-term goal
             goal_triggers = ["i want to achieve", "my goal is to", "set a goal to"]
