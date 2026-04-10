@@ -25,9 +25,9 @@ This document outlines an exhaustive, granular plan to enhance Aisha with the OS
 ## 👁️ Phase 3: Continuous Awareness (The Eyes)
 - [x] **Feature 3.1: Desktop Screen Capture & OCR (Smart Diffing) (Done)**
   - *Details:* Hybrid OCR (Tesseract.js) + Cloud Vision, 5-10 second interval capture, entity-linked context graph from screen text.
-- [ ] **Feature 3.2: Activity & Struggle Detection**
+- [x] **Feature 3.2: Activity & Struggle Detection (Done)**
   - *Details:* Application state tracking, activity session inference, detecting repeated errors or stuck states ("struggle detection").
-- [ ] **Feature 3.3: Proactive Notifications**
+- [x] **Feature 3.3: Proactive Notifications (Done)**
   - *Details:* Desktop overlay widget, proactive Telegram/Discord messages based on detected struggles or context.
 
 ## 🎯 Phase 4: Goal Pursuit & Workflows (The Drive)
