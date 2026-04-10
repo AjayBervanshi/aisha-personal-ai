@@ -686,7 +686,20 @@ class AishaBrain:
                     print(f"Error calling sub-agent: {e}")
 
 
-            # 8. OS-LEVEL SIDECAR INTEGRATION (JARVIS Phase 2)
+            # 8. GOAL ENGINE (JARVIS Phase 4)
+            # Detects if user is setting a new long-term goal
+            goal_triggers = ["i want to achieve", "my goal is to", "set a goal to"]
+            if any(t in user_message.lower() for t in goal_triggers):
+                if is_owner:
+                    from src.core.goal_engine import GoalEngine
+                    engine = GoalEngine(self.supabase, self.ai)
+                    summary = engine.parse_new_goal(user_message)
+                    if summary:
+                        response_text += f"\n\n*(I have set up your new OKR Goal Tracker based on this request:)*\n{summary}"
+                else:
+                    response_text += "\n\n*(Guest mode: Goal tracking disabled)*"
+
+            # 9. OS-LEVEL SIDECAR INTEGRATION (JARVIS Phase 2)
             # Aisha detects if the user wants to execute a command on their machine.
             sidecar_triggers = ["on my laptop", "run command", "on my computer"]
             desktop_triggers = ["what windows", "focus on", "type this"]
@@ -794,7 +807,7 @@ class AishaBrain:
                     if task_id:
                         response_text += f"\n\n*(I have dispatched the command `{cmd_result.text.strip()}` to your laptop. Awaiting execution...)*"
 
-            # 9. CAPABILITY GAP DETECTION (The "Jules" Research Loop)
+            # 10. CAPABILITY GAP DETECTION (The "Jules" Research Loop)
 
             # 9. Update History & Save to Supabase
             history.append({"role": "assistant", "content": response_text})

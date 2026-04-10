@@ -31,7 +31,7 @@ This document outlines an exhaustive, granular plan to enhance Aisha with the OS
   - *Details:* Desktop overlay widget, proactive Telegram/Discord messages based on detected struggles or context.
 
 ## 🎯 Phase 4: Goal Pursuit & Workflows (The Drive)
-- [ ] **Feature 4.1: OKR Goal Engine**
+- [x] **Feature 4.1: OKR Goal Engine (Done)**
   - *Details:* Objective -> Key Result -> Daily Action hierarchy, 0.0-1.0 scoring, morning planning / evening review rhythms, drill-sergeant escalation (pressure -> root cause -> suggest kill).
 - [ ] **Feature 4.2: Visual & NLP Workflow Engine**
   - *Details:* ReactFlow visual builder, topological sort execution, 50+ nodes across 5 categories, template expression resolution (`{{var}}`).

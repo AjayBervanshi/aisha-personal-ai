@@ -41,6 +41,13 @@ class AutonomousLoop:
 
         # JARVIS Phase 3: Continuous Awareness
         try:
+            from src.core.goal_engine import GoalEngine
+            self.goal_engine = GoalEngine(self.brain.supabase, self.brain.ai)
+        except Exception as e:
+            print(f"[Goal Engine] Error loading: {e}")
+            self.goal_engine = None
+
+        try:
             from src.awareness.activity_analyzer import ActivityAnalyzer
             self.activity_analyzer = ActivityAnalyzer(self.brain.supabase, self.brain.ai)
             self._last_proactive_alert = None
