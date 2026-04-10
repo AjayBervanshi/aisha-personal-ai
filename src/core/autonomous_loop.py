@@ -190,6 +190,8 @@ class AutonomousLoop:
     def run_morning_checkin(self):
         """Proactively message Ajay in the morning based on his schedule & memory."""
         # Verify we are actually in morning hours IST before sending greeting
+        import pytz
+        from datetime import datetime
         _ist = pytz.timezone("Asia/Kolkata")
         ist_hour = datetime.now(_ist).hour
         if not (5 <= ist_hour < 12):
@@ -197,6 +199,20 @@ class AutonomousLoop:
             return
         log.info(f"[{datetime.now(_ist).strftime('%Y-%m-%d %H:%M IST')}] Waking up for Morning Check-in...")
         _log_to_db("INFO", "autonomous_loop", "job_started: morning_checkin")
+
+        # Guardrail: check if we already sent a proactive message in the last 4 hours
+        try:
+            import os
+            from supabase import create_client
+            sb = create_client(os.getenv("SUPABASE_URL", ""), os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""))
+            from datetime import datetime as dt_class, timezone, timedelta
+            cutoff = (dt_class.now(timezone.utc) - timedelta(hours=4)).isoformat()
+            recent_logs = sb.table("system_logs").select("id").eq("component", "autonomous_loop").eq("event", "job_completed: morning_checkin").gte("created_at", cutoff).execute()
+            if recent_logs.data and len(recent_logs.data) > 0:
+                log.info("Skipping morning check-in: Already ran recently to prevent spam.")
+                return
+        except Exception as e:
+            pass # Fail open for the guardrail if DB is down
 
         # Use brain.think() so full context pipeline runs (memory, mood, tasks, profile)
         prompt = (
@@ -214,61 +230,84 @@ class AutonomousLoop:
             try:
                 self.telegram.send_message(self.ajay_id, morning_text)
                 log.info("Sent morning check-in to Ajay on Telegram.")
+
+                # Generate voice note as well!
+                from src.core.voice_engine import generate_voice, cleanup_voice_file
+                from src.core.config import AISHA_ELEVENLABS_VOICE_ID
+                voice_path = generate_voice(morning_text, voice_id=AISHA_ELEVENLABS_VOICE_ID)
+                if voice_path:
+                    with open(voice_path, 'rb') as vf:
+                        self.telegram.send_voice(self.ajay_id, vf)
+                    cleanup_voice_file(voice_path)
             except Exception as e:
                 log.error(f"Failed to send Telegram message: {e}")
         _log_to_db("INFO", "autonomous_loop", "job_completed: morning_checkin")
 
     def run_memory_consolidation(self):
         """Runs at 3 AM: Analyzes all talks from the day and updates deep profile."""
+        from datetime import datetime
         log.info(f"[{datetime.now()}] Running deep memory consolidation sleep cycle...")
         _log_to_db("INFO", "autonomous_loop", "job_started: memory_consolidation")
         
+        # Guardrail: Check if memory consolidation ran recently
+        try:
+            import os
+            from supabase import create_client
+            sb = create_client(os.getenv("SUPABASE_URL", ""), os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""))
+            from datetime import datetime as dt_class, timezone, timedelta
+            cutoff = (dt_class.now(timezone.utc) - timedelta(hours=12)).isoformat()
+            recent_logs = sb.table("system_logs").select("id").eq("component", "autonomous_loop").eq("event", "job_completed: memory_consolidation").gte("created_at", cutoff).execute()
+            if recent_logs.data and len(recent_logs.data) > 0:
+                log.info("Skipping memory consolidation: Already ran recently.")
+                return
+        except Exception as e:
+            pass # Fail open
+
         # 1. Pull recent conversations (past 24h)
         chats = self.brain.memory.get_recent_conversation(limit=50)
         if not chats:
             log.info("No conversations to consolidate today.")
             return
 
-        chat_text = "\n".join([f"{c['role']}: {c['message']}" for c in chats])
+        chat_text = "\n".join([f"{c.get('role', 'unknown')}: {c.get('message', '')}" for c in chats])
         
         # 2. Ask Aisha to summarize and extract insights
         prompt = f"""
         You are Aisha. Here are your conversations with Ajay from the last 24 hours:
         {chat_text}
 
-        Your task:
-        1. Summarize the key events/facts (Episodic Memory).
-        2. Identify any emotional patterns or stresses (Emotional Memory).
-        3. Identify any new skills or tasks you learned to do (Skill Memory).
-
-        Return ONLY a valid JSON object (no backticks, no extra text) with keys: 'episodic', 'emotional', 'skills'.
-        Each value should be a list of strings.
+        Your task is to dream and consolidate memories. Do not reply to Ajay. Instead, return a JSON object with:
+        {{
+            "new_facts": ["fact 1", "fact 2"],
+            "emotional_state": "Summary of his mood today",
+            "open_loops": ["things he didn't finish or you need to follow up on tomorrow"]
+        }}
+        Return ONLY valid JSON.
         """
 
-        try:
-            res = self.brain.ai.generate("You are Aisha. Return only valid JSON.", prompt).text
-            # Strip any markdown code fences if present
-            import re as _re
-            res = _re.sub(r'^```(?:json)?\s*', '', res.strip())
-            res = _re.sub(r'\s*```$', '', res).strip()
-            data = json.loads(res)
-            
-            # 3. Save to deep memory tables
-            for fact in data.get("episodic", []):
-                self.brain.memory.save_episodic_memory("Ajay", fact, datetime.now().strftime("%Y-%m-%d"))
-            
-            for emote in data.get("emotional", []):
-                self.brain.memory.save_emotional_memory("detected", "contextual", emote)
-                
-            for skill in data.get("skills", []):
-                self.brain.memory.save_skill_memory(skill, f"Auto-learned during conversation: {skill}")
-                
-            log.info("✅ Consolidation complete. Memories stored.")
-            _log_to_db("INFO", "autonomous_loop", "job_completed: memory_consolidation")
+        analysis_json = self.brain.think(prompt, platform="telegram")
 
+        # 3. Store the insights into Semantic / Deep Memory
+        try:
+            import json
+            insights = json.loads(analysis_json.replace("```json", "").replace("```", "").strip())
+            
+            # Save new facts
+            for fact in insights.get("new_facts", []):
+                self.brain.memory.save_memory("fact", fact)
+                
+            # Log emotional state
+            emotion = insights.get("emotional_state")
+            if emotion:
+                self.brain.memory.save_memory("emotion", f"Yesterday's mood: {emotion}")
+                
+            log.info(f"Memory Consolidation Complete. Facts: {len(insights.get('new_facts', []))}")
         except Exception as e:
-            log.error(f"Consolidation failed: {e}")
-            _log_to_db("ERROR", "autonomous_loop", f"job_failed: memory_consolidation: {e}")
+            log.error(f"Failed to parse memory consolidation JSON: {e}")
+
+        _log_to_db("INFO", "autonomous_loop", "job_completed: memory_consolidation")
+
+
 
     def run_studio_session(self):
         """Aisha autonomously decides which channel needs content and starts the crew.
