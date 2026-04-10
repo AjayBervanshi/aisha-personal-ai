@@ -551,6 +551,10 @@
       cursor: pointer;
       border: 1px solid transparent;
       transition: all 0.2s;
+      width: 100%;
+      text-align: left;
+      font-family: inherit;
+      color: inherit;
     }
 
     .setting-row:hover {
@@ -715,10 +719,10 @@
             <span class="setting-name">🔊 Voice Output</span>
             <button class="toggle on" id="voice-toggle" onclick="toggleVoiceOutput()" aria-label="Toggle voice output"></button>
           </div>
-          <div class="setting-row" onclick="changeVoice()">
+          <button class="setting-row" onclick="changeVoice()">
             <span class="setting-name">🎵 Voice Style</span>
             <span class="setting-val" id="voice-style-val">Indian English</span>
-          </div>
+          </button>
           <div class="setting-row">
             <span class="setting-name">🎙️ Voice Input</span>
             <button class="toggle on" id="mic-toggle" aria-label="Toggle voice input"></button>
@@ -726,10 +730,10 @@
         </div>
         <div class="setting-section">
           <div class="setting-label">Language</div>
-          <div class="setting-row" onclick="cycleLang()">
+          <button class="setting-row" onclick="cycleLang()">
             <span class="setting-name">🌐 Default Language</span>
             <span class="setting-val" id="lang-val">Auto-detect</span>
-          </div>
+          </button>
         </div>
         <div class="setting-section">
           <div class="setting-label">Appearance</div>
@@ -748,10 +752,10 @@
             <span class="setting-name">🧠 AI Model</span>
             <span class="setting-val">Gemini 1.5 Flash</span>
           </div>
-          <div class="setting-row" onclick="clearMemory()">
+          <button class="setting-row" onclick="clearMemory()">
             <span class="setting-name">🗑️ Clear Memory</span>
             <span class="setting-val">Tap to reset</span>
-          </div>
+          </button>
         </div>
       </div>
     </div>
