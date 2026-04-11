@@ -18,6 +18,11 @@
 **Learning:** Security mechanisms must fail securely by default. A missing configuration variable (like an API token) should lead to denied access (fail-closed), rather than inadvertently granting open access (fail-open), especially in production environments where environment variables might fail to load properly. It's also important to return generic server error messages (like "Server configuration error.") rather than leaking the missing config details (like the missing token name).
 **Prevention:** Avoid writing "dev mode" fallbacks directly in core security/authentication handlers that bypass standard checks based merely on the absence of configuration variables. All unauthenticated access should be explicitly handled. Validate and enforce that critical security configuration variables are present on service startup.
 
+## 2026-04-11 - Fix Timing Attacks in Token Validation
+**Vulnerability:** Token comparisons in `src/api/server.py` (`credentials.credentials != _API_TOKEN`) and `src/telegram/bot.py` (`tg_secret != TRIGGER_SECRET`, `secret != TRIGGER_SECRET`) used plain `!=` which is vulnerable to timing attacks. An attacker can measure response time differences to guess secrets character by character.
+**Learning:** Simple string equality checks (`==` or `!=`) exit early on the first mismatched character. Timing side-channels can leak secret values over many requests.
+**Prevention:** Always use `secrets.compare_digest()` for comparing sensitive tokens and secrets to ensure constant-time comparison.
+
 ## 2026-04-10 - Unauthenticated CallMe Webhook Memory Injection
 **Vulnerability:** A new webhook endpoint (`/api/callme/transcript`) was added to log phone conversations into semantic memory without checking the `X-Trigger-Secret` header, meaning any attacker could craft arbitrary POST requests to inject false memories directly into Aisha's database.
 **Learning:** All new REST endpoints added to the internal HTTP server MUST enforce the `TRIGGER_SECRET` fail-secure mechanism before processing the payload.
