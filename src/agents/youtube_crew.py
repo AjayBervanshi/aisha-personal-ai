@@ -41,6 +41,16 @@ CHANNEL_IDENTITY = {
         "format_hint": "60-90 second YouTube Short / Instagram Reel with emotional narration",
         "hook_style": "Open with a single emotional sentence that grabs attention in 2 seconds.",
         "voice_style": "Soft, warm, expressive, like telling a friend",
+        "content_type": "clean",
+    },
+    "Riya's Dark Whisper": {
+        "narrator": "Riya",
+        "tone": "bold, seductive, psychological, slow-burn, 18+",
+        "themes": "forbidden encounters, boss-employee tension, strangers, obsession, desire, one-night stories",
+        "format_hint": "60-90 second YouTube Short / Instagram Reel with bold narration",
+        "hook_style": "Open with a bold, provocative line that creates instant tension.",
+        "voice_style": "Deep, slow, seductive, whispering",
+        "content_type": "adult",
     },
 }
 

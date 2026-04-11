@@ -131,7 +131,8 @@ AISHA_ELEVENLABS_VOICE_ID = "wdymxIQkYn7MJCYCQF2Q"   # Aisha — warm, emotional
 RIYA_ELEVENLABS_VOICE_ID  = "BpjGufoPiobT79j2vtj4"   # Riya  — seductive, bold narrator
 
 CHANNEL_VOICE_IDS: dict = {
-    "Story With Aisha": AISHA_ELEVENLABS_VOICE_ID,
+    "Story With Aisha":    AISHA_ELEVENLABS_VOICE_ID,
+    "Riya's Dark Whisper": RIYA_ELEVENLABS_VOICE_ID,
 }
 
 # ══════════════════════════════════════════════════════════════
@@ -166,19 +167,47 @@ AI_MAX_TOKENS    = 16000  # Maximum for long-form story scripts
 AI_HISTORY_LIMIT = 20     # More context = smarter Aisha
 
 # ══════════════════════════════════════════════════════════════
-# ACTIVE CHANNELS — only channels Ajay currently runs
-# All content goes to ONE YouTube + ONE Instagram account.
-# To add more channels later, just add entries here.
+# ACTIVE CHANNELS
+# Story With Aisha: Romantic Hindi love stories (clean, emotional)
+#   AI: Gemini (warm, cinematic writing)
+# Riya's Dark Whisper: Bold, 18+ Hindi stories (adult content)
+#   AI: xAI Grok (uncensored) → NVIDIA Mistral-Large (fallback)
+# Both share ONE YouTube + ONE Instagram account for now.
 # ══════════════════════════════════════════════════════════════
 PRIMARY_YOUTUBE_CHANNEL = _get("PRIMARY_YOUTUBE_CHANNEL", "Story With Aisha")
 PRIMARY_INSTAGRAM_ACCOUNT = _get("PRIMARY_INSTAGRAM_ACCOUNT", "story_with_aisha")
 
+# Channels Aisha manages — round-robin in studio sessions
+ACTIVE_CHANNELS = [
+    {
+        "name": "Story With Aisha",
+        "narrator": "Aisha",
+        "tone": "warm, emotional, cinematic, heart-touching",
+        "format": "Short/Reel",
+        "duration": "60-90 seconds",
+        "content_type": "clean",
+    },
+    {
+        "name": "Riya's Dark Whisper",
+        "narrator": "Riya",
+        "tone": "bold, seductive, psychological, slow-burn, 18+",
+        "format": "Short/Reel",
+        "duration": "60-90 seconds",
+        "content_type": "adult",
+    },
+]
+
+# AI provider per channel — determines which model writes the script
+# Riya uses xAI Grok (uncensored) because Gemini refuses adult content
 CHANNEL_AI_PROVIDER = {
-    "Story With Aisha": "gemini",
+    "Story With Aisha":    "gemini",
+    "Riya's Dark Whisper": "xai",
 }
 
+# NVIDIA task type for NIM pool routing when NVIDIA is the fallback
 CHANNEL_AI_TASK_TYPE = {
-    "Story With Aisha": "writing",
+    "Story With Aisha":    "writing",
+    "Riya's Dark Whisper": "writing",
 }
 
 YOUTUBE_CHANNELS = {
@@ -188,14 +217,19 @@ YOUTUBE_CHANNELS = {
         "format": "Short/Reel",
         "duration": "60-90 seconds",
     },
+    "Riya's Dark Whisper": {
+        "narrator": "Riya",
+        "tone": "bold, seductive, psychological, 18+",
+        "format": "Short/Reel",
+        "duration": "60-90 seconds",
+    },
 }
 
-# Content scheduling — optimal posting times IST for Indian audience
 CONTENT_SCHEDULE = {
     "youtube_shorts_times": ["10:00", "14:00", "19:00"],
     "instagram_reels_times": ["11:00", "15:00", "20:00"],
-    "daily_target_posts": _get_int("DAILY_TARGET_POSTS", 2),
-    "max_daily_posts": _get_int("MAX_DAILY_POSTS", 3),
+    "daily_target_posts": _get_int("DAILY_TARGET_POSTS", 3),
+    "max_daily_posts": _get_int("MAX_DAILY_POSTS", 4),
 }
 
 # ══════════════════════════════════════════════════════════════

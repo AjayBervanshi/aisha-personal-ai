@@ -39,9 +39,13 @@ class SocialMediaEngine:
     Tokens are loaded from Supabase api_keys table; env vars used as fallback.
     """
 
-    # DB key names for credentials (single account for now, scalable to multi later)
+    # DB key names for credentials — both channels share the same accounts
     CHANNEL_TO_DB_KEY = {
         "Story With Aisha": {
+            "instagram": "INSTAGRAM_TOKEN",
+            "youtube": "YOUTUBE_OAUTH_TOKEN",
+        },
+        "Riya's Dark Whisper": {
             "instagram": "INSTAGRAM_TOKEN",
             "youtube": "YOUTUBE_OAUTH_TOKEN",
         },

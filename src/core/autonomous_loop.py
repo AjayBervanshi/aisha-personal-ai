@@ -398,7 +398,7 @@ class AutonomousLoop:
 
         try:
             from src.agents.antigravity_agent import AntigravityAgent
-            from src.core.config import PRIMARY_YOUTUBE_CHANNEL
+            from src.core.config import ACTIVE_CHANNELS
             agent = AntigravityAgent()
 
             existing_job = agent.fetch_next_job()
@@ -419,19 +419,30 @@ class AutonomousLoop:
                 log.info(f"[Studio] Backlog drain thread started for job {existing_job.get('id')}")
                 return
 
-            channel = PRIMARY_YOUTUBE_CHANNEL
+            import random
+            selected = random.choice(ACTIVE_CHANNELS)
+            channel = selected["name"]
+            is_adult = selected.get("content_type") == "adult"
 
-            for attempt in range(5):
-                prompt = (
-                    f"तुम आयशा हो, Creative Director। '{channel}' channel के लिए "
-                    f"एक viral Hindi love story topic suggest करो — YouTube Short / Instagram Reel के लिए। "
+            if is_adult:
+                topic_prompt = (
+                    f"तू रिया है। '{channel}' के लिए एक bold, seductive, 18+ Hindi story topic suggest कर। "
+                    f"Topic ऐसा हो जो adult audience को तुरंत hook करे — forbidden, intense, desire। "
+                    f"Already used: {self._used_topics[-10:] if self._used_topics else 'none'}। "
+                    "सिर्फ topic title दे, Hindi में, और कुछ नहीं।"
+                )
+                system = "You are Riya, a bold adult content strategist for Hindi 18+ storytelling."
+            else:
+                topic_prompt = (
+                    f"तुम आयशा हो। '{channel}' के लिए एक viral Hindi love story topic suggest करो। "
                     f"Topic ऐसा हो जो Indian audience को तुरंत attract करे। "
                     f"Already used: {self._used_topics[-10:] if self._used_topics else 'none'}। "
                     "सिर्फ topic title दो, Hindi में, और कुछ नहीं।"
                 )
-                topic = self.brain.ai.generate(
-                    "You are a viral content strategist for Hindi romantic storytelling.", prompt
-                ).text.strip()
+                system = "You are a viral content strategist for Hindi romantic storytelling."
+
+            for attempt in range(5):
+                topic = self.brain.ai.generate(system, topic_prompt).text.strip()
                 if topic not in self._used_topics:
                     self._used_topics.append(topic)
                     if len(self._used_topics) > 200:
