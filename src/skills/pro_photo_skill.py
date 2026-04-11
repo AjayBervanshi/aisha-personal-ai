@@ -8,7 +8,6 @@ as @aisha_skill tools callable from Telegram or the agent pipeline.
 All heavy imports (cv2, rembg, PIL) are lazy so the module loads safely
 even if optional packages are missing on the deployment server.
 """
-import os
 from pathlib import Path
 
 from src.skills.skill_registry import aisha_skill

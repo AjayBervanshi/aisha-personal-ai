@@ -1,11 +1,16 @@
-import unittest
+import sys
 from unittest.mock import patch, MagicMock
+
+# Mock sys.modules before importing AishaBrain to avoid dependencies on dotenv/supabase
+sys.modules['dotenv'] = MagicMock()
+sys.modules['supabase'] = MagicMock()
+
+import unittest
 from src.core.aisha_brain import AishaBrain, MemoryManager
 
 class TestAishaBrain(unittest.TestCase):
-    @patch('src.core.aisha_brain.create_client')
     @patch('src.core.aisha_brain.AIRouter')
-    def test_think_pipeline(self, mock_router_cls, mock_create_client):
+    def test_think_pipeline(self, mock_router_cls):
         mock_router = mock_router_cls.return_value
 
         mock_result = MagicMock()
@@ -44,6 +49,21 @@ class TestAishaBrain(unittest.TestCase):
             # save_conversation called for user + assistant turns (2 min)
             self.assertGreaterEqual(mock_save_conv.call_count, 2)
             mock_update_mood.assert_called_once()
+
+    def test_get_owner_id_success(self):
+        brain = AishaBrain()
+        # Mock sys.modules for src.core.config
+        mock_config = MagicMock()
+        mock_config.AUTHORIZED_ID = 12345
+        with patch.dict('sys.modules', {'src.core.config': mock_config}):
+            self.assertEqual(brain._get_owner_id(), 12345)
+
+    def test_get_owner_id_fallback(self):
+        # We test the exception path specifically
+        brain = AishaBrain()
+        with patch.dict('sys.modules', {'src.core.config': None}):
+            # This simulates an ImportError
+            self.assertIsNone(brain._get_owner_id())
 
 if __name__ == '__main__':
     unittest.main()

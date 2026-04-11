@@ -32,8 +32,7 @@ _API_TOKEN = os.getenv("API_SECRET_TOKEN", "")
 def verify_token(credentials: HTTPAuthorizationCredentials = Depends(_security)):
     """Require Bearer token on all API calls.  Set API_SECRET_TOKEN in .env."""
     if not _API_TOKEN:
-        # No token configured → dev mode, allow all
-        return True
+        raise HTTPException(status_code=500, detail="Server configuration error.")
     if not credentials or credentials.credentials != _API_TOKEN:
         raise HTTPException(status_code=401, detail="Invalid or missing API token")
     return True

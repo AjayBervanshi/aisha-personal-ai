@@ -466,12 +466,19 @@
       box-shadow: 0 0 16px rgba(155, 89, 245, 0.4);
     }
 
-    .send-btn:hover {
+    .send-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .send-btn:hover:not(:disabled) {
       transform: scale(1.08);
       box-shadow: 0 0 24px rgba(155, 89, 245, 0.6);
     }
 
-    .send-btn:active {
+    .send-btn:active:not(:disabled) {
       transform: scale(0.95);
     }
 
@@ -551,6 +558,10 @@
       cursor: pointer;
       border: 1px solid transparent;
       transition: all 0.2s;
+      width: 100%;
+      text-align: left;
+      font-family: inherit;
+      color: inherit;
     }
 
     .setting-row:hover {
@@ -698,7 +709,7 @@
             oninput="autoResize(this)" aria-label="Type your message"></textarea>
           <button class="mic-btn" id="mic-btn" onclick="toggleMic()" title="Voice input" aria-label="Voice input">🎙️</button>
         </div>
-        <button class="send-btn" onclick="sendMessage()" title="Send" aria-label="Send message">➤</button>
+        <button id="send-btn" class="send-btn" onclick="sendMessage()" title="Send" aria-label="Send message">➤</button>
       </div>
     </div>
 
@@ -715,10 +726,10 @@
             <span class="setting-name">🔊 Voice Output</span>
             <button class="toggle on" id="voice-toggle" onclick="toggleVoiceOutput()" aria-label="Toggle voice output"></button>
           </div>
-          <div class="setting-row" onclick="changeVoice()">
+          <button class="setting-row" onclick="changeVoice()">
             <span class="setting-name">🎵 Voice Style</span>
             <span class="setting-val" id="voice-style-val">Indian English</span>
-          </div>
+          </button>
           <div class="setting-row">
             <span class="setting-name">🎙️ Voice Input</span>
             <button class="toggle on" id="mic-toggle" aria-label="Toggle voice input"></button>
@@ -726,10 +737,10 @@
         </div>
         <div class="setting-section">
           <div class="setting-label">Language</div>
-          <div class="setting-row" onclick="cycleLang()">
+          <button class="setting-row" onclick="cycleLang()">
             <span class="setting-name">🌐 Default Language</span>
             <span class="setting-val" id="lang-val">Auto-detect</span>
-          </div>
+          </button>
         </div>
         <div class="setting-section">
           <div class="setting-label">Appearance</div>
@@ -748,10 +759,10 @@
             <span class="setting-name">🧠 AI Model</span>
             <span class="setting-val">Gemini 1.5 Flash</span>
           </div>
-          <div class="setting-row" onclick="clearMemory()">
+          <button class="setting-row" onclick="clearMemory()">
             <span class="setting-name">🗑️ Clear Memory</span>
             <span class="setting-val">Tap to reset</span>
-          </div>
+          </button>
         </div>
       </div>
     </div>
@@ -865,11 +876,15 @@
 
     // ── Send Message ─────────────────────────────────────────────
     async function sendMessage(overrideText = null) {
+      const sendBtn = document.getElementById("send-btn");
+      if (sendBtn && sendBtn.disabled) return;
+
       const input = document.getElementById("user-input");
       const text = (overrideText || input.value).trim();
       if (!text) return;
 
       input.value = ""; autoResize(input);
+      if (sendBtn) sendBtn.disabled = true;
 
       // Hide quick actions after first message
       document.getElementById("quick-actions").style.display = "none";
@@ -899,6 +914,9 @@
         renderMessage("ai", errMsg);
         setStatus("Online · Always here for you");
         console.error("Aisha error:", err);
+      } finally {
+        if (sendBtn) sendBtn.disabled = false;
+        input.focus();
       }
     }
 

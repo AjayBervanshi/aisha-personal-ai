@@ -14,14 +14,15 @@ Lifecycle:
   scan_integrity() -> detect_tampering() -> notify_ajay -> restore_from_github() -> notify_ajay
 """
 
-import os
 import ast
 import hashlib
 import logging
+import os
 import requests
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
 
 log = logging.getLogger("Aisha.SelfRepair")
 
@@ -237,7 +238,7 @@ class SelfRepairEngine:
         if failed:
             parts.append(f"FAILED to restore {len(failed)} file(s): {', '.join(Path(p).name for p in failed)}")
 
-        summary = f"Self-repair cycle complete. " + " | ".join(parts)
+        summary = "Self-repair cycle complete. " + " | ".join(parts)
         log.info(f"event=repair_cycle_done restored={len(restored)} failed={len(failed)}")
         return summary
 
