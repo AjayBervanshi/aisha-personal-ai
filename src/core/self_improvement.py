@@ -167,7 +167,8 @@ def get_pr_number_from_url(pr_url: str) -> int:
 
 def merge_github_pr(pr_number: int) -> bool:
     """
-    Merges a PR on GitHub.
+    Merges a PR on GitHub after checking for conflicts.
+    If there are conflicts, attempts to update the branch first.
     """
     token, repo = _get_github_creds()
     if not token or not repo or not pr_number:
@@ -175,21 +176,120 @@ def merge_github_pr(pr_number: int) -> bool:
 
     headers = {
         "Authorization": f"token {token}",
-        "Accept": "application/vnd.github.v3+json"
+        "Accept": "application/vnd.github.v3+json",
     }
-    url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/merge"
+    base_url = f"https://api.github.com/repos/{repo}"
 
-    res = requests.put(url, headers=headers, json={
-        "commit_title": f"Auto-merging skill #{pr_number}",
-        "merge_method": "merge"
-    })
+    # Step 1: Check if PR is mergeable
+    try:
+        pr_resp = requests.get(f"{base_url}/pulls/{pr_number}", headers=headers, timeout=15)
+        if pr_resp.status_code != 200:
+            log.error(f"Cannot fetch PR #{pr_number}: {pr_resp.status_code}")
+            return False
 
-    if res.status_code in [200, 201]:
+        pr_data = pr_resp.json()
+        state = pr_data.get("state", "")
+        if state != "open":
+            log.warning(f"PR #{pr_number} is {state}, not open — skipping merge")
+            return state == "closed" and pr_data.get("merged", False)
+
+        mergeable = pr_data.get("mergeable")
+        mergeable_state = pr_data.get("mergeable_state", "unknown")
+
+        # GitHub may return null for mergeable if it hasn't computed yet — wait and retry
+        if mergeable is None:
+            import time
+            time.sleep(3)
+            pr_resp = requests.get(f"{base_url}/pulls/{pr_number}", headers=headers, timeout=15)
+            if pr_resp.status_code == 200:
+                pr_data = pr_resp.json()
+                mergeable = pr_data.get("mergeable")
+                mergeable_state = pr_data.get("mergeable_state", "unknown")
+
+        if mergeable is False or mergeable_state == "dirty":
+            log.warning(f"PR #{pr_number} has conflicts (mergeable={mergeable}, state={mergeable_state})")
+            # Try to update the branch by merging main into it
+            branch = pr_data.get("head", {}).get("ref", "")
+            if branch:
+                resolved = _try_resolve_conflicts(pr_number, branch, headers, base_url)
+                if not resolved:
+                    log.error(f"PR #{pr_number} conflicts could not be resolved automatically")
+                    _notify_conflict(pr_number, pr_data.get("html_url", ""))
+                    return False
+    except Exception as e:
+        log.error(f"PR #{pr_number} mergeability check failed: {e}")
+
+    # Step 2: Merge the PR
+    merge_url = f"{base_url}/pulls/{pr_number}/merge"
+    res = requests.put(merge_url, headers=headers, json={
+        "commit_title": f"Auto-merge: Aisha skill #{pr_number}",
+        "merge_method": "squash",
+    }, timeout=30)
+
+    if res.status_code in (200, 201):
         log.info(f"Successfully merged PR #{pr_number}")
         return True
+
+    # If squash fails, try regular merge
+    if res.status_code == 405:
+        res2 = requests.put(merge_url, headers=headers, json={
+            "commit_title": f"Auto-merge: Aisha skill #{pr_number}",
+            "merge_method": "merge",
+        }, timeout=30)
+        if res2.status_code in (200, 201):
+            log.info(f"Merged PR #{pr_number} via regular merge")
+            return True
+        log.error(f"Failed to merge PR #{pr_number}: {res2.status_code} {res2.text[:200]}")
     else:
-        log.error(f"Failed to merge PR #{pr_number}: {res.text}")
+        log.error(f"Failed to merge PR #{pr_number}: {res.status_code} {res.text[:200]}")
+
+    return False
+
+
+def _try_resolve_conflicts(pr_number: int, branch: str, headers: dict, base_url: str) -> bool:
+    """Try to resolve conflicts by updating the PR branch with latest main."""
+    try:
+        resp = requests.post(
+            f"{base_url}/merges",
+            headers=headers,
+            json={"base": branch, "head": "main", "commit_message": f"Merge main into {branch} to resolve conflicts"},
+            timeout=30,
+        )
+        if resp.status_code in (201, 204):
+            log.info(f"Updated branch '{branch}' with main — conflicts may be resolved")
+            import time
+            time.sleep(2)
+            return True
+        elif resp.status_code == 409:
+            log.warning(f"Cannot auto-resolve conflicts for branch '{branch}' — manual fix needed")
+            return False
+        else:
+            log.warning(f"Branch update failed: {resp.status_code} {resp.text[:200]}")
+            return False
+    except Exception as e:
+        log.error(f"Conflict resolution failed: {e}")
         return False
+
+
+def _notify_conflict(pr_number: int, pr_url: str):
+    """Notify Ajay that a PR has merge conflicts."""
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("AJAY_TELEGRAM_ID")
+    if token and chat_id:
+        try:
+            requests.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={
+                    "chat_id": chat_id,
+                    "text": (
+                        f"PR #{pr_number} has merge conflicts that I can't resolve automatically.\n"
+                        f"Please review and fix: {pr_url}"
+                    ),
+                },
+                timeout=10,
+            )
+        except Exception:
+            pass
 
 
 
@@ -371,8 +471,15 @@ Return ONLY the Python code. No markdown fences, no explanation, no backticks.""
         except Exception as e:
             log.warning(f"Gemini code generation error: {e} — trying NVIDIA NIM")
 
-    # ── Attempt 2: NVIDIA NIM — LLaMA-3.3-70b (chat pool, 7 keys) ─────────────
-    nvidia_chat_keys = [os.getenv(f"NVIDIA_KEY_{i:02d}") for i in [5, 6, 8, 10, 11, 12, 13] if os.getenv(f"NVIDIA_KEY_{i:02d}")]
+    # ── Attempt 2: NVIDIA NIM — LLaMA-3.3-70b ──────────────────────────────────
+    nvidia_chat_key_names = [
+        "NVIDIA_LLAMA33_A", "NVIDIA_LLAMA33_B", "NVIDIA_LLAMA33_C",
+        "NVIDIA_LLAMA33_D", "NVIDIA_LLAMA33_E", "NVIDIA_LLAMA33_F", "NVIDIA_LLAMA33_G",
+    ]
+    nvidia_chat_keys = [os.getenv(n) for n in nvidia_chat_key_names if os.getenv(n)]
+    if not nvidia_chat_keys:
+        from src.core.config import _get
+        nvidia_chat_keys = [_get(n) for n in nvidia_chat_key_names if _get(n)]
     for nvidia_key in nvidia_chat_keys:
         try:
             resp = _req.post(
@@ -402,7 +509,10 @@ Return ONLY the Python code. No markdown fences, no explanation, no backticks.""
             continue
 
     # ── Attempt 3: NVIDIA NIM — Mistral-Large-3 (writing pool) ────────────────
-    nvidia_writing_keys = [os.getenv(f"NVIDIA_KEY_{i:02d}") for i in [1, 2] if os.getenv(f"NVIDIA_KEY_{i:02d}")]
+    nvidia_writing_key_names = ["NVIDIA_MISTRAL_LARGE_A", "NVIDIA_MISTRAL_LARGE_B"]
+    nvidia_writing_keys = [os.getenv(n) for n in nvidia_writing_key_names if os.getenv(n)]
+    if not nvidia_writing_keys:
+        nvidia_writing_keys = [_get(n) for n in nvidia_writing_key_names if _get(n)]
     for nvidia_key in nvidia_writing_keys:
         try:
             resp = _req.post(
