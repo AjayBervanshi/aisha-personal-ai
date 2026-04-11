@@ -311,11 +311,11 @@ class AutonomousLoop:
             insights = json.loads(analysis_json.replace("```json", "").replace("```", "").strip())
             
             for fact in insights.get("new_facts", []):
-                self.brain.memory.save_memory("fact", "Consolidated fact", str(fact))
+                self.brain.memory.save_memory("general", "Consolidated fact", str(fact))
 
             emotion = insights.get("emotional_state")
             if emotion:
-                self.brain.memory.save_memory("emotion", "Yesterday's mood", str(emotion))
+                self.brain.memory.save_memory("mood", "Yesterday's emotional state", str(emotion))
                 
             log.info(f"Memory Consolidation Complete. Facts: {len(insights.get('new_facts', []))}")
         except Exception as e:

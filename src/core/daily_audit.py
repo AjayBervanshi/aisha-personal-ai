@@ -55,7 +55,9 @@ REQUIRED_TABLES = [
     "aisha_memory",
     "api_keys",
     "aisha_approved_users",
-    "improvement_log",
+    "aisha_improvement_log",
+    "aisha_system_log",
+    "content_performance",
 ]
 
 # ── Individual Check Functions ────────────────────────────────────────────────
@@ -204,7 +206,7 @@ def check_self_improvement_freshness() -> dict:
             os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""),
         )
         resp = (
-            sb.table("improvement_log")
+            sb.table("aisha_improvement_log")
             .select("started_at")
             .order("started_at", desc=True)
             .limit(1)

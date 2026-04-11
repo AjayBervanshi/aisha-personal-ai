@@ -41,7 +41,7 @@ log = logging.getLogger("Aisha.LearningEngine")
 class LearningEngine:
     """Manages Aisha's self-improvement history stored in Supabase improvement_log."""
 
-    TABLE = "improvement_log"
+    TABLE = "aisha_improvement_log"
 
     def __init__(self):
         from supabase import create_client
