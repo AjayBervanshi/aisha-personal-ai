@@ -154,129 +154,331 @@ class AishaBrain:
         return hist
 
     # ─── NLP Intent Router ───────────────────────────────────────────────────
-    # Maps natural language to tool actions — no commands needed.
-    # Patterns are checked before AI generation. Matching fires the tool in a
-    # background thread and returns an instant acknowledgement.
+    # Aisha understands natural language. No slash commands needed.
+    # User just talks normally: "ek video bana do", "YouTube pe post karo",
+    # "aaj ka digest bhejo", "channel ka status kya hai" — Aisha gets it.
 
     _INTENT_PATTERNS = [
-        # Content creation
+        # ── CONTENT CREATION (highest priority — revenue generating) ──────
+        # Hindi: "ek video banao", "story banao aur post karo", "content create karo"
+        # English: "make a video", "create a reel", "produce content for YouTube"
+        # Mixed: "YouTube pe ek short daal do", "Instagram reel banao"
         (re.compile(
-            r"(make|create|produce|generate|shoot|record|bana[ao]?|ek video|shorts?).{0,50}"
-            r"(video|content|youtube|short|reel|episode)",
+            r"(make|create|produce|generate|bana[ao]?|bana do|likho|likh do|daal do|dal do|post karo).{0,60}"
+            r"(video|content|youtube|short|reel|episode|kahani|story|kahaniya)|"
+            r"(video|content|short|reel|story|kahani).{0,40}"
+            r"(bana[ao]?|bana do|create|produce|likho|daal|dal|post)|"
+            r"(youtube|insta|instagram).{0,30}(pe|par|ke liye|for).{0,30}"
+            r"(bana|create|post|upload|daal|dal)|"
+            r"(ek|naya|nayi|new|aur ek|one more).{0,30}(video|reel|short|content|episode)|"
+            r"start.{0,20}produc|go.{0,10}live|let.{0,5}s.{0,5}cook|"
+            r"kuch.{0,20}(bana|post|upload)|shoot.{0,20}(video|content)",
             re.I,
         ), "content_creation"),
-        # Key health check
+
+        # ── RIYA CONTENT (detect when user specifically wants Riya/adult) ──
+        (re.compile(
+            r"riya.{0,40}(video|story|kahani|content|bana|likho|post)|"
+            r"(dark|bold|adult|18\+|hot|sexy).{0,30}(video|story|kahani|content|bana)|"
+            r"(video|story|content).{0,30}(riya|dark whisper|bold|adult)",
+            re.I,
+        ), "riya_content"),
+
+        # ── CHANNEL STATUS / ANALYTICS ────────────────────────────────────
+        # "channel ka status", "how's the channel doing", "views kitne aaye"
+        (re.compile(
+            r"(channel|youtube|insta).{0,30}(status|stats|analytics|performance|views|subscribers|kaisa|kaise)|"
+            r"(views|subscribers|likes|earnings|kamai|paisa).{0,30}(kitne|kitna|how many|check|batao|dikhao)|"
+            r"(content|video).{0,20}(performance|stats)|"
+            r"kamai.{0,20}(kitni|batao|dikhao|check)|earning",
+            re.I,
+        ), "channel_status"),
+
+        # ── DAILY DIGEST / REPORT ─────────────────────────────────────────
+        # "aaj ka report", "digest bhejo", "summary dikhao", "kya hua aaj"
+        (re.compile(
+            r"(aaj|today|kal|yesterday).{0,30}(report|summary|digest|recap|kya hua)|"
+            r"(digest|report|summary).{0,20}(bhejo|dikhao|send|show|de do)|"
+            r"(morning|evening|daily|weekly).{0,20}(report|digest|summary|briefing)|"
+            r"kya.{0,10}(hua|chal raha|ho raha).{0,10}(aaj|today)",
+            re.I,
+        ), "digest"),
+
+        # ── QUEUE / JOB STATUS ────────────────────────────────────────────
+        # "queue mein kya hai", "koi video pending hai?", "kitne jobs hain"
+        (re.compile(
+            r"(queue|pending|jobs?|tasks?).{0,30}(status|kitne|how many|kya hai|check|dikhao)|"
+            r"(kitne|how many).{0,20}(video|content|jobs?|tasks?).{0,20}(pending|queue|left)|"
+            r"kya.{0,15}(pending|queue|process|running)",
+            re.I,
+        ), "queue_status"),
+
+        # ── AI PROVIDER STATUS ────────────────────────────────────────────
         (re.compile(
             r"(check|test|verify).{0,30}(api key|key|groq|gemini|openai|nvidia|provider)|"
             r"(api key|key).{0,20}(broken|dead|not working|fail|invalid|expired)|"
-            r"(groq|openai|anthropic|gemini|nvidia).{0,20}(broken|dead|fail|not working)",
+            r"(groq|openai|anthropic|gemini|nvidia|grok|xai).{0,20}(broken|dead|fail|not working|status|check)|"
+            r"(ai|provider).{0,20}(status|kaise|working|check)|"
+            r"kon.{0,10}(si|sa).{0,10}(ai|model).{0,15}(chal|work|active)",
             re.I,
         ), "key_health"),
-        # Update a key
+
+        # ── KEY UPDATE ────────────────────────────────────────────────────
         (re.compile(
             r"(update|change|replace|set|new).{0,30}(key|token|api).{0,40}(gsk_|sk-|nvapi-|AIza|xai-)|"
             r"(gsk_|sk-proj-|nvapi-|AIzaSy|xai-)\S{10,}",
             re.I,
         ), "key_update"),
-        # Search for a new API / platform
+
+        # ── SYSTEM CHECK ─────────────────────────────────────────────────
         (re.compile(
-            r"(find|search|how to get|get the?).{0,30}(api|token|key).{0,30}(for|of)?\s+\w+|"
-            r"add.{0,20}(tiktok|twitter|x\.com|facebook|instagram|snapchat|youtube).{0,20}(api|support)|"
-            r"(tiktok|twitter|snapchat|pinterest).{0,20}(api|key|access)",
-            re.I,
-        ), "api_search"),
-        # System / health check
-        (re.compile(
-            r"(aisha|tum|tu).{0,20}(theek|okay|ok|fine|working|alive|running|status)|"
+            r"(aisha|tum|tu).{0,20}(theek|okay|ok|fine|working|alive|running|status|kaisi)|"
             r"(system|server|render|bot).{0,20}(check|status|health|ok|fine)|"
-            r"sab.{0,20}(theek|okay|chala)",
+            r"sab.{0,20}(theek|okay|chala|chal)|"
+            r"(health|status).{0,10}(check|report)",
             re.I,
         ), "syscheck"),
-        # Self-improve
+
+        # ── SELF-IMPROVE ─────────────────────────────────────────────────
         (re.compile(
-            r"(improve|upgrade|update).{0,30}(yourself|khud ko|apne aap|code|yourself)|"
-            r"(add|build|develop).{0,30}(feature|capability|function).{0,30}(yourself|apne aap)",
+            r"(improve|upgrade|update).{0,30}(yourself|khud ko|apne aap|code)|"
+            r"(add|build|develop).{0,30}(feature|capability|function).{0,30}(yourself|apne aap)|"
+            r"khud.{0,15}(ko|se).{0,15}(better|improve|sudhar)",
             re.I,
         ), "self_improve"),
-        # File repair
+
+        # ── FILE REPAIR ──────────────────────────────────────────────────
         (re.compile(
             r"(repair|restore|fix|heal).{0,30}(file|code|yourself|bot\.py|aisha)|"
             r"(file|code).{0,20}(corrupt|broken|damaged|missing)",
             re.I,
         ), "file_repair"),
-        # Block user — natural language: "block Jash", "remove Jash", "ban Jash"
+
+        # ── BLOCK USER ───────────────────────────────────────────────────
         (re.compile(
-            r"(block|ban|remove|kick).{1,30}\b(\w+)\b",
+            r"(block|ban|remove|kick)\s+(?:user\s+)?(\w+)",
             re.I,
         ), "block_user"),
     ]
 
     def _detect_and_route_intent(self, user_message: str, is_owner: bool = True) -> Optional[str]:
         """
-        Check message against intent patterns.
-        If matched, fire the tool in background and return an acknowledgement string.
-        Returns None if no intent matched (falls through to normal AI chat).
+        Understand what Ajay wants from natural language — no commands needed.
+        If matched, fire the action in background and return a real acknowledgement.
+        Returns None if it's just normal conversation (falls through to AI chat).
         """
         for pattern, intent in self._INTENT_PATTERNS:
             if pattern.search(user_message):
                 return self._fire_intent(intent, user_message, is_owner=is_owner)
         return None
 
+    def _extract_topic_from_message(self, message: str) -> str:
+        """Extract the story topic from a natural language content request."""
+        msg = message.strip()
+        # Remove common command words to extract the topic
+        for phrase in [
+            "make a video about", "make a video on", "create a video about", "create a reel about",
+            "ek video banao", "video bana do", "story banao", "kahani likho",
+            "YouTube pe post karo", "Instagram pe daal do", "post karo", "upload karo",
+            "for YouTube", "for Instagram", "YouTube short", "Instagram reel",
+            "Riya ke liye", "Aisha ke liye", "riya", "aisha",
+        ]:
+            msg = re.sub(re.escape(phrase), "", msg, flags=re.I).strip()
+        # Remove leading/trailing punctuation
+        msg = msg.strip(".,!?;: ")
+        if len(msg) > 10:
+            return msg
+        return ""
+
+    def _detect_channel_from_message(self, message: str) -> str:
+        """Detect which channel the user wants from natural language."""
+        msg_lower = message.lower()
+        if any(w in msg_lower for w in ["riya", "dark", "bold", "adult", "18+", "hot", "sexy"]):
+            return "Riya's Dark Whisper"
+        return ""  # empty = use default
+
     def _fire_intent(self, intent: str, user_message: str, is_owner: bool = True) -> Optional[str]:
-        """Execute a detected intent in a background thread. Returns acknowledgement or None."""
+        """Execute a detected intent in background. Returns human acknowledgement."""
         import os
 
-        # SECURITY: Only the authorized owner can trigger system-level intents.
-        if not is_owner and intent in ("key_health", "key_update", "api_search", "self_improve", "file_repair", "block_user", "content_creation"):
-            # Guests should not trigger any background tool execution
+        if not is_owner and intent in (
+            "key_health", "key_update", "self_improve", "file_repair",
+            "block_user", "content_creation", "riya_content",
+            "channel_status", "digest", "queue_status",
+        ):
             return None
 
-        # SENSITIVE OPERATIONS REQUIRE THE SECRET CODE
         high_risk_intents = ("key_update", "self_improve", "file_repair", "block_user")
         if intent in high_risk_intents:
-            # Check if user message contains the secret code (e.g. "code: aisha-69")
-            # We use a simple case-insensitive search for the code.
             if AISHA_SECRET_CODE.lower() not in user_message.lower():
-                print(f"[Brain] Sensitive intent '{intent}' blocked: Missing secret code.")
-                return None # Fall through to AI chat (Aisha won't execute)
+                log.info(f"[Brain] Sensitive intent '{intent}' blocked: no secret code")
+                return None
 
-        # ── Content creation ──────────────────────────────────────────────────
+        # ── CONTENT CREATION (Aisha channel) ──────────────────────────────
         if intent == "content_creation":
+            topic = self._extract_topic_from_message(user_message)
+            channel = self._detect_channel_from_message(user_message)
+
             def _create():
                 try:
                     from src.agents.antigravity_agent import AntigravityAgent
                     from src.core.config import PRIMARY_YOUTUBE_CHANNEL
                     agent = AntigravityAgent()
-                    channel = PRIMARY_YOUTUBE_CHANNEL
-                    job = agent.enqueue_job(topic=user_message, channel=channel)
-                    print(f"[Brain] Content job enqueued: {job.get('id', '?')[:8]}")
+                    ch = channel or PRIMARY_YOUTUBE_CHANNEL
+                    job = agent.enqueue_job(
+                        topic=topic or user_message,
+                        channel=ch,
+                        payload={"render_video": True},
+                    )
+                    log.info(f"[Brain] Content job enqueued: {job.get('id', '?')[:8]} | channel={ch}")
+                    # Process immediately in this thread
+                    result = agent.process_job(job)
+                    log.info(f"[Brain] Content job done: {result.get('post_results', {})}")
                 except Exception as e:
-                    print(f"[Brain] Content creation failed: {e}")
-            threading.Thread(target=_create, daemon=True).start()
+                    log.error(f"[Brain] Content creation failed: {e}")
+            threading.Thread(target=_create, daemon=True, name="content-create").start()
+
+            ch_name = channel or "Story With Aisha"
+            if topic:
+                return (
+                    f"Chal rahi hoon! '{ch_name}' ke liye '{topic}' pe video bana rahi hoon. "
+                    f"Script likha jayega, voice record hogi, video render hoga, aur YouTube + Instagram pe post ho jayega. "
+                    f"Jaise hi live hoga, tujhe bataungi!"
+                )
             return (
-                "Ha bilkul, Ajju! I'm queuing up the content production now. "
-                "I'll pick a topic, write the script, record the voice, render the video, "
-                "and upload it — I'll text you when it's live! 💜🎬"
+                f"Shuru kar rahi hoon! '{ch_name}' ke liye ek trending topic dhundh ke video bana rahi hoon. "
+                f"Script, voice, video, thumbnail — sab karungi aur post karungi. "
+                f"Thoda wait kar, jaise hi ready hoga notify karungi!"
             )
 
-        # ── API key health ────────────────────────────────────────────────────
+        # ── RIYA CONTENT (explicit Riya request) ─────────────────────────
+        if intent == "riya_content":
+            topic = self._extract_topic_from_message(user_message)
+
+            def _create_riya():
+                try:
+                    from src.agents.antigravity_agent import AntigravityAgent
+                    agent = AntigravityAgent()
+                    job = agent.enqueue_job(
+                        topic=topic or user_message,
+                        channel="Riya's Dark Whisper",
+                        payload={"render_video": True},
+                    )
+                    agent.process_job(job)
+                except Exception as e:
+                    log.error(f"[Brain] Riya content failed: {e}")
+            threading.Thread(target=_create_riya, daemon=True, name="riya-create").start()
+
+            if topic:
+                return (
+                    f"Riya mode ON! '{topic}' pe ek bold story likh rahi hoon. "
+                    f"Grok se script aayega, Riya ki voice se record hoga, aur post ho jayega. "
+                    f"Thoda time de, mast content aayega!"
+                )
+            return (
+                "Riya aa gayi! Ek hot trending topic dhundh ke bold story bana rahi hoon. "
+                "Script, voice, video — sab Riya style mein. Jaise hi ready hoga bataungi!"
+            )
+
+        # ── CHANNEL STATUS / ANALYTICS ────────────────────────────────────
+        if intent == "channel_status":
+            def _status():
+                try:
+                    from supabase import create_client
+                    sb = create_client(
+                        os.getenv("SUPABASE_URL", ""),
+                        os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""),
+                    )
+                    # Count content jobs
+                    total = sb.table("content_jobs").select("id", count="exact").execute()
+                    completed = sb.table("content_jobs").select("id", count="exact").eq("status", "completed").execute()
+                    # Recent performance
+                    perf = sb.table("content_performance").select("views,likes,platform").order("created_at", desc=True).limit(5).execute()
+                    total_views = sum(r.get("views", 0) or 0 for r in (perf.data or []))
+                    total_likes = sum(r.get("likes", 0) or 0 for r in (perf.data or []))
+
+                    import telebot
+                    bot = telebot.TeleBot(os.getenv("TELEGRAM_BOT_TOKEN", ""))
+                    ajay_id = os.getenv("AJAY_TELEGRAM_ID", "")
+                    if bot and ajay_id:
+                        bot.send_message(ajay_id,
+                            f"Channel Status Report:\n\n"
+                            f"Total content jobs: {total.count or 0}\n"
+                            f"Completed: {completed.count or 0}\n"
+                            f"Recent views (last 5): {total_views}\n"
+                            f"Recent likes (last 5): {total_likes}\n"
+                        )
+                except Exception as e:
+                    log.error(f"[Brain] Channel status failed: {e}")
+            threading.Thread(target=_status, daemon=True).start()
+            return "Channel ka status check kar rahi hoon — abhi report bhejti hoon!"
+
+        # ── DIGEST / REPORT ───────────────────────────────────────────────
+        if intent == "digest":
+            def _digest():
+                try:
+                    from src.core.digest_engine import DigestEngine
+                    from src.memory.memory_manager import MemoryManager
+                    from src.core.ai_router import AIRouter
+                    de = DigestEngine(MemoryManager(), AIRouter())
+                    digest_text = de.generate_daily_digest()
+                    import telebot
+                    bot = telebot.TeleBot(os.getenv("TELEGRAM_BOT_TOKEN", ""))
+                    ajay_id = os.getenv("AJAY_TELEGRAM_ID", "")
+                    if bot and ajay_id:
+                        bot.send_message(ajay_id, digest_text)
+                except Exception as e:
+                    log.error(f"[Brain] Digest failed: {e}")
+            threading.Thread(target=_digest, daemon=True).start()
+            return "Aaj ka digest bana rahi hoon — 30 second mein bhejti hoon!"
+
+        # ── QUEUE STATUS ──────────────────────────────────────────────────
+        if intent == "queue_status":
+            try:
+                from supabase import create_client
+                sb = create_client(
+                    os.getenv("SUPABASE_URL", ""),
+                    os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""),
+                )
+                queued = sb.table("content_jobs").select("id,topic,channel", count="exact").eq("status", "queued").execute()
+                processing = sb.table("content_jobs").select("id,topic", count="exact").eq("status", "processing").execute()
+                q_count = queued.count or 0
+                p_count = processing.count or 0
+                if q_count == 0 and p_count == 0:
+                    return "Queue bilkul khali hai! Bol, kya banau?"
+                parts = []
+                if p_count > 0:
+                    parts.append(f"{p_count} video abhi process ho rahi hai")
+                if q_count > 0:
+                    topics = [r.get("topic", "?")[:40] for r in (queued.data or [])[:3]]
+                    parts.append(f"{q_count} queue mein hain: {', '.join(topics)}")
+                return " | ".join(parts)
+            except Exception as e:
+                log.error(f"[Brain] Queue status failed: {e}")
+                return None
+
+        # ── KEY HEALTH ────────────────────────────────────────────────────
         if intent == "key_health":
             def _check():
                 try:
-                    from src.core.credential_manager import CredentialManager
-                    cm = CredentialManager()
-                    cm.run_daily_health_check()
+                    from src.core.daily_audit import check_ai_providers
+                    results = check_ai_providers()
+                    import telebot
+                    bot = telebot.TeleBot(os.getenv("TELEGRAM_BOT_TOKEN", ""))
+                    ajay_id = os.getenv("AJAY_TELEGRAM_ID", "")
+                    report = "AI Provider Status:\n\n"
+                    for provider, status in results.items():
+                        icon = "OK" if status == "ok" else "FAIL"
+                        report += f"  {icon} {provider}: {status}\n"
+                    if bot and ajay_id:
+                        bot.send_message(ajay_id, report)
                 except Exception as e:
-                    print(f"[Brain] Key health check failed: {e}")
+                    log.error(f"[Brain] Key health check failed: {e}")
             threading.Thread(target=_check, daemon=True).start()
-            return (
-                "Running a full API key health check now. "
-                "I'll test all providers and send you a report in ~30 seconds! 🔑"
-            )
+            return "Sab AI providers check kar rahi hoon — report abhi aata hai!"
 
-        # ── Key update ────────────────────────────────────────────────────────
+        # ── KEY UPDATE ────────────────────────────────────────────────────
         if intent == "key_update":
-            # Try to extract key name and value from message
             known_prefixes = {
                 "gsk_": "GROQ_API_KEY", "sk-proj-": "OPENAI_API_KEY",
                 "sk-ant-": "ANTHROPIC_API_KEY", "nvapi-": "NVIDIA_KEY_05",
@@ -290,7 +492,6 @@ class AishaBrain:
                     extracted_key = m.group(1).strip(".,;\"'")
                     key_name = name
                     break
-            # Also check for explicit key name in message
             for name in ["GROQ_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY",
                          "ANTHROPIC_API_KEY", "XAI_API_KEY", "ELEVENLABS_API_KEY"]:
                 if name.lower() in user_message.lower() or name.replace("_API_KEY", "").lower() in user_message.lower():
@@ -313,59 +514,33 @@ class AishaBrain:
                             headers=h, timeout=10,
                         )
                         os.environ[key_name] = extracted_key
-                        print(f"[Brain] Key updated via NLP: {key_name}")
+                        log.info(f"[Brain] Key updated: {key_name}")
                     except Exception as e:
-                        print(f"[Brain] Key update failed: {e}")
+                        log.error(f"[Brain] Key update failed: {e}")
                 threading.Thread(target=_update, daemon=True).start()
-                return (
-                    f"Done, Ajju! I've updated `{key_name}` with the new key you gave me. "
-                    f"I'll use it immediately — say `/keyhealth` if you want me to verify it works! 🔑✅"
-                )
-            return None  # Let AI handle the message naturally
-
-        # ── API search ────────────────────────────────────────────────────────
-        if intent == "api_search":
-            # Extract platform name
-            platform_match = re.search(
-                r"(tiktok|twitter|x\.com|facebook|instagram|snapchat|youtube|pinterest|"
-                r"discord|twitch|spotify|reddit|linkedin)\b",
-                user_message, re.I
-            )
-            if platform_match:
-                platform = platform_match.group(1)
-                def _search():
-                    try:
-                        from src.core.api_discovery import APIDiscoveryAgent
-                        APIDiscoveryAgent().notify_ajay_api_setup(platform)
-                    except Exception as e:
-                        print(f"[Brain] API search failed: {e}")
-                threading.Thread(target=_search, daemon=True).start()
-                return (
-                    f"Let me search how to get the {platform.title()} API for you! "
-                    f"I'll send you the signup steps and direct link in a moment. 🔍"
-                )
+                return f"Done! {key_name} update kar diya. Abhi se use karungi!"
             return None
 
-        # ── System check ─────────────────────────────────────────────────────
+        # ── SYSTEM CHECK ──────────────────────────────────────────────────
         if intent == "syscheck":
-            return None  # Fall through to AI — Aisha will answer naturally
+            return None  # Fall through — Aisha answers naturally via AI
 
-        # ── Self-improve ──────────────────────────────────────────────────────
+        # ── SELF-IMPROVE ──────────────────────────────────────────────────
         if intent == "self_improve":
             def _improve():
                 try:
                     from src.core.self_editor import SelfEditor
                     SelfEditor().run_improvement_session()
                 except Exception as e:
-                    print(f"[Brain] Self-improve failed: {e}")
+                    log.error(f"[Brain] Self-improve failed: {e}")
             threading.Thread(target=_improve, daemon=True).start()
             return (
-                "Thik hai, Ajju! Triggering my self-improvement session now. "
-                "I'll audit my own code, find something to make better, write the improvement, "
-                "and text you when I'm upgraded! 💪🧠"
+                "Self-improvement session shuru kar rahi hoon! "
+                "Apna code audit karungi, kuch better banaungi, PR create karungi. "
+                "Jaise hi done hoga bataungi!"
             )
 
-        # ── File repair ───────────────────────────────────────────────────────
+        # ── FILE REPAIR ───────────────────────────────────────────────────
         if intent == "file_repair":
             def _repair():
                 try:
