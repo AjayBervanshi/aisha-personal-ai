@@ -362,27 +362,54 @@ class AutonomousLoop:
                 )
         except Exception as e:
             print(f"Error checking awareness: {e}")
-    def run_studio_session(self):
-        """Aisha autonomously decides which channel needs content and starts the crew.
+    def _check_daily_post_limit(self) -> bool:
+        """Check if we've hit the daily post limit. Returns True if we can still post."""
+        try:
+            from src.core.config import CONTENT_SCHEDULE
+            max_posts = CONTENT_SCHEDULE.get("max_daily_posts", 3)
+            from datetime import datetime as dt_class, timezone, timedelta
+            today_start = dt_class.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            completed = self.brain.supabase.table("content_jobs")\
+                .select("id")\
+                .eq("status", "completed")\
+                .gte("completed_at", today_start.isoformat())\
+                .execute()
+            count = len(completed.data) if completed.data else 0
+            if count >= max_posts:
+                log.info(f"[Studio] Daily limit reached ({count}/{max_posts}). Skipping.")
+                return False
+            log.info(f"[Studio] Posts today: {count}/{max_posts}")
+            return True
+        except Exception as e:
+            log.warning(f"[Studio] Could not check daily limit: {e}")
+            return True
 
-        Priority order:
+    def run_studio_session(self):
+        """Aisha autonomously creates content for the primary channel.
+
+        Uses only the configured primary YouTube channel + Instagram account.
+        Priority:
         1. Drain oldest queued job from the backlog (if any exist).
         2. Only when the queue is empty, generate a fresh topic and enqueue it.
-        This ensures the backlog never grows unboundedly.
+        3. Respects daily post limits to avoid spamming.
         """
         log.info(f"[{datetime.now()}] Aisha entering Studio for proactive session...")
         _log_to_db("INFO", "autonomous_loop", "job_started: studio_session")
 
+        if not self._check_daily_post_limit():
+            _log_to_db("INFO", "autonomous_loop", "studio_session_skipped: daily_limit_reached")
+            return
+
         try:
             from src.agents.antigravity_agent import AntigravityAgent
+            from src.core.config import PRIMARY_YOUTUBE_CHANNEL
             agent = AntigravityAgent()
 
-            # Step 1: Try to drain an existing queued job first
             existing_job = agent.fetch_next_job()
             if existing_job:
                 log.info(
                     f"[Studio] Draining backlog job {existing_job.get('id')} | "
-                    f"channel={existing_job.get('channel')} | topic={existing_job.get('topic')}"
+                    f"topic={existing_job.get('topic')}"
                 )
                 _log_to_db("INFO", "autonomous_loop", "studio_draining_backlog",
                            details={"job_id": existing_job.get("id"), "topic": existing_job.get("topic")})
@@ -394,36 +421,29 @@ class AutonomousLoop:
                     name=f"drain-job-{existing_job.get('id','?')[:8]}"
                 ).start()
                 log.info(f"[Studio] Backlog drain thread started for job {existing_job.get('id')}")
-                _log_to_db("INFO", "autonomous_loop", "job_completed: studio_session",
-                           details={"job_id": existing_job.get("id"), "mode": "backlog_drain"})
                 return
 
-            # Step 2: Queue is empty — generate a fresh topic
-            import random
-            channels = [
-                {"name": "Story With Aisha",          "format": "Long Form",   "vibe": "Romantic and Heart-touching"},
-                {"name": "Riya's Dark Whisper",        "format": "Long Form",   "vibe": "Seductive and Mysterious"},
-                {"name": "Riya's Dark Romance Library","format": "Long Form",   "vibe": "Intense Mafia/Obsessive Romance"},
-                {"name": "Aisha & Him",                "format": "Short/Reel",  "vibe": "Relatable Couple Moments/Dialogue"}
-            ]
-            selected = random.choice(channels)
+            channel = PRIMARY_YOUTUBE_CHANNEL
 
             for attempt in range(5):
-                prompt = (f"You are Aisha, the Creative Director. For channel '{selected['name']}', "
-                         f"suggest ONE viral {selected['vibe']} story topic title. "
-                         f"Already used: {self._used_topics[-10:] if self._used_topics else 'none'}. "
-                         "Return ONLY the topic title, nothing else.")
-                topic = self.brain.ai.generate("You are Aisha.", prompt).text.strip()
+                prompt = (
+                    f"तुम आयशा हो, Creative Director। '{channel}' channel के लिए "
+                    f"एक viral Hindi love story topic suggest करो — YouTube Short / Instagram Reel के लिए। "
+                    f"Topic ऐसा हो जो Indian audience को तुरंत attract करे। "
+                    f"Already used: {self._used_topics[-10:] if self._used_topics else 'none'}। "
+                    "सिर्फ topic title दो, Hindi में, और कुछ नहीं।"
+                )
+                topic = self.brain.ai.generate(
+                    "You are a viral content strategist for Hindi romantic storytelling.", prompt
+                ).text.strip()
                 if topic not in self._used_topics:
                     self._used_topics.append(topic)
-                    # Cap at 200 entries — old topics can be reused after that
                     if len(self._used_topics) > 200:
                         self._used_topics = self._used_topics[-200:]
                     break
 
-            log.info(f"[Studio] Channel: '{selected['name']}' | Topic: '{topic}'")
+            log.info(f"[Studio] Channel: '{channel}' | Topic: '{topic}'")
 
-            # Notify Ajay — apply cooldown to avoid spam on rapid restarts
             global _last_startup_msg_time
             _now = time.time()
             _in_cooldown = (_now - _last_startup_msg_time) < _STARTUP_MSG_COOLDOWN
@@ -432,21 +452,17 @@ class AutonomousLoop:
                     _last_startup_msg_time = _now
                     self.telegram.send_message(
                         self.ajay_id,
-                        f"Ajju, I'm starting a new production for '{selected['name']}' right now!\n"
-                        f"Topic: '{topic}'\nI'll ping you when the script is ready! Let me cook. 💜"
+                        f"Starting new content production!\n"
+                        f"Topic: {topic}\n"
+                        f"I'll notify you when it's published."
                     )
                 except Exception as e:
                     log.warning(f"[Telegram] Failed to notify: {e}")
-            elif _in_cooldown:
-                log.info(
-                    f"[Studio] Startup notification skipped — sent "
-                    f"{int(_now - _last_startup_msg_time)}s ago (cooldown={_STARTUP_MSG_COOLDOWN}s)"
-                )
 
             job = agent.enqueue_job(
                 topic=topic,
-                channel=selected["name"],
-                fmt=selected["format"],
+                channel=channel,
+                fmt="Short/Reel",
                 platform_targets=["youtube", "instagram"],
                 auto_post=True,
                 payload={"render_video": True},
@@ -461,22 +477,11 @@ class AutonomousLoop:
             ).start()
             log.info(f"[Studio] Processing thread started for job {job.get('id')}")
             _log_to_db("INFO", "autonomous_loop", "job_completed: studio_session",
-                       details={"job_id": job.get("id"), "channel": selected["name"], "topic": topic})
+                       details={"job_id": job.get("id"), "channel": channel, "topic": topic})
 
         except Exception as e:
             log.error(f"[Studio] Session failed: {e}")
             _log_to_db("ERROR", "autonomous_loop", f"job_failed: studio_session: {e}")
-            # Fallback path: launch production script directly (no agent available)
-            try:
-                import subprocess, random as _rand, sys as _sys
-                _ch = _rand.choice(["Story With Aisha", "Aisha & Him"])
-                subprocess.Popen([
-                    _sys.executable, "-m", "src.agents.run_youtube",
-                    "--channel", _ch,
-                ], cwd=str(PROJECT_ROOT))
-                log.info(f"[Studio] Production crew launched via fallback for: {_ch}")
-            except Exception as ex:
-                log.error(f"[Studio] Failed to launch production fallback: {ex}")
 
     def run_temp_cleanup(self):
         """Delete temp voice/video files older than 24 hours to prevent disk exhaustion."""

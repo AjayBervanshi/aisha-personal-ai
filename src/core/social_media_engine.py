@@ -39,21 +39,9 @@ class SocialMediaEngine:
     Tokens are loaded from Supabase api_keys table; env vars used as fallback.
     """
 
-    # DB key names for each channel's credentials
+    # DB key names for credentials (single account for now, scalable to multi later)
     CHANNEL_TO_DB_KEY = {
         "Story With Aisha": {
-            "instagram": "INSTAGRAM_TOKEN",
-            "youtube": "YOUTUBE_OAUTH_TOKEN",
-        },
-        "Riya's Dark Whisper": {
-            "instagram": "INSTAGRAM_TOKEN",
-            "youtube": "YOUTUBE_OAUTH_TOKEN",
-        },
-        "Riya's Dark Romance Library": {
-            "instagram": "INSTAGRAM_TOKEN",
-            "youtube": "YOUTUBE_OAUTH_TOKEN",
-        },
-        "Aisha & Him": {
             "instagram": "INSTAGRAM_TOKEN",
             "youtube": "YOUTUBE_OAUTH_TOKEN",
         },
@@ -165,10 +153,13 @@ class SocialMediaEngine:
         if job_id:
             try:
                 sb = _get_supabase()
-                existing = sb.table("content_queue").select("instagram_post_id").eq("id", job_id).single().execute()
-                if existing.data and existing.data.get("instagram_post_id"):
-                    log.info(f"[Instagram] Job {job_id} already posted: {existing.data['instagram_post_id']}")
-                    return {"success": True, "post_id": existing.data["instagram_post_id"], "skipped": True}
+                existing = sb.table("content_jobs").select("output").eq("id", job_id).single().execute()
+                if existing.data and existing.data.get("output"):
+                    output = existing.data["output"] if isinstance(existing.data["output"], dict) else {}
+                    ig_result = output.get("post_results", {}).get("instagram", {})
+                    if ig_result.get("success") and ig_result.get("post_id"):
+                        log.info(f"[Instagram] Job {job_id} already posted: {ig_result['post_id']}")
+                        return {"success": True, "post_id": ig_result["post_id"], "skipped": True}
             except Exception as e:
                 log.warning(f"[Instagram] Idempotency check failed: {e}")
 
@@ -224,24 +215,9 @@ class SocialMediaEngine:
 
             post_id = publish_resp.get("id")
 
-            # Persist post ID for idempotency
-            if job_id and post_id:
-                try:
-                    _get_supabase().table("content_queue").update({
-                        "instagram_post_id": post_id,
-                        "instagram_status": "published",
-                    }).eq("id", job_id).execute()
-                except Exception as db_err:
-                    log.warning(f"[Instagram] Could not persist post_id to DB: {db_err}")
-
             return {"success": True, "post_id": post_id}
         except Exception as e:
             log.error(f"[Instagram] Reel post failed: {e}")
-            if job_id:
-                try:
-                    _get_supabase().table("content_queue").update({"instagram_status": "failed"}).eq("id", job_id).execute()
-                except Exception as e:
-                    log.warning(f"[Instagram] Failed to update status to failed: {e}")
             return {"success": False, "error": str(e)}
 
     def post_instagram_image(self, image_url: str, caption: str, hashtags: list | None = None, channel: str = "Story With Aisha") -> dict:
@@ -291,10 +267,13 @@ class SocialMediaEngine:
         if job_id:
             try:
                 sb = _get_supabase()
-                existing = sb.table("content_queue").select("youtube_video_id", "youtube_url").eq("id", job_id).single().execute()
-                if existing.data and existing.data.get("youtube_video_id"):
-                    log.info(f"[YouTube] Job {job_id} already uploaded: {existing.data['youtube_url']}")
-                    return {"success": True, "video_id": existing.data["youtube_video_id"], "url": existing.data["youtube_url"], "skipped": True}
+                existing = sb.table("content_jobs").select("output").eq("id", job_id).single().execute()
+                if existing.data and existing.data.get("output"):
+                    output = existing.data["output"] if isinstance(existing.data["output"], dict) else {}
+                    yt_result = output.get("post_results", {}).get("youtube", {})
+                    if yt_result.get("success") and yt_result.get("video_id"):
+                        log.info(f"[YouTube] Job {job_id} already uploaded: {yt_result.get('url')}")
+                        return {"success": True, "video_id": yt_result["video_id"], "url": yt_result.get("url", ""), "skipped": True}
             except Exception as e:
                 log.warning(f"[YouTube] Idempotency check failed: {e}")
 
@@ -325,29 +304,12 @@ class SocialMediaEngine:
             video_id = response.get("id")
             url = f"https://youtube.com/watch?v={video_id}"
 
-            # Persist video ID for idempotency
-            if job_id:
-                try:
-                    sb = _get_supabase()
-                    sb.table("content_queue").update({
-                        "youtube_video_id": video_id,
-                        "youtube_url": url,
-                        "youtube_status": "published",
-                    }).eq("id", job_id).execute()
-                except Exception as db_err:
-                    log.warning(f"[YouTube] Could not persist video_id to DB: {db_err}")
-
             return {"success": True, "video_id": video_id, "url": url}
 
         except ImportError:
             return {"success": False, "error": "Install: pip install google-api-python-client google-auth"}
         except Exception as e:
             log.error(f"[YouTube] Upload failed: {e}")
-            if job_id:
-                try:
-                    _get_supabase().table("content_queue").update({"youtube_status": "failed"}).eq("id", job_id).execute()
-                except Exception as e:
-                    log.warning(f"[YouTube] Failed to update status to failed: {e}")
             return {"success": False, "error": str(e)}
 
     def cross_post(self, content_package: dict) -> dict:

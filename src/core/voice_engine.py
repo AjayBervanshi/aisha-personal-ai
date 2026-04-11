@@ -42,18 +42,20 @@ CHANNEL_EDGE_TTS_VOICES: dict = {
 }
 
 # ── Mood-based voice tuning ───────────────────────────────────
+# Optimized for natural, human-like narration.
 # Rate: negative = slower, positive = faster
 # Pitch: negative Hz = deeper/warmer, positive = brighter
 MOOD_VOICE_SETTINGS = {
-    "romantic":      {"rate": "-12%", "pitch": "-4Hz"},   # Slow, deep, intimate
-    "flirty":        {"rate": "-5%",  "pitch": "+2Hz"},   # Playful, slightly bright
-    "personal":      {"rate": "-10%", "pitch": "-3Hz"},   # Soft, gentle
-    "late_night":    {"rate": "-15%", "pitch": "-5Hz"},   # Very slow, soulful
-    "motivational":  {"rate": "+8%",  "pitch": "+3Hz"},   # Fast, energetic
-    "professional":  {"rate": "+3%",  "pitch": "+0Hz"},   # Crisp, neutral
-    "finance":       {"rate": "+2%",  "pitch": "+0Hz"},   # Clear, structured
-    "angry":         {"rate": "+5%",  "pitch": "+2Hz"},   # Direct, punchy
-    "casual":        {"rate": "-3%",  "pitch": "-1Hz"},   # Natural, relaxed
+    "romantic":      {"rate": "-8%",  "pitch": "-3Hz"},   # Warm, intimate but not too slow
+    "flirty":        {"rate": "-3%",  "pitch": "+1Hz"},   # Playful, natural
+    "personal":      {"rate": "-6%",  "pitch": "-2Hz"},   # Soft, gentle
+    "late_night":    {"rate": "-10%", "pitch": "-4Hz"},   # Soulful, quiet
+    "motivational":  {"rate": "+5%",  "pitch": "+2Hz"},   # Energetic but clear
+    "professional":  {"rate": "+2%",  "pitch": "+0Hz"},   # Crisp, neutral
+    "finance":       {"rate": "+1%",  "pitch": "+0Hz"},   # Clear, structured
+    "angry":         {"rate": "+3%",  "pitch": "+1Hz"},   # Direct but not harsh
+    "casual":        {"rate": "-2%",  "pitch": "-1Hz"},   # Natural, relaxed
+    "storytelling":  {"rate": "-5%",  "pitch": "-2Hz"},   # Smooth narration pace
 }
 
 # Temp directory for voice files
@@ -320,15 +322,14 @@ def cleanup_voice_file(filepath: str):
 
 
 def _clean_for_speech(text: str) -> str:
-    """Remove emojis and special characters that shouldn't be spoken."""
+    """Clean text for TTS — remove non-spoken elements while preserving natural flow."""
     import re
-    
-    # Remove emoji characters
+
     emoji_pattern = re.compile(
-        "[\U0001F600-\U0001F64F"  # emoticons
-        "\U0001F300-\U0001F5FF"  # symbols & pictographs
-        "\U0001F680-\U0001F6FF"  # transport & map symbols
-        "\U0001F1E0-\U0001F1FF"  # flags
+        "[\U0001F600-\U0001F64F"
+        "\U0001F300-\U0001F5FF"
+        "\U0001F680-\U0001F6FF"
+        "\U0001F1E0-\U0001F1FF"
         "\U00002702-\U000027B0"
         "\U000024C2-\U0001F251"
         "\U0001f926-\U0001f937"
@@ -340,15 +341,30 @@ def _clean_for_speech(text: str) -> str:
         "]+", flags=re.UNICODE
     )
     text = emoji_pattern.sub('', text)
-    
+
     # Remove markdown formatting
-    text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)  # Bold
-    text = re.sub(r'\*(.*?)\*', r'\1', text)       # Italic
-    text = re.sub(r'━+', '', text)                  # Horizontal lines
-    
-    # Clean up extra whitespace
-    text = re.sub(r'\s+', ' ', text).strip()
-    
+    text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
+    text = re.sub(r'\*(.*?)\*', r'\1', text)
+    text = re.sub(r'━+', '', text)
+
+    # Remove scene/stage directions like [PAUSE], [MUSIC], etc.
+    text = re.sub(r'\[.*?\]', '', text)
+
+    # Remove section headers (lines that are all caps or start with numbered prefixes)
+    text = re.sub(r'^(?:TITLE|DESCRIPTION|CAPTION|HASHTAGS|THUMBNAIL|SEO|HOOK|CTA)[:\s].*$', '', text, flags=re.MULTILINE | re.IGNORECASE)
+    text = re.sub(r'^(?:भाग|PART)\s*\d+.*$', '', text, flags=re.MULTILINE | re.IGNORECASE)
+
+    # Normalize ellipsis for natural pauses
+    text = re.sub(r'\.{3,}', '...', text)
+
+    # Remove hashtags
+    text = re.sub(r'#\w+', '', text)
+
+    # Clean up extra whitespace while preserving sentence breaks
+    text = re.sub(r'\n{2,}', '\n', text)
+    text = re.sub(r'[ \t]+', ' ', text)
+    text = text.strip()
+
     return text
 
 

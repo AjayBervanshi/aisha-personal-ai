@@ -131,10 +131,7 @@ AISHA_ELEVENLABS_VOICE_ID = "wdymxIQkYn7MJCYCQF2Q"   # Aisha — warm, emotional
 RIYA_ELEVENLABS_VOICE_ID  = "BpjGufoPiobT79j2vtj4"   # Riya  — seductive, bold narrator
 
 CHANNEL_VOICE_IDS: dict = {
-    "Story With Aisha":            AISHA_ELEVENLABS_VOICE_ID,
-    "Riya's Dark Whisper":         RIYA_ELEVENLABS_VOICE_ID,
-    "Riya's Dark Romance Library": RIYA_ELEVENLABS_VOICE_ID,
-    "Aisha & Him":                 AISHA_ELEVENLABS_VOICE_ID,
+    "Story With Aisha": AISHA_ELEVENLABS_VOICE_ID,
 }
 
 # ══════════════════════════════════════════════════════════════
@@ -169,57 +166,36 @@ AI_MAX_TOKENS    = 16000  # Maximum for long-form story scripts
 AI_HISTORY_LIMIT = 20     # More context = smarter Aisha
 
 # ══════════════════════════════════════════════════════════════
-# CHANNEL → AI MODEL ROUTING
-# Riya channels: Mistral-Large-3 via NVIDIA NIM (writing pool)
-#   - 675B parameter model, minimal content filtering
-#   - Handles explicit adult/18+ Hindi romance content
-#   - 2 keys (KEY_02 + KEY_17) = 2,000 free credits/month for writing
-#   - Fallback: Groq LLaMA-3.3 (also handles mature content)
-# Aisha channels: Gemini — warm, emotional, cinematic
+# ACTIVE CHANNELS — only channels Ajay currently runs
+# All content goes to ONE YouTube + ONE Instagram account.
+# To add more channels later, just add entries here.
 # ══════════════════════════════════════════════════════════════
+PRIMARY_YOUTUBE_CHANNEL = _get("PRIMARY_YOUTUBE_CHANNEL", "Story With Aisha")
+PRIMARY_INSTAGRAM_ACCOUNT = _get("PRIMARY_INSTAGRAM_ACCOUNT", "story_with_aisha")
+
 CHANNEL_AI_PROVIDER = {
-    "Story With Aisha":           "gemini",   # Warm, emotional
-    "Riya's Dark Whisper":        "nvidia",   # Mistral-Large-3 — explicit, dark
-    "Riya's Dark Romance Library":"nvidia",   # Mistral-Large-3 — intense, bold
-    "Aisha & Him":                "gemini",   # Light, relatable
+    "Story With Aisha": "gemini",
 }
 
-# Task type for NVIDIA NIM pool — ensures Riya uses the WRITING pool (Mistral-Large-3)
 CHANNEL_AI_TASK_TYPE = {
-    "Story With Aisha":           "writing",
-    "Riya's Dark Whisper":        "writing",  # Routes to Mistral-Large-3 (675B)
-    "Riya's Dark Romance Library":"writing",  # Routes to Mistral-Large-3 (675B)
-    "Aisha & Him":                "writing",
+    "Story With Aisha": "writing",
 }
 
-# ══════════════════════════════════════════════════════════════
-# YOUTUBE CHANNELS
-# ══════════════════════════════════════════════════════════════
 YOUTUBE_CHANNELS = {
     "Story With Aisha": {
         "narrator": "Aisha",
         "tone": "warm, emotional, cinematic, heart-touching",
-        "format": "Long Form",
-        "duration": "8-15 min",
-    },
-    "Riya's Dark Whisper": {
-        "narrator": "Riya",
-        "tone": "mysterious, seductive, psychological",
-        "format": "Long Form",
-        "duration": "10-20 min",
-    },
-    "Riya's Dark Romance Library": {
-        "narrator": "Riya",
-        "tone": "intense, addictive, mafia romance",
-        "format": "Long Form",
-        "duration": "15-25 min",
-    },
-    "Aisha & Him": {
-        "narrator": "Aisha",
-        "tone": "relatable, funny, sweet, real",
         "format": "Short/Reel",
-        "duration": "30s-3 min",
+        "duration": "60-90 seconds",
     },
+}
+
+# Content scheduling — optimal posting times IST for Indian audience
+CONTENT_SCHEDULE = {
+    "youtube_shorts_times": ["10:00", "14:00", "19:00"],
+    "instagram_reels_times": ["11:00", "15:00", "20:00"],
+    "daily_target_posts": _get_int("DAILY_TARGET_POSTS", 2),
+    "max_daily_posts": _get_int("MAX_DAILY_POSTS", 3),
 }
 
 # ══════════════════════════════════════════════════════════════
