@@ -252,6 +252,19 @@ class AishaBrain:
             re.I,
         ), "self_improve"),
 
+        # ── CODE AGENT (fix bugs, add features, modify codebase) ─────
+        # "fix the bug in voice_engine", "add error handling to bot.py"
+        # "apne code mein ye fix karo", "ye feature add karo"
+        (re.compile(
+            r"(fix|debug|patch|solve).{0,40}(bug|error|crash|issue|problem|code)|"
+            r"(add|implement|write|build).{0,30}(feature|function|handler|support|code|module).{0,30}(in|to|for)|"
+            r"(code|file|module).{0,20}(mein|me|mai).{0,20}(fix|change|add|improve|update)|"
+            r"apne.{0,20}(code|file).{0,20}(mein|me).{0,20}(fix|add|change|improve)|"
+            r"(ye|yeh|this).{0,20}(fix|change|add|improve).{0,15}(karo|kar do|kar de)|"
+            r"(can you|tum).{0,20}(fix|add|change|write|build|create).{0,30}(code|feature|function|module|handler)",
+            re.I,
+        ), "code_agent"),
+
         # ── FILE REPAIR ──────────────────────────────────────────────────
         (re.compile(
             r"(repair|restore|fix|heal).{0,30}(file|code|yourself|bot\.py|aisha)|"
@@ -390,7 +403,7 @@ class AishaBrain:
         if not is_owner and intent in (
             "key_health", "key_update", "self_improve", "file_repair",
             "block_user", "content_creation", "riya_content",
-            "channel_status", "digest", "queue_status",
+            "channel_status", "digest", "queue_status", "code_agent",
         ):
             return None
 
@@ -624,6 +637,29 @@ class AishaBrain:
                 "Self-improvement session shuru kar rahi hoon! "
                 "Apna code audit karungi, kuch better banaungi, PR create karungi. "
                 "Jaise hi done hoga bataungi!"
+            )
+
+        # ── CODE AGENT (multi-file fix/feature, like Claude) ──────────
+        if intent == "code_agent":
+            def _code_task():
+                try:
+                    from src.core.code_agent import CodeAgent
+                    agent = CodeAgent()
+                    result = agent.run_task(user_message, auto_merge=True)
+                    log.info(f"[CodeAgent] Result: {result['status']} | files: {result.get('files_changed', [])}")
+                except Exception as e:
+                    log.error(f"[Brain] Code agent failed: {e}")
+            threading.Thread(target=_code_task, daemon=True, name="code-agent").start()
+            return (
+                "Code agent activate ho gaya! Main ab:\n"
+                "1. Samajh rahi hoon kya fix/add karna hai\n"
+                "2. Related files read karungi\n"
+                "3. Fix generate karungi\n"
+                "4. Test karungi (syntax + import)\n"
+                "5. Multi-file PR banaungi\n"
+                "6. Merge karungi\n"
+                "7. Deploy trigger karungi\n\n"
+                "Jaise hi done hoga Telegram pe report bhejungi!"
             )
 
         # ── FILE REPAIR ───────────────────────────────────────────────────
