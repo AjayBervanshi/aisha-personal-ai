@@ -165,37 +165,47 @@ Output: 300 words max. Be specific and concrete.""",
 
         print("[Lexi] Writing full script...")
         self.results["script"] = self._generate(
-            f"""You are Lexi, the Master Scriptwriter.
+            f"""You are Lexi, a top-tier Hollywood screenwriter and viral YouTube storyteller.
 {channel_context}
 {continuity_ctx + chr(10) + chr(10) if continuity_ctx else ""}Story Brief:
 {self.results['research']}
 
-Write the complete script. Include:
-1. HOOK (first 5 seconds)
-2. Story narration with natural dialogue
-3. Scene notes ([PAUSE], [MUSIC], [SILENCE])
-4. Emotional cliffhanger
-5. CTA for next episode
+Write the complete spoken script. THIS MUST NOT BE ROBOTIC. Write exactly as a highly engaging human narrator would speak to a captivated audience.
 
-Length: {'30-60 second reel script with punchy dialogue' if fmt == 'Short/Reel' else 'Full story script (8-15 minutes of narration)'}
-Make every line count.""",
+Rules:
+1. The Hook (0-5s): Start immediately with high stakes, a shocking statement, or raw emotion. Do not say "Welcome back."
+2. The Pacing: Use short, punchy sentences. Break up long paragraphs. Use dramatic pauses.
+3. The Delivery: Include [PAUSE], [SIGH], or [WHISPER] naturally.
+4. The Language: Use deeply emotional and sensory words. If writing in Hindi/Hinglish, make it natural, conversational, and poetic.
+5. The Climax: Build tension to a peak before resolving or dropping a cliffhanger.
+
+Format: {'Vertical Short/Reel script. MAXIMUM 150 words. Hyper-fast pacing. No fluff. Get straight to the point.' if 'short' in fmt.lower() or 'reel' in fmt.lower() else 'Full cinematic story script (8-15 minutes). Deep character building.'}
+
+Give me ONLY the spoken script and acting cues. No intro chatter.""",
             preferred_provider=preferred_ai,
                 nvidia_task_type=nvidia_task,
         )
 
         print("[Mia] Designing visuals...")
         self.results["visuals"] = self._generate(
-            f"""You are Mia, the Visual Director.
+            f"""You are Mia, the elite Visual Director and AI Prompt Engineer.
 {channel_context}
-Aesthetic: {'Dark, moody, cinematic noir with deep shadows' if 'Riya' in channel else 'Warm golden-hour emotional close-ups'}
+Aesthetic: {'Dark, moody, cinematic lighting, neo-noir, deep shadows, 8k resolution, photorealistic, shot on 35mm lens, Unreal Engine 5 render' if 'Riya' in channel else 'Warm golden-hour, highly emotional close-ups, depth of field, photorealistic, 8k resolution, highly detailed cinematic movie still, soft lighting'}
 
-Script:
+Script Extract:
 {self.results['script'][:800]}
 
-Create:
-1. Thumbnail concept
-2. 5 scene prompts for AI image generation
-3. Background music mood""",
+Your job is to design the absolute best Midjourney/Stable Diffusion prompts for the scenes in the script. The images must NOT look like cheap AI art. They must look like frames from an Oscar-winning movie.
+
+Format your output exactly like this:
+[Thumbnail] <high contrast, vibrant clickbait prompt with subject reacting emotionally>
+[Scene 1] <detailed cinematic prompt describing lighting, camera angle, and subject emotion>
+[Scene 2] <detailed cinematic prompt...>
+[Scene 3] <detailed cinematic prompt...>
+[Scene 4] <detailed cinematic prompt...>
+[Scene 5] <detailed cinematic prompt...>
+
+Do not include any intro, outro, or conversation. Just the bracketed prompts.""",
             preferred_provider=preferred_ai,
                 nvidia_task_type=nvidia_task,
         )

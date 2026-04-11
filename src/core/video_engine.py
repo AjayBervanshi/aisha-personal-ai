@@ -201,7 +201,7 @@ def _generate_ass_subtitles(
             break
 
     # Font size based on resolution
-    font_size = 48 if width < height else 36  # bigger for vertical Shorts
+    font_size = 85 if width < height else 48  # Hormozi style bold big text
 
     time_per_line = audio_duration / max(len(lines), 1)
 
@@ -221,7 +221,7 @@ Collisions: Normal
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,{font_name},{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,2,20,20,60,1
+Style: Default,{font_name},{font_size},&H00FFFFFF,&H0000FFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,4,2,2,40,40,150,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -233,7 +233,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         end = min(end, audio_duration)
         # Escape special ASS characters
         safe_line = line.replace("\\", "\\\\").replace("{", "\\{")
-        ass += f"Dialogue: 0,{_ts(start)},{_ts(end)},Default,,0,0,0,,{safe_line}\n"
+        ass += f"Dialogue: 0,{_ts(start)},{_ts(end)},Default,,0,0,0,,{{\\fscx80\\fscy80\\t(0,100,\\fscx100\\fscy100)}}{safe_line}\n"
 
     try:
         with open(output_path, "w", encoding="utf-8") as f:
@@ -443,50 +443,53 @@ def render_video(
 
 
 def _make_ken_burns_clip(image_path: str, duration: float, index: int, width: int = 1280, height: int = 720):
-    """
-    Creates a VideoClip with Ken Burns effect (slow zoom in/out).
-    Alternates zoom direction for visual variety.
-    Supports both landscape (1280×720) and vertical (1080×1920).
-    """
-    import numpy as np
-    from PIL import Image as PILImage
-
     try:
+        from PIL import Image as PILImage
+        import numpy as np
+
         img = PILImage.open(image_path).convert("RGB")
-        img = img.resize((width, height), PILImage.LANCZOS)
-        img_array = np.array(img)
-    except Exception:
-        return None
+        # Cover the screen completely
+        img_aspect = img.width / img.height
+        target_aspect = width / height
 
-    zoom_start = 1.0 if index % 2 == 0 else 1.08
-    zoom_end = 1.08 if index % 2 == 0 else 1.0
+        if img_aspect > target_aspect:
+            # Image is wider
+            new_height = height
+            new_width = int(new_height * img_aspect)
+        else:
+            # Image is taller
+            new_width = width
+            new_height = int(new_width / img_aspect)
 
-    def make_frame(t):
-        progress = t / duration if duration > 0 else 0
-        zoom = zoom_start + (zoom_end - zoom_start) * progress
-        h, w = img_array.shape[:2]
+        img = img.resize((new_width, new_height), PILImage.LANCZOS)
+        base_arr = np.array(img)
 
-        new_h = int(h / zoom)
-        new_w = int(w / zoom)
+        # Add a smooth 10% zoom over the duration
+        def make_frame(t):
+            zoom_factor = 1.0 + 0.1 * (t / duration)  # zoom in by 10%
+            h, w = base_arr.shape[:2]
 
-        y1 = (h - new_h) // 2
-        x1 = (w - new_w) // 2
-        cropped = img_array[y1:y1+new_h, x1:x1+new_w]
+            # Crop to zoomed size
+            zh = int(h / zoom_factor)
+            zw = int(w / zoom_factor)
 
-        pil_crop = PILImage.fromarray(cropped).resize((w, h), PILImage.LANCZOS)
-        return np.array(pil_crop)
+            # Center crop
+            y1 = (h - zh) // 2
+            x1 = (w - zw) // 2
 
-    try:
-        from moviepy import VideoClip
+            cropped = base_arr[y1:y1+zh, x1:x1+zw]
+
+            # Convert back to PIL to resize to exact target
+            pil_cropped = PILImage.fromarray(cropped)
+            final_img = pil_cropped.resize((width, height), PILImage.LANCZOS)
+            return np.array(final_img)
+
         clip = VideoClip(make_frame, duration=duration)
-    except Exception:
-        try:
-            from moviepy.video.VideoClip import VideoClip as VideoClipV1
-            clip = VideoClipV1(make_frame, duration=duration)
-        except Exception:
-            return None
+        return clip
 
-    return clip
+    except Exception as e:
+        log.error(f"Ken Burns effect failed: {e}")
+        return ColorClip(size=(width, height), color=(0, 0, 0), duration=duration)
 
 
 def _render_with_gradient(
