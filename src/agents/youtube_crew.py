@@ -9,7 +9,7 @@ Optimized for human-like, non-AI-sounding content that actually gets views.
 import os
 import logging
 from src.core.ai_router import AIRouter
-from src.core.voice_engine import generate_voice
+from src.core.voice_engine import generate_voice_for_content
 from src.core.image_engine import generate_image
 from src.core.video_engine import render_video, VideoSettings
 from src.core.trend_engine import get_trends_for_channel
@@ -198,15 +198,14 @@ THUMBNAIL: ...""",
         self.results["thumbnail_path"] = None
 
         try:
-            voice_path = generate_voice(
+            voice_path = generate_voice_for_content(
                 self.results["script"],
                 language="Hindi",
-                mood="romantic",
                 channel=channel,
             )
             if voice_path:
                 self.results["voice_path"] = voice_path
-                log.info(f"[Crew] Voice generated: {voice_path}")
+                log.info(f"[Crew] Voice generated (ElevenLabs primary): {voice_path}")
         except Exception as e:
             log.error(f"[Crew] Voice generation failed: {e}")
 

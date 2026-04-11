@@ -251,10 +251,8 @@ class AutonomousLoop:
                 self.telegram.send_message(self.ajay_id, morning_text)
                 log.info("Sent morning check-in to Ajay on Telegram.")
 
-                # Generate voice note as well!
                 from src.core.voice_engine import generate_voice, cleanup_voice_file
-                from src.core.config import AISHA_ELEVENLABS_VOICE_ID
-                voice_path = generate_voice(morning_text, voice_id=AISHA_ELEVENLABS_VOICE_ID)
+                voice_path = generate_voice(morning_text, language="Hindi", mood="personal", use_for="chat")
                 if voice_path:
                     with open(voice_path, 'rb') as vf:
                         self.telegram.send_voice(self.ajay_id, vf)
