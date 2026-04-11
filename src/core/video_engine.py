@@ -326,9 +326,15 @@ def render_video(
     log.info(f"[VideoEngine] Rendering {settings.format} ({width}×{height}) for '{channel}': {topic}")
 
     try:
-        # Load audio and get duration
         audio = AudioFileClip(voice_path)
         total_duration = audio.duration
+        if not total_duration or total_duration <= 0:
+            log.error("[VideoEngine] Audio file has no duration — cannot render video")
+            try:
+                audio.close()
+            except Exception:
+                pass
+            return None
         log.info(f"[VideoEngine] Audio duration: {total_duration:.1f}s")
 
         # Step 1: Extract scene descriptions

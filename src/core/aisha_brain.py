@@ -245,13 +245,9 @@ class AishaBrain:
             def _create():
                 try:
                     from src.agents.antigravity_agent import AntigravityAgent
+                    from src.core.config import PRIMARY_YOUTUBE_CHANNEL
                     agent = AntigravityAgent()
-                    # Detect channel from message
-                    msg_lower = user_message.lower()
-                    if "riya" in msg_lower or "dark" in msg_lower or "romance" in msg_lower:
-                        channel = "Riya's Dark Romance Library"
-                    else:
-                        channel = "Aisha & Him"
+                    channel = PRIMARY_YOUTUBE_CHANNEL
                     job = agent.enqueue_job(topic=user_message, channel=channel)
                     print(f"[Brain] Content job enqueued: {job.get('id', '?')[:8]}")
                 except Exception as e:
@@ -657,7 +653,8 @@ class AishaBrain:
                 import subprocess
                 print(f"[Aisha] User requested video production. Launching Crew...")
                 # Start the runner in the background so she can still talk to him
-                subprocess.Popen(["python", "-m", "src.agents.run_youtube", f"--topic={user_message}"], cwd=str(PROJECT_ROOT))
+                import sys as _sys
+                subprocess.Popen([_sys.executable, "-m", "src.agents.run_youtube", f"--topic={user_message}"], cwd=str(PROJECT_ROOT))
                 response_text += "\n\nSure thing, Ajju! 💜 I've just started the production crew on the studio floor. I'll notify you via email and Telegram the moment the first draft is ready for you! 🎬💸"
 
             # 7. AUTONOMOUS SUB-AGENT DELEGATION (JARVIS Upgrade)

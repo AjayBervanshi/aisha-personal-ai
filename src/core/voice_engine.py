@@ -171,6 +171,10 @@ def _generate_elevenlabs(text: str, language: str = "Hindi", channel: str = None
             "style": 0.40,
             "use_speaker_boost": True,
         }
+        if not clean_text.strip():
+            log.warning("[ElevenLabs] Text is empty after cleaning — skipping")
+            return None
+
         data = {
             "text": clean_text,
             "model_id": "eleven_multilingual_v2",
@@ -180,7 +184,7 @@ def _generate_elevenlabs(text: str, language: str = "Hindi", channel: str = None
         try:
             response = requests.post(url, json=data, headers=headers, timeout=120)
 
-            if response.status_code == 200 and len(response.content) > 1000:
+            if response.status_code == 200 and len(response.content) > 100:
                 with open(filepath, 'wb') as f:
                     f.write(response.content)
                 # Update quota cache

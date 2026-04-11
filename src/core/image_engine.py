@@ -50,8 +50,8 @@ def _generate_via_gemini(prompt: str) -> bytes | None:
                         log.info(f"Image generated via Gemini {model}")
                         return base64.b64decode(b64)
             elif resp.status_code == 400 and "paid" in resp.text.lower():
-                log.warning("Gemini Imagen requires paid plan — skipping to HuggingFace")
-                return None
+                log.warning(f"Gemini {model} requires paid plan — trying next model")
+                continue
             elif resp.status_code in (404, 429):
                 log.warning(f"Gemini {model}: {resp.status_code} — trying next")
                 continue
@@ -245,7 +245,17 @@ def _generate_placeholder(prompt: str, width: int = 1280, height: int = 720) -> 
         return buf.getvalue()
     except Exception as e:
         log.error(f"Placeholder generation failed: {e}")
-        return b""
+        # Return a minimal valid 1x1 red PNG so callers always get usable bytes
+        import struct, zlib
+        def _min_png():
+            raw = b'\x00\xff\x00\x00'
+            compressed = zlib.compress(raw)
+            ihdr = struct.pack('>IIBBBBB', 1, 1, 8, 2, 0, 0, 0)
+            def _chunk(ctype, data):
+                c = ctype + data
+                return struct.pack('>I', len(data)) + c + struct.pack('>I', zlib.crc32(c) & 0xffffffff)
+            return b'\x89PNG\r\n\x1a\n' + _chunk(b'IHDR', ihdr) + _chunk(b'IDAT', compressed) + _chunk(b'IEND', b'')
+        return _min_png()
 
 
 def generate_image(prompt: str, width: int = 1280, height: int = 720) -> bytes:

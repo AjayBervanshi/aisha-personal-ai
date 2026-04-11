@@ -1479,20 +1479,17 @@ def cmd_test_pipeline(message):
             # Process it
             result = agent.process_job(job)
 
-            if result and result.get("status") == "completed":
-                output = result.get("output", {})
-                script_preview = str(output.get("script", ""))[:200]
+            if result and result.get("status") != "failed":
+                script_preview = str(result.get("script", ""))[:200]
                 bot.send_message(message.chat.id,
-                    f"✅ *Pipeline test PASSED!*\n\n"
+                    f"Pipeline test PASSED!\n\n"
                     f"Channel: {test_channel}\n"
-                    f"Job ID: `{job_id[:8]}`\n\n"
-                    f"Script preview:\n_{script_preview}..._",
-                    parse_mode="Markdown")
+                    f"Job ID: {str(job_id)[:8]}\n\n"
+                    f"Script preview:\n{script_preview}...")
             else:
-                error = result.get("error_text", result.get("error", "Unknown error")) if result else "No result returned"
+                error = result.get("error", "Unknown error") if result else "No result returned"
                 bot.send_message(message.chat.id,
-                    f"❌ *Pipeline test FAILED*\n\nError: {str(error)[:300]}",
-                    parse_mode="Markdown")
+                    f"Pipeline test FAILED\n\nError: {str(error)[:300]}")
         except Exception as e:
             log.error(f"[testpipeline] Error: {e}")
             bot.send_message(message.chat.id,

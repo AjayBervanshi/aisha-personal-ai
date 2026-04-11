@@ -93,7 +93,7 @@ class AntigravityAgent:
             with open(local_path, "rb") as f:
                 self.db.storage.from_("content-videos").upload(
                     storage_path, f.read(),
-                    file_options={"content-type": mime, "upsert": "true"}
+                    file_options={"content-type": mime, "upsert": True}
                 )
             public_url = (
                 f"{os.getenv('SUPABASE_URL', '').rstrip('/')}"
@@ -287,16 +287,28 @@ class AntigravityAgent:
                 "instagram_ok": post_results.get("instagram", {}).get("success", False),
             })
 
-            # Notify Ajay with results
-            yt_status = "Uploaded" if post_results.get("youtube", {}).get("success") else "Failed"
-            ig_status = "Posted" if post_results.get("instagram", {}).get("success") else "Failed"
+            yt_ok = post_results.get("youtube", {}).get("success", False)
+            ig_ok = post_results.get("instagram", {}).get("success", False)
             yt_url = post_results.get("youtube", {}).get("url", "")
-            self._notify_ajay(
-                f"Content published!\n\n"
-                f"Topic: {topic}\n"
-                f"YouTube: {yt_status} {yt_url}\n"
-                f"Instagram: {ig_status}\n"
-            )
+
+            if yt_ok or ig_ok:
+                parts = [f"Topic: {topic}"]
+                if yt_ok:
+                    parts.append(f"YouTube: Uploaded {yt_url}")
+                else:
+                    parts.append("YouTube: Failed")
+                if ig_ok:
+                    parts.append(f"Instagram: Posted")
+                else:
+                    parts.append("Instagram: Failed")
+                self._notify_ajay(f"Content published!\n\n" + "\n".join(parts))
+            elif auto_post:
+                self._notify_ajay(
+                    f"Content generated but posting failed.\n"
+                    f"Topic: {topic}\n"
+                    f"YT: {post_results.get('youtube', {}).get('error', 'skipped')}\n"
+                    f"IG: {post_results.get('instagram', {}).get('error', 'skipped')}"
+                )
 
             return result
 
