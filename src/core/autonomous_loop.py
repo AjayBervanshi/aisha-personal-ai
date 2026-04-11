@@ -39,9 +39,29 @@ class AutonomousLoop:
         self.telegram = telebot.TeleBot(bot_token) if bot_token else None
         self._used_topics = []  # Deduplication — never produce the same topic twice
 
+        # JARVIS Phase 3: Continuous Awareness
+        try:
+            from src.core.goal_engine import GoalEngine
+            self.goal_engine = GoalEngine(self.brain.supabase, self.brain.ai)
+        except Exception as e:
+            print(f"[Goal Engine] Error loading: {e}")
+            self.goal_engine = None
+
+        try:
+            from src.awareness.activity_analyzer import ActivityAnalyzer
+            self.activity_analyzer = ActivityAnalyzer(self.brain.supabase, self.brain.ai)
+            self._last_proactive_alert = None
+        except Exception as e:
+            print(f"[Activity Analyzer] Error loading: {e}")
+            self.activity_analyzer = None
+
+
+
         # New engines
         from src.core.notification_engine import NotificationEngine
         from src.core.digest_engine import DigestEngine
+
+
         from src.memory.memory_compressor import MemoryCompressor
         self.notif = NotificationEngine(self.brain, self.brain.memory)
         self.digest = DigestEngine(self.brain.memory, self.brain.ai)
@@ -270,6 +290,39 @@ class AutonomousLoop:
             log.error(f"Consolidation failed: {e}")
             _log_to_db("ERROR", "autonomous_loop", f"job_failed: memory_consolidation: {e}")
 
+
+
+    def check_awareness_for_struggles(self):
+        """
+        JARVIS Phase 3 (Feature 3.3): Proactive Notifications.
+        Runs every 5 minutes to see if Ajay is struggling on his laptop screen
+        and sends a proactive message if he is stuck.
+        """
+        try:
+            if not self.activity_analyzer or not self.ajay_id or not self.telegram:
+                return
+
+            from datetime import datetime
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] 👁️ Checking Sidecar Awareness Logs...")
+            analysis = self.activity_analyzer.analyze_recent_activity()
+
+            if analysis and analysis.get("is_struggling"):
+                reason = analysis.get("struggle_reason", "")
+                if self._last_proactive_alert == reason:
+                    return
+
+                suggestion = analysis.get("proactive_suggestion", f"I see you're stuck on {reason}. Want me to take a look?")
+                self._last_proactive_alert = reason
+
+                print(f"[Aisha Proactive] Found struggle: {reason}")
+
+                self.telegram.send_message(
+                    self.ajay_id,
+                    f"*{suggestion}*\n\n*(I noticed you've been stuck on your screen for a while. Let me know if you need help!)*",
+                    parse_mode='Markdown'
+                )
+        except Exception as e:
+            print(f"Error checking awareness: {e}")
     def run_studio_session(self):
         """Aisha autonomously decides which channel needs content and starts the crew.
 
@@ -564,6 +617,9 @@ def start_loop(once: bool = False):
     # ── High-frequency Polls ──────────────────────────────────────────
     # Task reminders — check every 5 min
     schedule.every(5).minutes.do(bot.run_task_reminder_poll)
+
+    # JARVIS Phase 3: Check screen activity every 5 minutes
+    schedule.every(5).minutes.do(bot.check_awareness_for_struggles)
     # Inactivity check — every 3 hours
     schedule.every(3).hours.do(bot.run_inactivity_check)
 
