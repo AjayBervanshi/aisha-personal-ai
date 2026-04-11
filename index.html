@@ -466,12 +466,19 @@
       box-shadow: 0 0 16px rgba(155, 89, 245, 0.4);
     }
 
-    .send-btn:hover {
+    .send-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .send-btn:hover:not(:disabled) {
       transform: scale(1.08);
       box-shadow: 0 0 24px rgba(155, 89, 245, 0.6);
     }
 
-    .send-btn:active {
+    .send-btn:active:not(:disabled) {
       transform: scale(0.95);
     }
 
@@ -702,7 +709,7 @@
             oninput="autoResize(this)" aria-label="Type your message"></textarea>
           <button class="mic-btn" id="mic-btn" onclick="toggleMic()" title="Voice input" aria-label="Voice input">🎙️</button>
         </div>
-        <button class="send-btn" onclick="sendMessage()" title="Send" aria-label="Send message">➤</button>
+        <button id="send-btn" class="send-btn" onclick="sendMessage()" title="Send" aria-label="Send message">➤</button>
       </div>
     </div>
 
@@ -869,11 +876,15 @@
 
     // ── Send Message ─────────────────────────────────────────────
     async function sendMessage(overrideText = null) {
+      const sendBtn = document.getElementById("send-btn");
+      if (sendBtn && sendBtn.disabled) return;
+
       const input = document.getElementById("user-input");
       const text = (overrideText || input.value).trim();
       if (!text) return;
 
       input.value = ""; autoResize(input);
+      if (sendBtn) sendBtn.disabled = true;
 
       // Hide quick actions after first message
       document.getElementById("quick-actions").style.display = "none";
@@ -903,6 +914,9 @@
         renderMessage("ai", errMsg);
         setStatus("Online · Always here for you");
         console.error("Aisha error:", err);
+      } finally {
+        if (sendBtn) sendBtn.disabled = false;
+        input.focus();
       }
     }
 
