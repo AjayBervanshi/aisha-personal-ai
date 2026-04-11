@@ -3,13 +3,20 @@ import re
 from typing import Dict, Optional
 import time
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
 
 class APIKeyManager:
     """
-    A standalone Python module for handling API key management, including secure storage, 
-    validation, and error handling. This module provides a simple interface for retrieving 
-    and validating API keys, and handles rate limiting and exceptions in a robust way.
+    A standalone Python module for handling API key management,
+    including secure storage,
+    validation, and error handling. This module provides a simple interface
+    for retrieving
+    and validating API keys, and handles rate limiting and exceptions
+    in a robust way.
 
     Attributes:
         api_keys (Dict[str, str]): A dictionary of API keys.
@@ -94,7 +101,8 @@ class APIKeyManager:
             self.last_request_times[key_id] = current_time
             self.request_counts[key_id] += 1
             return True
-        if current_time - self.last_request_times[key_id] > self.rate_limit_window:
+        if (current_time - self.last_request_times[key_id]
+                > self.rate_limit_window):
             self.request_counts[key_id] = 1
             self.last_request_times[key_id] = current_time
             return True
@@ -114,12 +122,14 @@ class APIKeyManager:
             raise ValueError("Invalid input type for log_error")
         logging.error(message)
 
+
 def main():
     manager = APIKeyManager()
     manager.add_api_key("test_key", "test_api_key")
     print(manager.get_api_key("test_key"))  # Output: test_api_key
     print(manager.validate_api_key("test_api_key"))  # Output: True
     print(manager.handle_rate_limit("test_key"))  # Output: True
+
 
 if __name__ == "__main__":
     main()
