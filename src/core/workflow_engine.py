@@ -106,13 +106,21 @@ class WorkflowEngine:
             return res.text
 
         elif node_type == "logic.condition":
-            # Danger: eval is unsafe in production, but we use it for a rapid prototype
+            # Replaced unsafe eval() with a safe heuristic evaluator for the prototype
             try:
-                # Basic string replacement for pseudo-code
+                import ast
                 cond = config.get("condition", "False")
-                cond = cond.replace("contains", "in")
-                # Very restricted eval for prototype safety
-                return eval(cond, {"__builtins__": {}})
+                # Very basic safe evaluation for prototype
+                # In production, use a proper expression parser like simpleeval
+                if "contains" in cond:
+                    parts = cond.split("contains")
+                    if len(parts) == 2:
+                        return parts[1].strip().strip("'\"") in parts[0].strip()
+                elif "==" in cond:
+                    parts = cond.split("==")
+                    if len(parts) == 2:
+                        return parts[0].strip() == parts[1].strip()
+                return False
             except Exception:
                 return False
 

@@ -39,6 +39,22 @@ class AutonomousLoop:
         self.telegram = telebot.TeleBot(bot_token) if bot_token else None
         self._used_topics = []  # Deduplication — never produce the same topic twice
 
+        # JARVIS Phase 4: Workflow Auto-Suggestions
+        try:
+            from src.core.workflow_suggester import WorkflowSuggester
+            self.workflow_suggester = WorkflowSuggester(self.brain.supabase, self.brain.ai)
+        except Exception as e:
+            print(f"[Workflow Suggester] Error loading: {e}")
+            self.workflow_suggester = None
+
+        # JARVIS Phase 4: Workflow Engine (Execution)
+        try:
+            from src.core.workflow_engine import WorkflowEngine
+            self.workflow_engine = WorkflowEngine(self.brain.supabase, self.brain.ai)
+        except Exception as e:
+            print(f"[Workflow Engine] Error loading: {e}")
+            self.workflow_engine = None
+
         # JARVIS Phase 3: Continuous Awareness
         try:
             from src.core.goal_engine import GoalEngine
@@ -292,6 +308,78 @@ class AutonomousLoop:
 
 
 
+
+
+    def run_workflow_auto_suggestions(self):
+        """
+        JARVIS Phase 4 (Feature 4.4): Auto-suggest Workflows.
+        Runs daily to analyze the last 24h of awareness logs and suggest
+        automating repetitive tasks.
+        """
+        try:
+            if not getattr(self, 'workflow_suggester', None) or not self.ajay_id or not self.telegram:
+                return
+
+            from datetime import datetime
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] 🤖 Analyzing awareness logs for automation patterns...")
+            suggestions = self.workflow_suggester.analyze_daily_patterns()
+
+            if suggestions:
+                for sug in suggestions:
+                    # Notify Ajay with the suggestion
+                    msg = sug.get("proactive_message", f"I noticed a pattern: {sug.get('pattern_detected')}.")
+                    nlp_cmd = sug.get("suggested_workflow_nlp", "")
+
+                    if nlp_cmd:
+                        msg += f"\n\n*(If you want to turn this on, just reply with: \"{nlp_cmd}\")*"
+
+                        print(f"[Aisha Auto-Suggest] Found pattern: {sug.get('pattern_detected')}")
+                        self.telegram.send_message(
+                            self.ajay_id,
+                            msg,
+                            parse_mode='Markdown'
+                        )
+                    # We only send one suggestion per day to avoid spam
+                    break
+
+        except Exception as e:
+            print(f"Error generating workflow suggestions: {e}")
+
+
+    def run_active_workflows(self):
+        """
+        JARVIS Phase 4 (Feature 4.3): Workflow Triggers & Execution.
+        Runs every minute to check if any cron-based workflows need to execute.
+        """
+        try:
+            if not getattr(self, 'workflow_engine', None) or not self.brain.supabase:
+                return
+
+            from datetime import datetime, timezone
+            # print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚙️ Checking Active Workflows...")
+
+            # Simple prototype polling for cron workflows
+            res = self.brain.supabase.table("aisha_workflows")\
+                .select("id, trigger_config")\
+                .eq("is_active", True)\
+                .eq("trigger_type", "cron")\
+                .execute()
+
+            if res.data:
+                for wf in res.data:
+                    # In a full implementation, we'd use a real cron parser like croniter.
+                    # For this prototype, if it's hourly or daily and it's time, we just execute it.
+                    # As a shortcut, we'll just execute it if we haven't executed it recently.
+                    # We will assume 'schedule' is "hourly" or "daily"
+                    config = wf.get("trigger_config", {})
+                    schedule_str = config.get("schedule", "hourly")
+
+                    # Very naive check for prototype
+                    if schedule_str == "hourly" and datetime.now().minute == 0:
+                         self.workflow_engine.execute_workflow(wf["id"])
+
+        except Exception as e:
+            print(f"Error executing workflows: {e}")
     def check_awareness_for_struggles(self):
         """
         JARVIS Phase 3 (Feature 3.3): Proactive Notifications.
@@ -634,6 +722,12 @@ def start_loop(once: bool = False):
 
     # ── Scheduled Self-Improvement (every 6 hours) ────────────────────
     schedule.every(6).hours.do(run_scheduled_improvement)
+
+    # JARVIS Phase 4: Execute active workflows
+    schedule.every(1).minutes.do(bot.run_active_workflows)
+
+    # JARVIS Phase 4: Workflow Auto-Suggestions (Daily at 10 AM)
+    schedule.every().day.at("10:00").do(bot.run_workflow_auto_suggestions)
 
     # ── Maintenance Jobs ───────────────────────────────────────────────
     # Temp file cleanup — daily at 4 AM (delete voice/video files >24h old)

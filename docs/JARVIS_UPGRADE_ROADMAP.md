@@ -37,7 +37,7 @@ This document outlines an exhaustive, granular plan to enhance Aisha with the OS
   - *Details:* ReactFlow visual builder, topological sort execution, 50+ nodes across 5 categories, template expression resolution (`{{var}}`).
 - [x] **Feature 4.3: Workflow Triggers & Self-Healing (Done)**
   - *Details:* Cron, webhook, file watch, screen events, clipboard, process polling. Self-heal flow: retry -> LLM analysis -> fixed config -> re-execute.
-- [ ] **Feature 4.4: Workflow Auto-Suggestions**
+- [x] **Feature 4.4: Workflow Auto-Suggestions (Done)**
   - *Details:* Detect patterns (app switches, recurring errors, scheduled behavior) and auto-suggest workflow definitions.
 
 ## 🎙️ Phase 5: Voice & Audio Streaming
