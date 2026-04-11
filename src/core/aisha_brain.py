@@ -47,12 +47,17 @@ from src.memory.memory_manager import MemoryManager
 
 class AishaBrain:
     def __init__(self):
-        # Initialize AI Router (handles Gemini, OpenAI, Groq, Mistral, Ollama)
         self.ai = AIRouter()
-
-        # Initialize Supabase
         self.supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
         self.memory   = MemoryManager(self.supabase)
+
+        # Live skill registry — skills Aisha creates persist and are reused
+        try:
+            from src.skills.skill_registry import SkillRegistry
+            self.skills = SkillRegistry()
+        except Exception as e:
+            log.warning(f"[Brain] SkillRegistry init failed: {e}")
+            self.skills = None
 
         # Per-user conversation histories — keyed by Telegram user_id (int).
         # Owner's history is warm-started from Supabase; guest histories start empty.
@@ -261,16 +266,97 @@ class AishaBrain:
         ), "block_user"),
     ]
 
+    # Patterns that indicate a task/action request (not just conversation)
+    _TASK_INDICATORS = re.compile(
+        r"(find|check|get|show|tell|search|look up|fetch|calculate|convert|track|monitor|"
+        r"dhundh|batao|dikhao|nikalo|pata karo|check karo|search karo|"
+        r"can you|could you|please|kya tum|tum .{0,20} kar sakti|"
+        r"write.{0,10}code|create.{0,10}(script|tool|function)|code likh|"
+        r"what.{0,5}(is|are) the|kya hai|kitna|kitne|kitni)",
+        re.I,
+    )
+
     def _detect_and_route_intent(self, user_message: str, is_owner: bool = True) -> Optional[str]:
         """
         Understand what Ajay wants from natural language — no commands needed.
-        If matched, fire the action in background and return a real acknowledgement.
-        Returns None if it's just normal conversation (falls through to AI chat).
+
+        Priority:
+        1. Check built-in intent patterns (content creation, status, etc.)
+        2. Check if an existing skill can handle this request
+        3. If it looks like a task but no skill exists → create one on the fly
+        4. Return None for normal conversation
         """
+        # 1. Built-in intents first
         for pattern, intent in self._INTENT_PATTERNS:
             if pattern.search(user_message):
                 return self._fire_intent(intent, user_message, is_owner=is_owner)
+
+        # 2-3. Skill-based handling (owner only)
+        if is_owner and self.skills and self._TASK_INDICATORS.search(user_message):
+            return self._handle_skill_request(user_message)
+
         return None
+
+    def _handle_skill_request(self, user_message: str) -> Optional[str]:
+        """
+        Check if an existing skill can handle this, or create a new one.
+        Returns the skill output, or None to fall through to AI chat.
+        """
+        # Check for existing skill
+        match = self.skills.find_skill(user_message)
+        if match:
+            skill_name, skill_func = match
+            log.info(f"[Brain] Found existing skill: {skill_name}")
+            def _run():
+                try:
+                    output = self.skills.run_skill(skill_name)
+                    import telebot
+                    bot = telebot.TeleBot(os.getenv("TELEGRAM_BOT_TOKEN", ""))
+                    ajay_id = os.getenv("AJAY_TELEGRAM_ID", "")
+                    if bot and ajay_id:
+                        bot.send_message(ajay_id, f"[Skill: {skill_name}]\n\n{output[:3000]}")
+                except Exception as e:
+                    log.error(f"[Brain] Skill execution failed: {e}")
+            threading.Thread(target=_run, daemon=True, name=f"skill-{skill_name}").start()
+            return f"Mere paas iske liye already ek tool hai! '{skill_name}' chala rahi hoon, result abhi aata hai..."
+
+        # No existing skill — does this look like something worth creating a skill for?
+        # Skip short messages, greetings, or emotional messages
+        if len(user_message) < 20:
+            return None
+        msg_lower = user_message.lower()
+        skip_words = ["how are you", "kaise ho", "good morning", "thanks", "ok", "haan", "nahi",
+                       "i love", "miss you", "sorry", "hello", "hi ", "bye"]
+        if any(w in msg_lower for w in skip_words):
+            return None
+
+        # Create new skill on the fly
+        log.info(f"[Brain] No skill found — creating new one for: {user_message[:60]}")
+        def _create_and_run():
+            try:
+                skill_name = self.skills.create_and_register_skill(user_message, ai_router=self.ai)
+                if skill_name:
+                    output = self.skills.run_skill(skill_name)
+                    import telebot
+                    bot = telebot.TeleBot(os.getenv("TELEGRAM_BOT_TOKEN", ""))
+                    ajay_id = os.getenv("AJAY_TELEGRAM_ID", "")
+                    if bot and ajay_id:
+                        bot.send_message(
+                            ajay_id,
+                            f"Maine ek naya skill seekh liya: '{skill_name}'\n\n"
+                            f"Result:\n{output[:3000]}\n\n"
+                            f"Ab jab bhi tu yeh poochega, main ye skill use karungi — dobara banana nahi padega!"
+                        )
+                else:
+                    log.warning("[Brain] Skill creation failed — falling back to AI chat")
+            except Exception as e:
+                log.error(f"[Brain] On-demand skill creation failed: {e}")
+        threading.Thread(target=_create_and_run, daemon=True, name="skill-create").start()
+        return (
+            "Iske liye mere paas abhi koi tool nahi hai, lekin main ek bana rahi hoon! "
+            "Code likha jayega, test hoga, aur save ho jayega — "
+            "agle baar se seedha result milega bina wait ke."
+        )
 
     def _extract_topic_from_message(self, message: str) -> str:
         """Extract the story topic from a natural language content request."""
