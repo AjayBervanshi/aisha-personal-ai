@@ -1,9 +1,23 @@
 """
 youtube_crew.py
 ==============
-Aisha's Content Production Engine.
-Generates YouTube Shorts + Instagram Reels for a single channel.
-Optimized for human-like, non-AI-sounding content that actually gets views.
+Aisha's Content Production Engine with Quality Review Loop.
+
+Production pipeline:
+  1. Researcher → finds viral angle
+  2. Scriptwriter → writes human-like Hindi narration
+  3. SEO Marketer → builds title, hashtags, captions
+  4. Voice Artist → generates ElevenLabs narration
+  5. Visual Artist → generates cinematic thumbnail
+  6. Video Editor → renders video with Ken Burns + subtitles
+  
+Quality review loop (after production):
+  7. Script Editor → reviews script for human-likeness
+  8. Visual Director → checks thumbnail matches script
+  9. SEO Analyst → validates title/hashtags for CTR
+  10. Quality Director → final coherence check → APPROVE or iterate
+
+If review finds issues, the crew revises and re-reviews (max 2 rounds).
 """
 
 import os
@@ -216,6 +230,7 @@ THUMBNAIL: ...""",
                 f"romantic mood, dramatic shadows. Topic: {topic}. "
                 f"Ultra high quality, professional photography style."
             )
+            self.results["_thumbnail_prompt"] = thumbnail_prompt
             image_bytes = generate_image(thumbnail_prompt)
             if image_bytes:
                 assets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "temp_assets")
@@ -252,14 +267,132 @@ THUMBNAIL: ...""",
         elif not self.results.get("voice_path"):
             log.warning("[Crew] Skipping video render — no voice audio available")
 
+        # ═══════════════════════════════════════════════════════════
+        # QUALITY REVIEW LOOP — agents discuss and iterate
+        # ═══════════════════════════════════════════════════════════
+        log.info("[Crew] Step 6: Quality Review Crew discussing content...")
+        self.results["review_approved"] = False
+        self.results["review_rounds"] = 0
+
+        try:
+            from src.agents.quality_crew import QualityReviewCrew
+
+            quality_crew = QualityReviewCrew()
+
+            thumbnail_prompt = self.results.get("_thumbnail_prompt", "")
+
+            def _rewrite_script(old_script, feedback):
+                """Callback: Script Editor asks for a rewrite."""
+                log.info(f"[QualityCrew] Rewriting script based on feedback: {feedback[:80]}...")
+                return self._generate(
+                    f"""{channel_context}
+
+ORIGINAL SCRIPT:
+{old_script}
+
+EDITOR FEEDBACK:
+{feedback}
+
+ऊपर दिए गए feedback के हिसाब से script को REWRITE करो।
+सभी problems fix करो जो editor ने बताई हैं।
+बाकी CRITICAL RULES वही रहेंगे:
+- १५०-२५० शब्द, १००% देवनागरी
+- Natural, human-like tone — AI जैसा नहीं लगना चाहिए
+- छोटे वाक्य, "..." pauses, emotional flow
+
+सिर्फ revised script दो, कुछ और नहीं।""",
+                    preferred_provider=preferred_ai,
+                    nvidia_task_type=nvidia_task,
+                )
+
+            def _regen_thumbnail(new_prompt):
+                """Callback: Visual Director asks for a new thumbnail."""
+                log.info(f"[QualityCrew] Regenerating thumbnail: {new_prompt[:80]}...")
+                try:
+                    img_bytes = generate_image(new_prompt)
+                    if img_bytes:
+                        assets_dir = os.path.join(
+                            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                            "temp_assets",
+                        )
+                        os.makedirs(assets_dir, exist_ok=True)
+                        import uuid
+                        new_path = os.path.join(assets_dir, f"thumb_rev_{uuid.uuid4().hex[:6]}.png")
+                        with open(new_path, "wb") as f:
+                            f.write(img_bytes)
+                        self.results["thumbnail_path"] = new_path
+                        return new_path
+                except Exception as e:
+                    log.error(f"[QualityCrew] Thumbnail regen failed: {e}")
+                return None
+
+            review_result = quality_crew.run_review_loop(
+                script=self.results["script"],
+                marketing_text=self.results.get("marketing", ""),
+                thumbnail_prompt=thumbnail_prompt,
+                topic=topic,
+                channel=channel,
+                voice_path=self.results.get("voice_path"),
+                video_path=self.results.get("video_path"),
+                rewrite_callback=_rewrite_script,
+                regen_thumbnail_callback=_regen_thumbnail,
+            )
+
+            self.results["review_approved"] = review_result["approved"]
+            self.results["review_rounds"] = review_result["review_rounds"]
+            self.results["review_log"] = review_result.get("review_log", [])
+
+            if review_result["final_script"] != self.results["script"]:
+                log.info("[Crew] Script was revised by review crew — regenerating voice...")
+                self.results["script"] = review_result["final_script"]
+                # Re-generate voice for the revised script
+                try:
+                    new_voice = generate_voice_for_content(
+                        self.results["script"], language="Hindi", channel=channel,
+                    )
+                    if new_voice:
+                        self.results["voice_path"] = new_voice
+                        # Re-render video with new voice
+                        if render_mp4:
+                            new_video = render_video(
+                                voice_path=new_voice,
+                                script=self.results["script"],
+                                channel=channel,
+                                topic=topic,
+                                settings=VideoSettings(
+                                    thumbnail_path=self.results.get("thumbnail_path"),
+                                    format="shorts",
+                                    add_subtitles=True,
+                                ),
+                            )
+                            if new_video:
+                                self.results["video_path"] = new_video
+                except Exception as e:
+                    log.error(f"[Crew] Post-review asset regeneration failed: {e}")
+
+            if review_result.get("final_marketing") != self.results.get("marketing"):
+                self.results["marketing"] = review_result["final_marketing"]
+
+            approval_status = "APPROVED" if review_result["approved"] else "BEST EFFORT"
+            log.info(f"[Crew] Quality review: {approval_status} after {review_result['review_rounds']} round(s)")
+
+        except Exception as e:
+            log.error(f"[Crew] Quality review failed (publishing without review): {e}")
+
         # Parse marketing fields for downstream consumers
         self.results["parsed_marketing"] = self._parse_marketing(self.results.get("marketing", ""))
+
+        review_status = (
+            f"Quality: {'APPROVED' if self.results.get('review_approved') else 'BEST EFFORT'} "
+            f"({self.results.get('review_rounds', 0)} review rounds)"
+        )
 
         final = (
             f"{'='*60}\n"
             f"CHANNEL: {channel}\n"
             f"FORMAT: {fmt}\n"
             f"TOPIC: {topic}\n"
+            f"REVIEW: {review_status}\n"
             f"{'='*60}\n\n"
             f"[SEO & MARKETING]\n{self.results['marketing']}\n\n"
             f"{'-'*40}\n"
@@ -272,7 +405,7 @@ THUMBNAIL: ...""",
             f"{'='*60}"
         )
 
-        log.info("[Crew] Production complete!")
+        log.info("[Crew] Production + review complete!")
         return final
 
     def _parse_marketing(self, text: str) -> dict:
