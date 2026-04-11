@@ -163,103 +163,190 @@ Output: 300 words max. Be specific and concrete.""",
         if inputs.get("series_id"):
             continuity_ctx = get_continuity_context(inputs["series_id"])
 
-        print("[Lexi] Writing full script...")
-        self.results["script"] = self._generate(
-            f"""You are Lexi, a top-tier Hollywood screenwriter and viral YouTube storyteller.
+        print("[Lexi] Writing the pure storytelling script...")
+        lexi_prompt = f"""You are Lexi, a top-tier Hollywood screenwriter and director.
 {channel_context}
 {continuity_ctx + chr(10) + chr(10) if continuity_ctx else ""}Story Brief:
 {self.results['research']}
 
-Write the complete spoken script. THIS MUST NOT BE ROBOTIC. Write exactly as a highly engaging human narrator would speak to a captivated audience.
+You must write the full story script. To ensure perfect video editing later, you must separate every 30-60 second spoken chunk with the exact text: [SCENE BREAK].
+Do NOT use JSON. Do NOT include any intro or conversational text. Just write the story, using [SCENE BREAK] between thoughts.
 
 Rules:
-1. The Hook (0-5s): Start immediately with high stakes, a shocking statement, or raw emotion. Do not say "Welcome back."
-2. The Pacing: Use short, punchy sentences. Break up long paragraphs. Use dramatic pauses.
-3. The Delivery: Include [PAUSE], [SIGH], or [WHISPER] naturally.
-4. The Language: Use deeply emotional and sensory words. If writing in Hindi/Hinglish, make it natural, conversational, and poetic.
-5. The Climax: Build tension to a peak before resolving or dropping a cliffhanger.
+1. The Hook (0-5s): Start immediately with high stakes or raw emotion. Do not say "Welcome back."
+2. The Pacing: Use short, punchy sentences. Break up long paragraphs. Use ellipses (...) or em-dashes (—) instead of bracketed [PAUSE] for better natural TTS breathing.
+3. Format: {'Vertical Short/Reel script. Maximum 5-7 chunks total. Hyper-fast pacing.' if 'short' in fmt.lower() or 'reel' in fmt.lower() else 'Full cinematic story script. 15-25 chunks. Deep character building.'}
 
-Format: {'Vertical Short/Reel script. MAXIMUM 150 words. Hyper-fast pacing. No fluff. Get straight to the point.' if 'short' in fmt.lower() or 'reel' in fmt.lower() else 'Full cinematic story script (8-15 minutes). Deep character building.'}
+Example format:
+The neon lights flickered in the rain... He knew he was being followed. But by who?
+[SCENE BREAK]
+He turned the alley corner—his heart pounding. A shadow detached itself from the wall...
+[SCENE BREAK]
+He couldn't breathe. He closed his eyes and waited for the end..."""
 
-Give me ONLY the spoken script and acting cues. No intro chatter.""",
+        raw_lexi_output = self._generate(
+            lexi_prompt,
             preferred_provider=preferred_ai,
-                nvidia_task_type=nvidia_task,
+            nvidia_task_type=nvidia_task,
         )
 
-        print("[Mia] Designing visuals...")
-        self.results["visuals"] = self._generate(
-            f"""You are Mia, the elite Visual Director and AI Prompt Engineer.
-{channel_context}
-Aesthetic: {'Dark, moody, cinematic lighting, neo-noir, deep shadows, 8k resolution, photorealistic, shot on 35mm lens, Unreal Engine 5 render' if 'Riya' in channel else 'Warm golden-hour, highly emotional close-ups, depth of field, photorealistic, 8k resolution, highly detailed cinematic movie still, soft lighting'}
+        self.results["script"] = raw_lexi_output.replace("```text", "").replace("```", "").strip()
 
-Script Extract:
-{self.results['script'][:800]}
+        import json
+        raw_script = self.results["script"]
+        scenes = [s.strip() for s in raw_script.split("[SCENE BREAK]") if s.strip()]
 
-Your job is to design the absolute best Midjourney/Stable Diffusion prompts for the scenes in the script. The images must NOT look like cheap AI art. They must look like frames from an Oscar-winning movie.
+        master_json_pipeline = []
+        batch_size = 5
 
-Format your output exactly like this:
-[Thumbnail] <high contrast, vibrant clickbait prompt with subject reacting emotionally>
-[Scene 1] <detailed cinematic prompt describing lighting, camera angle, and subject emotion>
-[Scene 2] <detailed cinematic prompt...>
-[Scene 3] <detailed cinematic prompt...>
-[Scene 4] <detailed cinematic prompt...>
-[Scene 5] <detailed cinematic prompt...>
+        print(f"[Mia] Translating {len(scenes)} scenes into Video Engine JSON...")
 
-Do not include any intro, outro, or conversation. Just the bracketed prompts.""",
-            preferred_provider=preferred_ai,
-                nvidia_task_type=nvidia_task,
-        )
+        for i in range(0, len(scenes), batch_size):
+            batch = scenes[i:i + batch_size]
+
+            mia_prompt = f"""
+            You are Mia, the elite Visual Director and AI Prompt Engineer.
+            Take these {len(batch)} script scenes and format them into our Video Engine JSON array.
+            Translate the emotional and visual vibe into an English 'visual_prompt' (Midjourney style).
+
+            Aesthetic: {'Dark, moody, cinematic lighting, neo-noir, deep shadows, 8k resolution, photorealistic, shot on 35mm lens, Unreal Engine 5 render' if 'Riya' in channel else 'Warm golden-hour, highly emotional close-ups, depth of field, photorealistic, 8k resolution, highly detailed cinematic movie still, soft lighting'}
+
+            SCENES TO PROCESS:
+            {batch}
+
+            OUTPUT SCHEMA:
+            [
+              {{ "part": <number>, "narration": "<exact text from scene>", "visual_prompt": "<english keywords>" }}
+            ]
+
+            Return ONLY a valid JSON array. Do not include markdown ticks like ```json.
+            """
+
+            mia_output = self._generate(mia_prompt, preferred_provider=preferred_ai, nvidia_task_type=nvidia_task)
+
+            cleaned_json = re.sub(r'```json\n?|```', '', mia_output).strip()
+            try:
+                batch_json = json.loads(cleaned_json)
+                master_json_pipeline.extend(batch_json)
+                print(f"      ... Processed batch {i // batch_size + 1}")
+            except json.JSONDecodeError as e:
+                print(f"[Error] Mia failed JSON decode on batch {i // batch_size + 1}: {e}")
+                print(f"      Raw output: {cleaned_json[:200]}...")
+                # Fallback: just put the raw text in
+                for idx, scene in enumerate(batch):
+                    master_json_pipeline.append({"part": i + idx + 1, "narration": scene, "visual_prompt": "Cinematic visual for: " + topic})
+
+        self.results["script_chunks"] = master_json_pipeline
+        self.results["visuals"] = "\n".join([f"[Scene {c.get('part')}] {c.get('visual_prompt', '')}" for c in master_json_pipeline])
+
 
         print("[Cappy] Building SEO package...")
-        self.results["marketing"] = self._generate(
-            f"""You are Cappy, the SEO and Viral Marketing Expert.
+        is_short = ('short' in fmt.lower() or 'reel' in fmt.lower())
+
+        cappy_prompt = f"""You are Cappy, the SEO and Viral Marketing Expert.
 {channel_context}
 Topic: {topic}
-Script: {self.results['script'][:400]}
+Full Script Overview: {self.results['script'][:1000]}...
 
-Create:
-1. YouTube title (max 60 chars)
-2. YouTube description (SEO optimized)
-3. Instagram caption (max 150 chars)
-4. 30 hashtags
-5. Thumbnail text (3-5 words)""",
+Your job is to generate the perfect YouTube/Instagram metadata.
+
+"""
+        if is_short:
+            cappy_prompt += f"""We are creating a DRIP-FEED series of {len(scenes)} Shorts/Reels based on the script chunks.
+You need to generate a unique Title and 5 viral tags for EACH chunk so they can be posted sequentially.
+
+OUTPUT SCHEMA:
+[
+  {{ "part": 1, "title": "Clickbait Title Part 1", "tags": ["#shorts", "#viral"] }},
+  {{ "part": 2, "title": "Clickbait Title Part 2", "tags": ["#shorts", "#trending"] }}
+]
+"""
+        else:
+            cappy_prompt += f"""We are creating ONE long-form landscape YouTube video.
+You need to generate one viral Title, a 150-word Description, and 15 viral tags.
+
+OUTPUT SCHEMA:
+{{ "title": "Epic Clickbait Title", "description": "Full description...", "tags": ["tag1", "tag2"] }}
+"""
+
+        cappy_prompt += "Return ONLY a valid JSON object/array. No markdown ticks like ```json."
+
+        self.results["marketing"] = self._generate(
+            cappy_prompt,
             preferred_provider=preferred_ai,
-                nvidia_task_type=nvidia_task,
+            nvidia_task_type=nvidia_task,
         )
 
-        print("[Aria+Mia] Generating voice + thumbnail assets...")
+        # Merge Cappy's metadata back into the script_chunks if it's a short
+        if is_short:
+            try:
+                import json
+                seo_array = json.loads(re.sub(r'```json\n?|```', '', self.results["marketing"]).strip())
+                if isinstance(seo_array, list):
+                    for idx, chunk in enumerate(self.results["script_chunks"]):
+                        if idx < len(seo_array):
+                            chunk["title"] = seo_array[idx].get("title", f"{topic} (Part {idx+1})")
+                            chunk["tags"] = seo_array[idx].get("tags", ["#shorts", "#viral"])
+            except Exception as e:
+                print(f"[Cappy] Failed to parse Shorts SEO array: {e}")
+        else:
+            # We can parse the single JSON block if needed later, for now we just keep the raw marketing string
+            pass
+
+        print("[Aria+Mia] Generating voice, visuals, and thumbnail assets per chunk...")
         self.results["voice_path"] = None
         self.results["thumbnail_path"] = None
+        self.results["generated_assets"] = []
 
         mood_for_voice = "romantic" if ("Riya" in channel or "Aisha & Him" in channel) else "personal"
-        # Both Aisha and Riya channels use Devanagari Hindi scripts
         voice_language = "Hindi" if channel in ("Story With Aisha", "Riya's Dark Whisper", "Riya's Dark Romance Library") else "English"
-        # No hard truncation — generate_voice handles chunking internally for long scripts
-        voice_text = self.results["script"]
 
-        try:
-            voice_path = generate_voice(voice_text, language=voice_language, mood=mood_for_voice, channel=channel)
-            if voice_path:
-                self.results["voice_path"] = voice_path
-        except Exception as e:
-            print(f"[Aria] Voice generation failed: {e}")
+        script_chunks = self.results.get("script_chunks", [])
 
-        try:
-            thumbnail_prompt = (
-                f"Cinematic YouTube thumbnail for '{channel}'. "
-                f"Topic: {topic}. Tone: {identity['tone']}. "
-                "High emotional impact, dramatic lighting, ultra-detailed portrait framing."
-            )
-            image_bytes = generate_image(thumbnail_prompt)
-            if image_bytes:
-                assets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "temp_assets")
-                os.makedirs(assets_dir, exist_ok=True)
-                thumb_path = os.path.join(assets_dir, f"thumb_{abs(hash(channel + topic))}.png")
-                with open(thumb_path, "wb") as f:
-                    f.write(image_bytes)
-                self.results["thumbnail_path"] = thumb_path
-        except Exception as e:
-            print(f"[Mia] Thumbnail generation failed: {e}")
+        # Fallback to monolithic logic if JSON decoding failed entirely
+        if not script_chunks:
+            script_chunks = [{"part": 1, "narration": self.results["script"], "visual_prompt": "Cinematic visual for " + topic}]
+
+        for chunk in script_chunks:
+            part_num = chunk.get("part", 1)
+            narration = chunk.get("narration", "")
+            visual_prompt = chunk.get("visual_prompt", "")
+
+            print(f"Processing Scene Part {part_num}...")
+
+            audio_path = None
+            try:
+                # Generate audio per chunk to force ElevenLabs to reset breathing and pacing per scene
+                audio_path = generate_voice(narration, language=voice_language, mood=mood_for_voice, channel=channel)
+            except Exception as e:
+                print(f"[Aria] Voice generation failed for part {part_num}: {e}")
+
+            image_path = None
+            try:
+                # Generate image directly linked to the narration! No more regex guessing.
+                img_bytes = generate_image(visual_prompt)
+                if img_bytes:
+                    assets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "temp_assets")
+                    os.makedirs(assets_dir, exist_ok=True)
+                    from src.core.video_engine import _FORMATS
+                    # If format is shorts, we typically generate larger images or square ones that we center-crop.
+                    # Generate_image handles the sizing natively if we pass width/height, but defaulting to wide works if cropped later.
+                    image_path = os.path.join(assets_dir, f"scene_{abs(hash(channel + topic))}_{part_num}.png")
+                    with open(image_path, "wb") as f:
+                        f.write(img_bytes)
+            except Exception as e:
+                print(f"[Mia] Image generation failed for part {part_num}: {e}")
+
+            self.results["generated_assets"].append({
+                "part": part_num,
+                "audio_path": audio_path,
+                "image_path": image_path,
+                "narration": narration
+            })
+
+            # The thumbnail is simply the first scene's image!
+            if part_num == 1 and image_path:
+                self.results["thumbnail_path"] = image_path
 
         # Step: Render final MP4 if requested
         self.results["video_path"] = None
