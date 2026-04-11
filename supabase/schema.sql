@@ -226,10 +226,13 @@ ALTER TABLE sidecar_commands ENABLE ROW LEVEL SECURITY;
 
 -- Only service_role can insert/update/read (meaning the Python server with SUPABASE_SERVICE_KEY)
 -- Local sidecar must also run with SUPABASE_SERVICE_KEY to poll the queue
+-- Secure the queue: ONLY the backend AI (service_role) and the authorized laptop sidecar (service_role) can access this queue.
+-- Do NOT use anon keys or USING (true) for OS-level command queues, as this causes unauthenticated Remote Code Execution (RCE).
 CREATE POLICY "Service Role Full Access"
 ON sidecar_commands
 USING (auth.role() = 'service_role')
 WITH CHECK (auth.role() = 'service_role');
+
 -- =========================================================================
 -- JARVIS UPGRADE: Continuous Awareness (Feature 3.1)
 -- Stores the latest screen OCR and active window context from the sidecar
