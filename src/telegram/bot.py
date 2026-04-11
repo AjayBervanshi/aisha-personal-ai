@@ -2834,6 +2834,37 @@ class _AishaHTTPHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
 
+        # ── CallMe Transcription Endpoint ──────────────────────────────────────
+        if self.path.startswith("/api/callme/transcript"):
+            secret = self.headers.get("X-Trigger-Secret", "")
+            if not TRIGGER_SECRET or secret != TRIGGER_SECRET:
+                self.send_response(403)
+                self.end_headers()
+                self.wfile.write(b'{"error":"forbidden"}')
+                return
+            content_length = int(self.headers.get("Content-Length", 0))
+            post_data = self.rfile.read(content_length).decode("utf-8")
+            try:
+                import json
+                payload = json.loads(post_data)
+                transcript = payload.get("transcript", "")
+                caller = payload.get("caller", "Ajay")
+                if transcript:
+                    log.info(f"[CallMe] Received phone transcript from {caller}: {transcript[:50]}...")
+                    # Save to Aisha's memory!
+                    from src.core.aisha_brain import AishaBrain
+                    brain = AishaBrain()
+                    brain.memory.save_memory("general", f"Phone call with {caller}: {transcript}")
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"status":"ok"}')
+                return
+            except Exception as e:
+                log.error(f"[CallMe] Webhook failed: {e}")
+                self.send_response(500)
+                self.end_headers()
+                return
+
         # ── pg_cron trigger endpoint ───────────────────────────────────────────
         secret = self.headers.get("X-Trigger-Secret", "")
         if not TRIGGER_SECRET or secret != TRIGGER_SECRET:

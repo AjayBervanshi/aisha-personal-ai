@@ -27,13 +27,11 @@ def _get_supabase():
 def _load_db_secret(name: str) -> str | None:
     """Fetch a secret from api_keys table by name. Returns None if not found."""
     try:
-        sb = _get_supabase()
-        row = sb.table("api_keys").select("secret").eq("name", name).eq("active", True).single().execute()
-        return row.data["secret"] if row.data else None
+        from src.core.config import _get
+        return _get(name)
     except Exception as e:
-        log.warning(f"[api_keys] Could not load '{name}' from DB: {e}")
+        log.warning(f"[api_keys] Could not load '{name}' from Config: {e}")
         return None
-
 
 class SocialMediaEngine:
     """
@@ -309,7 +307,7 @@ class SocialMediaEngine:
 
             body = {
                 "snippet": {
-                    "title": title[:100],
+                    "title": title[:100] if not "#shorts" in description.lower() else (title[:90] + " #shorts"),
                     "description": description,
                     "tags": tags[:15],
                     "categoryId": "22",
@@ -355,23 +353,44 @@ class SocialMediaEngine:
     def cross_post(self, content_package: dict) -> dict:
         results = {}
         channel = content_package.get("channel", "Story With Aisha")
+        video_path = content_package.get("video_path")
+        job_id = content_package.get("job_id")
+        fmt = content_package.get("format", "landscape")
 
-        if content_package.get("video_path"):
-            results["youtube"] = self.upload_youtube_video(
-                video_path=content_package["video_path"],
+        # YouTube
+        if video_path and os.path.exists(video_path):
+            desc = content_package.get("description", "")
+            if fmt == "shorts" and "#shorts" not in desc.lower():
+                desc += "\n\n#shorts"
+            yt_res = self.upload_youtube_video(
+                video_path=video_path,
                 title=content_package.get("title", "New Video"),
-                description=content_package.get("description", ""),
+                description=desc,
                 tags=content_package.get("tags", []),
                 channel_name=channel,
+                privacy="public",
+                job_id=job_id
             )
+            results["youtube"] = yt_res
 
-        if content_package.get("video_url"):
-            results["instagram"] = self.post_instagram_reel(
-                video_url=content_package["video_url"],
-                caption=content_package.get("caption", ""),
-                hashtags=content_package.get("tags", []),
-                channel=channel,
-            )
+        # Instagram (Reel vs Image/Video)
+        if video_path and os.path.exists(video_path):
+            if fmt == "shorts":
+                # Note: Instagram Graph API requires a public URL for videos, not a local file path.
+                # Aisha needs to host it somewhere first, or we assume video_url is passed if available.
+                video_url = content_package.get("video_url")
+                if video_url:
+                    ig_res = self.post_instagram_reel(
+                        video_url=video_url,
+                        caption=content_package.get("description", ""),
+                        hashtags=content_package.get("tags", []),
+                        channel=channel,
+                        job_id=job_id
+                    )
+                    results["instagram"] = ig_res
+                else:
+                    log.warning("[Instagram] Cannot post Reel directly from local file path without a public URL.")
+                    results["instagram"] = {"success": False, "error": "Missing public video_url for IG"}
 
         return results
 
