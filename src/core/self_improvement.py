@@ -222,7 +222,7 @@ def notify_ajay_for_approval(skill_name: str, pr_url: str):
         "chat_id": chat_id,
         "text": msg,
         "parse_mode": "Markdown",
-        "reply_markup": json.dumps(keyboard)
+        "reply_markup": keyboard,
     })
 
 

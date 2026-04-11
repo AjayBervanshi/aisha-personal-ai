@@ -325,7 +325,8 @@ def generate_voice(
     if not text or not text.strip():
         return None
 
-    if language in ("Hinglish", "Hindi"):
+    # Only transliterate Roman Hinglish, not already-Devanagari Hindi
+    if language == "Hinglish":
         text = _transliterate_hinglish(text)
 
     # Legacy support: force_elevenlabs=True → content mode

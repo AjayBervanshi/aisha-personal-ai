@@ -194,6 +194,7 @@ class SocialMediaEngine:
             if not container_id:
                 return {"success": False, "error": create_resp}
 
+            container_ready = False
             for _ in range(12):
                 status_resp = requests.get(
                     f"https://graph.instagram.com/v19.0/{container_id}",
@@ -202,10 +203,14 @@ class SocialMediaEngine:
                 ).json()
                 sc = status_resp.get("status_code") or status_resp.get("status", "")
                 if sc == "FINISHED":
+                    container_ready = True
                     break
                 if sc in ("ERROR", "EXPIRED"):
                     return {"success": False, "error": f"Container processing failed: {status_resp}"}
                 time.sleep(5)
+
+            if not container_ready:
+                return {"success": False, "error": f"Container not ready after 60s: last status={sc}"}
 
             publish_resp = requests.post(
                 f"{base_url}/media_publish",

@@ -188,11 +188,11 @@ class NotificationEngine:
             return True
         except Exception as e:
             log.error("event=telegram_send_failed — %s", str(e))
-            # Retry once
             try:
-                import time
+                import time, telebot as _tb
                 time.sleep(3)
-                bot.send_message(self._ajay_id, message)
+                retry_bot = _tb.TeleBot(self._bot_token)
+                retry_bot.send_message(self._ajay_id, message)
                 return True
             except Exception:
                 return False

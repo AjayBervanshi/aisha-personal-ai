@@ -358,8 +358,8 @@ class AishaBrain:
         if intent == "self_improve":
             def _improve():
                 try:
-                    from src.core.self_editor import run_improvement_session
-                    run_improvement_session()
+                    from src.core.self_editor import SelfEditor
+                    SelfEditor().run_improvement_session()
                 except Exception as e:
                     print(f"[Brain] Self-improve failed: {e}")
             threading.Thread(target=_improve, daemon=True).start()
