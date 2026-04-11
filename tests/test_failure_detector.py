@@ -167,3 +167,18 @@ def test_get_recent_failures_success(mock_get):
     result = get_recent_failures()
     assert len(result) == 1
     assert result[0]["message"] == "Hi"
+
+def test_failure_to_improvement_task_malformed_input():
+    pattern = {"pattern_type": None, "suggested_fix": None}
+    result = failure_to_improvement_task(pattern)
+    assert result == "Add better error handling and logging to src/telegram/bot.py for unknown command inputs."
+
+def test_failure_to_improvement_task_empty_suggested_fix():
+    pattern = {"pattern_type": "api_failure", "suggested_fix": ""}
+    result = failure_to_improvement_task(pattern)
+    assert result == "Add NVIDIA NIM as immediate fallback in src/core/ai_router.py when primary providers return 401/403/429 errors."
+
+def test_failure_to_improvement_task_missing_keys():
+    pattern = {"other_key": "value"}
+    result = failure_to_improvement_task(pattern)
+    assert result == "Add better error handling and logging to src/telegram/bot.py for unknown command inputs."
