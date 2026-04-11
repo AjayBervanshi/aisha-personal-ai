@@ -15,7 +15,7 @@ with patch('os.getenv') as mock_getenv:
         with patch('src.telegram.bot.telebot'):
             with patch('src.telegram.bot.AishaBrain'):
                 with patch('src.telegram.bot.create_client'):
-                    from src.telegram.bot import cmd_start, cmd_help, handle_text, is_ajay, AUTHORIZED_ID
+                    from src.telegram.bot import cmd_start, cmd_help, handle_text, is_authorized, AUTHORIZED_ID
 
 class TestTelegramHandlers(unittest.TestCase):
 

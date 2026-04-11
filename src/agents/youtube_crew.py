@@ -228,7 +228,7 @@ Create:
         voice_text = self.results["script"]
 
         try:
-            voice_path = generate_voice(voice_text, language=voice_language, mood=mood_for_voice, channel=channel)
+            voice_path = generate_voice(voice_text, language=voice_language, mood=mood_for_voice, channel=channel, force_elevenlabs=True)
             if voice_path:
                 self.results["voice_path"] = voice_path
         except Exception as e:

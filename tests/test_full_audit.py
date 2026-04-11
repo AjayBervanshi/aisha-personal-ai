@@ -14,7 +14,7 @@ import sys, io, time, json
 from datetime import datetime
 # Ensure UTF-8 output — use line_buffering=True so output appears immediately
 # even when redirected to a file (no TTY).
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', line_buffering=True)
+#sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', line_buffering=True)
 from playwright.sync_api import sync_playwright, Error as PWError
 
 # ── CDP reconnect helper ──────────────────────────────────────────────────────

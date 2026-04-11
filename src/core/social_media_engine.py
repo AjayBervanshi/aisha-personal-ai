@@ -206,16 +206,19 @@ class SocialMediaEngine:
                 return {"success": False, "error": create_resp}
 
             for _ in range(12):
-                status_resp = requests.get(
-                    f"https://graph.instagram.com/v19.0/{container_id}",
-                    params={"fields": "status_code,status", "access_token": token},
-                    timeout=20,
-                ).json()
-                sc = status_resp.get("status_code") or status_resp.get("status", "")
-                if sc == "FINISHED":
-                    break
-                if sc in ("ERROR", "EXPIRED"):
-                    return {"success": False, "error": f"Container processing failed: {status_resp}"}
+                try:
+                    status_resp = requests.get(
+                        f"https://graph.instagram.com/v19.0/{container_id}",
+                        params={"fields": "status_code,status", "access_token": token},
+                        timeout=20,
+                    ).json()
+                    sc = status_resp.get("status_code") or status_resp.get("status", "")
+                    if sc == "FINISHED":
+                        break
+                    if sc in ("ERROR", "EXPIRED"):
+                        return {"success": False, "error": f"Container processing failed: {status_resp}"}
+                except Exception as loop_e:
+                    log.warning(f"[Instagram] Poll iteration failed: {loop_e}")
                 time.sleep(5)
 
             publish_resp = requests.post(

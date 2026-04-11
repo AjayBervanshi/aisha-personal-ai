@@ -7,7 +7,7 @@ Edge is already logged into Telegram — no QR code scan needed.
 Run: PYTHONUTF8=1 /e/VSCode/.venv/Scripts/python tests/test_telegram_edge.py
 """
 import sys, io, time
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+#sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 from pathlib import Path
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout

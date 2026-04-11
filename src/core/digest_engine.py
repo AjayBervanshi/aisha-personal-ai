@@ -45,10 +45,11 @@ class DigestEngine:
         prompt = self._build_daily_prompt(stats)
         try:
             result = self.ai.generate(
-                "You are Aisha. Generate a warm, personal daily digest for Ajay.",
-                prompt,
+                system_prompt="You are Aisha. Generate a warm, personal daily digest for Ajay.",
+                user_message=prompt,
+                nvidia_task_type="writing"
             )
-            text = result.text.strip()
+            text = result.strip()
             log.info("event=daily_digest_done", chars=len(text))
             return text
         except Exception as e:
@@ -63,10 +64,11 @@ class DigestEngine:
         prompt = self._build_weekly_prompt(this_week, last_week)
         try:
             result = self.ai.generate(
-                "You are Aisha. Generate a warm, insightful weekly digest for Ajay.",
-                prompt,
+                system_prompt="You are Aisha. Generate a warm, insightful weekly digest for Ajay.",
+                user_message=prompt,
+                nvidia_task_type="writing"
             )
-            text = result.text.strip()
+            text = result.strip()
             log.info("event=weekly_digest_done", chars=len(text))
             return text
         except Exception as e:
