@@ -254,8 +254,9 @@ Create:
         # Step: Render final MP4 if requested
         self.results["video_path"] = None
         if render_mp4 and self.results.get("voice_path"):
-            print("[VideoEngine] Rendering final MP4 (voice + AI scenes)...")
             try:
+                from src.core.video_engine import render_video, VideoSettings
+                is_short = ("short" in fmt.lower() or "reel" in fmt.lower())
                 video_path = render_video(
                     voice_path=self.results["voice_path"],
                     script=self.results["script"],
@@ -263,7 +264,7 @@ Create:
                     topic=topic,
                     settings=VideoSettings(
                         thumbnail_path=self.results.get("thumbnail_path"),
-                        format="shorts",
+                        format="shorts" if is_short else "landscape",
                         add_subtitles=True,
                     )
                 )

@@ -528,6 +528,47 @@ class AishaBrain:
         # 3. Build dynamic system prompt
         system_prompt = build_system_prompt(context)
 
+        # 3.4. Inject Continuous Awareness (JARVIS Phase 3)
+        # Pull the last 5 minutes of screen context from the sidecar
+        try:
+            if not is_owner:
+                pass # Do not leak screen context to guests
+            else:
+                from datetime import datetime, timedelta, timezone
+                five_mins_ago = datetime.now(timezone.utc) - timedelta(minutes=5)
+                # Get latest 3 unique window logs
+                awareness_res = self.supabase.table("aisha_awareness_logs")\
+                    .select("active_window, screen_text, created_at")\
+                    .eq("sidecar_id", "local-laptop")\
+                    .gte("created_at", five_mins_ago.isoformat())\
+                    .order("created_at", desc=True)\
+                    .limit(3)\
+                    .execute()
+
+                if awareness_res.data:
+                    system_prompt += "\n\n[AWARENESS CONTEXT - What Ajay is looking at right now]:\n"
+                    for log in awareness_res.data:
+                        ts = log['created_at'].split('.')[0]
+                        win = log.get('active_window', 'Unknown App')
+                        text = log.get('screen_text', '')[:500] # truncate to save tokens
+                        system_prompt += f"[{ts}] Active Window: {win}\n"
+                        if text:
+                            system_prompt += f"Screen Text: {text}...\n"
+                    system_prompt += "\n(Use this context if Ajay says 'look at this', 'what am I doing', or needs help with what's on screen.)\n"
+        except Exception as e:
+            print(f"[Awareness Injection] Error: {e}")
+
+        # 3.5. Inject Vault Knowledge Graph context
+        try:
+            from src.memory.vault_manager import vault
+            # Simple heuristic: inject Ajay's base graph if owner is talking
+            if is_owner:
+                ajay_graph = vault.retrieve_entity_graph("Ajay")
+                if ajay_graph:
+                    system_prompt += f"\n\n[Vault Knowledge Graph - Ajay]:\n{ajay_graph}"
+        except Exception as e:
+            print(f"[Vault Injection] Error: {e}")
+
         # 4. Resolve per-user history and append the incoming message
         history = self._get_user_history(uid, is_owner)
         history.append({"role": "user", "content": user_message})
@@ -616,9 +657,172 @@ class AishaBrain:
                 subprocess.Popen(["python", "-m", "src.agents.run_youtube", f"--topic={user_message}"], cwd=str(PROJECT_ROOT))
                 response_text += "\n\nSure thing, Ajju! 💜 I've just started the production crew on the studio floor. I'll notify you via email and Telegram the moment the first draft is ready for you! 🎬💸"
 
-            # 7. CAPABILITY GAP DETECTION (The "Jules" Research Loop)
+            # 7. AUTONOMOUS SUB-AGENT DELEGATION (JARVIS Upgrade)
+            # Aisha detects if the task is complex and requires specialized help before responding.
+            delegation_triggers = ["research", "analyze", "deep dive", "find out", "calculate"]
+            if any(t in user_message.lower() for t in delegation_triggers):
+                import logging
+                logging.getLogger(__name__).info("[Brain] Complex task detected. Waking up AgentTaskManager...")
+                try:
+                    from src.agents.agent_manager import agent_manager
 
-            # 7. Update History & Save to Supabase
+                    # Determine which agent to use
+                    target_agent = "researcher"
+                    if "analyze" in user_message.lower() or "calculate" in user_message.lower():
+                        target_agent = "analyst"
+
+                    # Delegate the task to the specialized agent
+                    agent_result = agent_manager.delegate(
+                        agent_name=target_agent,
+                        task=user_message,
+                        context={"history": history[-3:]}
+                    )
+
+                    # In a full implementation, Aisha would read agent_result and generate a natural response.
+                    # For this prototype, we only append it if it actually found something useful.
+                    if "Task completed:" in agent_result:
+                        response_text += f"\n\n*(Behind the scenes: My {target_agent.capitalize()} agent found: {agent_result})*"
+                except Exception as e:
+                    print(f"Error calling sub-agent: {e}")
+
+
+            # 8.5. WORKFLOW ENGINE (JARVIS Phase 4)
+            # Detects if user is asking to automate a routine or background script
+            workflow_triggers = ["automate this", "every morning at", "every day", "create a workflow", "schedule a task"]
+            if any(t in user_message.lower() for t in workflow_triggers):
+                if is_owner:
+                    from src.core.workflow_engine import WorkflowEngine
+                    engine = WorkflowEngine(self.supabase, self.ai)
+                    summary = engine.build_from_nl(user_message)
+                    if summary:
+                        response_text += f"\n\n{summary}"
+                else:
+                    response_text += "\n\n*(Guest mode: Workflow automation disabled)*"
+
+            # 8. GOAL ENGINE (JARVIS Phase 4)
+            # Detects if user is setting a new long-term goal
+            goal_triggers = ["i want to achieve", "my goal is to", "set a goal to"]
+            if any(t in user_message.lower() for t in goal_triggers):
+                if is_owner:
+                    from src.core.goal_engine import GoalEngine
+                    engine = GoalEngine(self.supabase, self.ai)
+                    summary = engine.parse_new_goal(user_message)
+                    if summary:
+                        response_text += f"\n\n*(I have set up your new OKR Goal Tracker based on this request:)*\n{summary}"
+                else:
+                    response_text += "\n\n*(Guest mode: Goal tracking disabled)*"
+
+            # 9. OS-LEVEL SIDECAR INTEGRATION (JARVIS Phase 2)
+            # Aisha detects if the user wants to execute a command on their machine.
+            sidecar_triggers = ["on my laptop", "run command", "on my computer"]
+            desktop_triggers = ["what windows", "focus on", "type this"]
+            browser_triggers = ["open website", "go to", "read page", "what tabs"]
+            fs_triggers = ["read my file", "write to file", "what's in my folder", "list directory"]
+
+            if any(t in user_message.lower() for t in fs_triggers):
+                if not is_owner:
+                    return "Sorry, I can only execute local filesystem commands for my owner, Ajay. 🚫"
+
+                from src.api.sidecar_server import sidecar_manager
+                action = "list_dir"
+                args = {}
+
+                # Basic heuristic extraction for prototype
+                if "read" in user_message.lower() or "cat" in user_message.lower():
+                    action = "read_file"
+                    args = {"path": user_message.split()[-1].strip()}
+                elif "write" in user_message.lower():
+                    action = "write_file"
+                    args = {"path": "output.txt", "content": user_message}
+                else:
+                    action = "list_dir"
+                    args = {"path": user_message.split()[-1].strip() if len(user_message.split()) > 3 else "."}
+
+                target_sidecar = "local-laptop"
+                task_id = sidecar_manager.dispatch_command(
+                    sidecar_id=target_sidecar,
+                    command_type="fs_action",
+                    payload={"action": action, "args": args}
+                )
+                if task_id:
+                    response_text += f"\n\n*(I have dispatched a filesystem action [{action}] to your laptop. Awaiting execution...)*"
+
+            elif any(t in user_message.lower() for t in browser_triggers):
+                if not is_owner:
+                    return "Sorry, I can only control the local browser for my owner, Ajay. 🚫"
+
+                from src.api.sidecar_server import sidecar_manager
+                action = "navigate"
+                args = {}
+                if "what tabs" in user_message.lower():
+                    action = "list_tabs"
+                elif "read page" in user_message.lower():
+                    action = "extract_text"
+                else:
+                    words = user_message.split()
+                    url = next((w for w in words if "http" in w or ".com" in w), "https://google.com")
+                    args = {"url": url}
+
+                target_sidecar = "local-laptop"
+                task_id = sidecar_manager.dispatch_command(
+                    sidecar_id=target_sidecar,
+                    command_type="browser_action",
+                    payload={"action": action, "args": args}
+                )
+                if task_id:
+                    response_text += f"\n\n*(I have dispatched a browser action [{action}] to your laptop. Awaiting execution...)*"
+
+            elif any(t in user_message.lower() for t in desktop_triggers):
+                if not is_owner:
+                    return "Sorry, I can only control the local desktop for my owner, Ajay. 🚫"
+
+                from src.api.sidecar_server import sidecar_manager
+                action = "list_windows"
+                args = {}
+                if "focus" in user_message.lower():
+                    action = "focus_window"
+                    args = {"title": user_message.split("focus on")[-1].strip()}
+                elif "type" in user_message.lower():
+                    action = "type_text"
+                    args = {"text": user_message.split("type")[-1].strip()}
+
+                target_sidecar = "local-laptop"
+                task_id = sidecar_manager.dispatch_command(
+                    sidecar_id=target_sidecar,
+                    command_type="desktop_action",
+                    payload={"action": action, "args": args}
+                )
+                if task_id:
+                    response_text += f"\n\n*(I have dispatched a desktop action [{action}] to your laptop. Awaiting execution...)*"
+
+            elif any(t in user_message.lower() for t in sidecar_triggers):
+                if not is_owner:
+                    return "Sorry, I can only execute local shell commands for my owner, Ajay. 🚫"
+
+                from src.api.sidecar_server import sidecar_manager
+                intent_prompt = f"""
+                The user wants to execute a command on their local laptop.
+                User Request: {user_message}
+
+                If you understand the exact terminal/shell command they want to run, reply with ONLY the exact command.
+                For example: "open https://google.com" or "ls -la"
+                If you are unsure or the request is dangerous, reply with "NONE".
+                """
+                cmd_result = self.ai.generate(system_prompt="You are a strict command translator.", user_message=intent_prompt)
+
+                if cmd_result and cmd_result.text.strip() != "NONE":
+                    target_sidecar = "local-laptop"
+                    task_id = sidecar_manager.dispatch_command(
+                        sidecar_id=target_sidecar,
+                        command_type="shell_exec",
+                        payload={"command": cmd_result.text.strip()}
+                    )
+                    if task_id:
+                        response_text += f"\n\n*(I have dispatched the command `{cmd_result.text.strip()}` to your laptop. Awaiting execution...)*"
+
+            # 10. CAPABILITY GAP DETECTION (The "Jules" Research Loop)
+
+            # 9. Update History & Save to Supabase
             history.append({"role": "assistant", "content": response_text})
 
             # Persist to DB — guest turns are tagged with their user_id so they
@@ -705,53 +909,74 @@ class AishaBrain:
 
 
 
+
     def _auto_extract_memory(self, user_msg: str, aisha_reply: str):
         """
-        Auto-detect important information in the conversation and save to memory.
-        Enhanced with an LLM prompt to dynamically parse context into JSON!
+        JARVIS Upgrade (Feature 1.3): Auto-detect entities, facts, and relationships
+        and store them in the structured Knowledge Graph Vault.
         """
         try:
             extraction_prompt = f"""
-            Analyze the following message from Ajay and Aisha's reply.
+            Analyze the following conversation:
             Ajay: {user_msg}
             Aisha: {aisha_reply}
             
-            Does this conversation contain important new long-term information about Ajay's life, goals, finances, preferences, or significant events that Aisha should remember forever?
-            If YES, extract it in the following strictly valid JSON format:
+            Does this conversation contain important long-term factual information about Ajay, people he knows, places, or his projects?
+            If YES, extract it into this strict JSON format for a Knowledge Graph:
             {{
                 "extract": true,
-                "category": "finance" | "goal" | "preference" | "event" | "other",
-                "title": "Short descriptive title",
-                "content": "Detailed description of what Ajay said and any plans discussed",
-                "importance": 1-5,
-                "tags": ["list", "of", "relevant", "string", "tags"]
+                "entities": [
+                    {{"name": "Entity Name", "type": "person|place|project|concept", "description": "Brief description"}}
+                ],
+                "facts": [
+                    {{"entity_name": "Entity Name", "entity_type": "type", "fact": "The factual statement"}}
+                ],
+                "relationships": [
+                    {{"source": "Entity 1", "source_type": "type", "target": "Entity 2", "target_type": "type", "relation": "e.g., likes, owns, works_at"}}
+                ]
             }}
-            If NO important new standalone information is present, return:
+            If NO important standalone facts are present, return:
             {{ "extract": false }}
             
             Return ONLY valid JSON. No backticks.
             """
             import re
             import json
-            # Ask the router to generate the extraction data
+            from src.memory.vault_manager import vault
+
             result = self.ai.generate(
-                system_prompt="You are an expert JSON parser.", 
+                system_prompt="You are an expert JSON parser and Knowledge Graph extractor.",
                 user_message=extraction_prompt
             )
             match = re.search(r'\{.*\}', result.text, re.DOTALL)
             if match:
                 data = json.loads(match.group(0))
                 if data.get("extract"):
+                    # Extract Facts
+                    for fact in data.get("facts", []):
+                        vault.add_fact(fact["entity_name"], fact["entity_type"], fact["fact"])
+
+                    # Extract Relationships
+                    for rel in data.get("relationships", []):
+                        vault.add_relationship(
+                            rel["source"], rel["source_type"],
+                            rel["target"], rel["target_type"],
+                            rel["relation"]
+                        )
+
+                    # Backward Compatibility: Also save the legacy text memory so existing UI features don't break
                     from datetime import datetime
                     self.memory.save_memory(
-                        category=data.get("category", "other"),
-                        title=f"{data.get('title', 'Memory')} - {datetime.now().strftime('%d %b %Y')}",
-                        content=data.get("content", f"Ajay said: {user_msg[:300]}"),
-                        importance=data.get("importance", 3),
-                        tags=data.get("tags", ["auto-extracted"])
+                        category="other",
+                        title=f"Extracted Vault Memory - {datetime.now().strftime('%d %b %Y')}",
+                        content=json.dumps(data, indent=2),
+                        importance=3,
+                        tags=["auto-extracted", "vault"]
                     )
+
+                    print(f"[Vault] Extracted facts and entities from conversation and updated legacy memory.")
         except Exception as e:
-            print(f"[Memory Extraction LLM] Error: {e}")
+            print(f"[Vault Extraction LLM] Error: {e}")
 
     def reset_session(self, caller_id: Optional[int] = None):
         """Clear in-memory conversation history for a specific user (or all users).

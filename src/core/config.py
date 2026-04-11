@@ -20,11 +20,49 @@ load_dotenv(_root / ".env")
 
 
 # ── Helper ─────────────────────────────────────────────────────
+import time
+_sb_cache = {}
+
+def _fetch_from_supabase(key: str) -> str:
+    if key in ["SUPABASE_URL", "SUPABASE_SERVICE_KEY", "SUPABASE_SERVICE_ROLE_KEY"]:
+        return None
+
+    sb_url = os.getenv("SUPABASE_URL")
+    sb_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    if not sb_url or not sb_key:
+        return None
+
+    if key in _sb_cache:
+        return _sb_cache[key]
+
+    try:
+        from supabase import create_client
+        sb = create_client(sb_url, sb_key)
+        res = sb.table("api_keys").select("secret").eq("name", key).eq("active", True).execute()
+        if res.data and len(res.data) > 0:
+            val = res.data[0].get("secret")
+            if val:
+                _sb_cache[key] = val
+                return val
+    except Exception as e:
+        print(f"[Config] Supabase fetch failed for {key}: {e}")
+    return None
+
 def _get(key: str, default: str = None, required: bool = False) -> str:
-    val = os.getenv(key, default)
+    # 1. Check Supabase first
+    val = _fetch_from_supabase(key)
+
+    # 2. Fallback to ENV
+    if not val:
+        val = os.getenv(key)
+
+    if not val:
+        val = default
+
     if required and (not val or "your_" in val.lower()):
         print(f"[Config] MISSING REQUIRED: {key}")
-        print(f"         Add it to your .env file.")
+        print(f"         Add it to your .env file or Supabase api_keys table.")
+
     return val
 
 
