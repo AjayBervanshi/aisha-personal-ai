@@ -23,34 +23,36 @@ from datetime import datetime
 
 log = logging.getLogger("Aisha.TrendEngine")
 
+_CURRENT_YEAR = str(datetime.now().year)
+
 # ── Channel → Search Keywords Mapping ──────────────────────
 
 CHANNEL_KEYWORDS = {
     "Story With Aisha": {
         "google_trends":  ["hindi love story", "romantic story hindi", "emotional story", "pyar ki kahani"],
-        "youtube_search": "hindi romantic story emotional 2025",
-        "ddg_query":      "trending hindi love story YouTube 2025 viral",
+        "youtube_search": f"hindi romantic story emotional {_CURRENT_YEAR}",
+        "ddg_query":      f"trending hindi love story YouTube {_CURRENT_YEAR} viral",
         "geo":            "IN",
         "category":       "romantic storytelling",
     },
     "Riya's Dark Whisper": {
         "google_trends":  ["adult hindi story", "dark romance hindi", "erotic kahani", "bold story"],
-        "youtube_search": "hindi dark romance story 2025",
-        "ddg_query":      "trending adult hindi story YouTube shorts 2025",
+        "youtube_search": f"hindi dark romance story {_CURRENT_YEAR}",
+        "ddg_query":      f"trending adult hindi story YouTube shorts {_CURRENT_YEAR}",
         "geo":            "IN",
         "category":       "adult storytelling",
     },
     "Riya's Dark Romance Library": {
         "google_trends":  ["mafia romance hindi", "dark romance novel hindi", "possessive hero story"],
-        "youtube_search": "hindi mafia romance dark story 2025",
-        "ddg_query":      "trending dark romance mafia story hindi 2025",
+        "youtube_search": f"hindi mafia romance dark story {_CURRENT_YEAR}",
+        "ddg_query":      f"trending dark romance mafia story hindi {_CURRENT_YEAR}",
         "geo":            "IN",
         "category":       "dark romance novels",
     },
     "Aisha & Him": {
         "google_trends":  ["couple goals hindi", "relationship story", "boyfriend girlfriend story"],
-        "youtube_search": "cute couple story hindi shorts 2025",
-        "ddg_query":      "viral couple scenario Instagram reels 2025 hindi",
+        "youtube_search": f"cute couple story hindi shorts {_CURRENT_YEAR}",
+        "ddg_query":      f"viral couple scenario Instagram reels {_CURRENT_YEAR} hindi",
         "geo":            "IN",
         "category":       "couple content",
     },
@@ -122,7 +124,7 @@ def get_youtube_trending(search_query: str, max_results: int = 10) -> list[dict]
             "q": search_query,
             "type": "video",
             "order": "viewCount",
-            "publishedAfter": "2025-01-01T00:00:00Z",
+            "publishedAfter": f"{_CURRENT_YEAR}-01-01T00:00:00Z",
             "regionCode": "IN",
             "relevanceLanguage": "hi",
             "maxResults": max_results,

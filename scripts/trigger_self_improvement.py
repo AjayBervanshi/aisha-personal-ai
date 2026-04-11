@@ -21,19 +21,13 @@ import base64
 import requests
 from datetime import datetime
 
-# ── Config (hardcoded for trigger script) ────────────────────────────────────
-GITHUB_TOKEN = os.getenv(
-    "GITHUB_TOKEN",
-    "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",
-)
+# ── Config — all secrets MUST come from environment variables ─────────────────
+GITHUB_TOKEN = os.environ["GITHUB_TOKEN"]
 GITHUB_REPO = os.getenv("GITHUB_REPO", "AjayBervanshi/aisha-personal-ai")
-GEMINI_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyCSXuVYFZIFjuhCdH0VcZoMICBhvHIuPy8")
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8793119880:AAGHxP-xN1cN5FPRB_xpxQJKPjTX3dqTMNM")
+GEMINI_KEY = os.environ["GEMINI_API_KEY"]
+BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 AJAY_ID = os.getenv("AJAY_TELEGRAM_ID", "1002381172")
-RENDER_HOOK = os.getenv(
-    "RENDER_DEPLOY_HOOK_URL",
-    "https://api.render.com/deploy/srv-d6tpponfte5s73fvodk0?key=fOGoNv18KJk",
-)
+RENDER_HOOK = os.environ.get("RENDER_DEPLOY_HOOK_URL", "")
 
 GH_HEADERS = {
     "Authorization": f"token {GITHUB_TOKEN}",

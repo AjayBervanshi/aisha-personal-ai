@@ -52,9 +52,9 @@ REQUIRED_ENV_VARS = [
 
 REQUIRED_TABLES = [
     "content_jobs",
-    "aisha_memories",
+    "aisha_memory",
     "api_keys",
-    "approved_users",
+    "aisha_approved_users",
     "improvement_log",
 ]
 

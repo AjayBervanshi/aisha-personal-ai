@@ -339,7 +339,7 @@ def render_video(
         log.info(f"[VideoEngine] Generating {len(scene_descriptions)} scene images...")
         image_paths = []
 
-        if settings.thumbnail_path and os.path.exists(thumbnail_path):
+        if settings.thumbnail_path and os.path.exists(settings.thumbnail_path):
             image_paths.append(settings.thumbnail_path)
             scenes_to_generate = scene_descriptions[1:]
         else:

@@ -13,11 +13,14 @@ Refactored to use:
 """
 
 import json
+import logging
 import re
 import threading
 from datetime import datetime
 from typing import Optional
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 # Project root for relative imports and background process launching
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -547,10 +550,10 @@ class AishaBrain:
 
                 if awareness_res.data:
                     system_prompt += "\n\n[AWARENESS CONTEXT - What Ajay is looking at right now]:\n"
-                    for log in awareness_res.data:
-                        ts = log['created_at'].split('.')[0]
-                        win = log.get('active_window', 'Unknown App')
-                        text = log.get('screen_text', '')[:500] # truncate to save tokens
+                    for entry in awareness_res.data:
+                        ts = entry['created_at'].split('.')[0]
+                        win = entry.get('active_window', 'Unknown App')
+                        text = entry.get('screen_text', '')[:500]
                         system_prompt += f"[{ts}] Active Window: {win}\n"
                         if text:
                             system_prompt += f"Screen Text: {text}...\n"
