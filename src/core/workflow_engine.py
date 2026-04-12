@@ -106,13 +106,21 @@ class WorkflowEngine:
             return res.text
 
         elif node_type == "logic.condition":
-            # Danger: eval is unsafe in production, but we use it for a rapid prototype
             try:
-                # Basic string replacement for pseudo-code
                 cond = config.get("condition", "False")
                 cond = cond.replace("contains", "in")
-                # Very restricted eval for prototype safety
-                return eval(cond, {"__builtins__": {}})
+                import ast, operator
+                ops = {ast.Eq: operator.eq, ast.NotEq: operator.ne, ast.Lt: operator.lt,
+                       ast.LtE: operator.le, ast.Gt: operator.gt, ast.GtE: operator.ge,
+                       ast.In: lambda a, b: a in b, ast.NotIn: lambda a, b: a not in b}
+                def _eval(node):
+                    if isinstance(node, ast.Constant): return node.value
+                    if isinstance(node, ast.Name): return {'True': True, 'False': False}.get(node.id, node.id)
+                    if isinstance(node, ast.Compare):
+                        return all(ops[type(op)](_eval(left), _eval(right)) for left, op, right in
+                                   zip([node.left] + node.comparators[:-1], node.ops, node.comparators))
+                    raise ValueError("Unsupported logic node")
+                return _eval(ast.parse(cond, mode='eval').body)
             except Exception:
                 return False
 

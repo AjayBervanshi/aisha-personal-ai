@@ -27,3 +27,8 @@
 **Vulnerability:** A new webhook endpoint (`/api/callme/transcript`) was added to log phone conversations into semantic memory without checking the `X-Trigger-Secret` header, meaning any attacker could craft arbitrary POST requests to inject false memories directly into Aisha's database.
 **Learning:** All new REST endpoints added to the internal HTTP server MUST enforce the `TRIGGER_SECRET` fail-secure mechanism before processing the payload.
 **Prevention:** Added `X-Trigger-Secret` validation to the new endpoint matching the exact fail-secure logic used by the existing `pg_cron` trigger.
+
+## 2024-05-18 - Prevent RCE in WorkflowEngine logic condition parsing
+**Vulnerability:** Arbitrary Code Execution (RCE) via `eval()` when evaluating workflow node logic conditions.
+**Learning:** Using `eval(cond, {"__builtins__": {}})` is not safe, as attackers can bypass `__builtins__` restrictions via generator expressions or class hierarchies (like `[].__class__.__base__.__subclasses__()`).
+**Prevention:** Use an AST-based safe evaluator for parsing simple logic conditions, whitelisting only explicitly safe AST nodes (like `ast.Compare`, `ast.Constant`, and `ast.Name`).
