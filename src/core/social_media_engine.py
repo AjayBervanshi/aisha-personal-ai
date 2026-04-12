@@ -357,11 +357,55 @@ class SocialMediaEngine:
         job_id = content_package.get("job_id")
         fmt = content_package.get("format", "landscape")
 
-        # YouTube
+        if fmt == "shorts":
+            # Drip-Feed Queueing System (Prevent Quota Burnout)
+            log.info("[SocialMediaEngine] Shorts format detected. Queueing for drip-feed schedule...")
+
+            try:
+                import json
+                from datetime import datetime, timezone, timedelta
+                sb = _get_supabase()
+
+                # In youtube_crew, if it was an array of chunks, we'd pass them here.
+                # For now, we assume `cross_post` is called per chunk OR with the full package.
+                # Assuming this is called once per rendered short chunk:
+
+                # Fetch how many items are already queued to determine staggered timing
+                # We want to post 1 short every 24 hours.
+                existing_queue = sb.table("content_queue").select("id").eq("status", "ready").eq("channel", channel).execute()
+                queue_count = len(existing_queue.data) if existing_queue.data else 0
+
+                # Publish time = NOW + (queue_count * 24 hours)
+                publish_at = (datetime.now(timezone.utc) + timedelta(hours=24 * queue_count)).isoformat()
+
+                desc = content_package.get("description", "")
+                if "#shorts" not in desc.lower():
+                    desc += "\n\n#shorts"
+
+                payload = {
+                    "channel": channel,
+                    "topic": content_package.get("topic", "Drip Feed Short"),
+                    "youtube_title": content_package.get("title", "New Short"),
+                    "seo_package": json.dumps({"description": desc, "tags": content_package.get("tags", [])}),
+                    "video_url": video_path, # We store local path here temporarily until cloud upload
+                    "status": "ready",
+                    "scheduled_time": publish_at
+                }
+
+                sb.table("content_queue").insert(payload).execute()
+
+                log.info(f"[SocialMediaEngine] Queued short for {publish_at} (Queue position: {queue_count + 1})")
+                results["queue_status"] = f"Queued for {publish_at}"
+                return results
+
+            except Exception as e:
+                log.error(f"[SocialMediaEngine] Failed to queue drip-feed short: {e}")
+                results["error"] = str(e)
+                return results
+
+        # YouTube (Immediate upload for Landscape)
         if video_path and os.path.exists(video_path):
             desc = content_package.get("description", "")
-            if fmt == "shorts" and "#shorts" not in desc.lower():
-                desc += "\n\n#shorts"
             yt_res = self.upload_youtube_video(
                 video_path=video_path,
                 title=content_package.get("title", "New Video"),
@@ -373,24 +417,21 @@ class SocialMediaEngine:
             )
             results["youtube"] = yt_res
 
-        # Instagram (Reel vs Image/Video)
+        # Instagram (Immediate upload for Landscape, if supported, otherwise skip)
         if video_path and os.path.exists(video_path):
-            if fmt == "shorts":
-                # Note: Instagram Graph API requires a public URL for videos, not a local file path.
-                # Aisha needs to host it somewhere first, or we assume video_url is passed if available.
-                video_url = content_package.get("video_url")
-                if video_url:
-                    ig_res = self.post_instagram_reel(
-                        video_url=video_url,
-                        caption=content_package.get("description", ""),
-                        hashtags=content_package.get("tags", []),
-                        channel=channel,
-                        job_id=job_id
-                    )
-                    results["instagram"] = ig_res
-                else:
-                    log.warning("[Instagram] Cannot post Reel directly from local file path without a public URL.")
-                    results["instagram"] = {"success": False, "error": "Missing public video_url for IG"}
+            video_url = content_package.get("video_url")
+            if video_url:
+                ig_res = self.post_instagram_reel(
+                    video_url=video_url,
+                    caption=content_package.get("description", ""),
+                    hashtags=content_package.get("tags", []),
+                    channel=channel,
+                    job_id=job_id
+                )
+                results["instagram"] = ig_res
+            else:
+                log.warning("[Instagram] Cannot post Reel directly from local file path without a public URL.")
+                results["instagram"] = {"success": False, "error": "Missing public video_url for IG"}
 
         return results
 

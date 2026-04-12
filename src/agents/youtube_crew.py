@@ -307,6 +307,77 @@ OUTPUT SCHEMA:
         if not script_chunks:
             script_chunks = [{"part": 1, "narration": self.results["script"], "visual_prompt": "Cinematic visual for " + topic}]
 
+        # --- HUMAN IN THE LOOP APPROVAL GATE ---
+        require_approval = inputs.get("require_approval", False)
+        if require_approval:
+            import uuid
+
+            job_id = str(uuid.uuid4())
+            preview_text = f"🎬 *Script Ready for {channel}*\n"
+            preview_text += f"Topic: {topic}\n\n"
+
+            for chunk in script_chunks[:3]:
+                preview_text += f"*{chunk.get('part')}*: {chunk.get('narration')[:100]}...\n"
+
+            preview_text += f"\nTotal Chunks: {len(script_chunks)}"
+
+            try:
+                import telebot
+                from src.core.config import _get
+                token = _get("TELEGRAM_BOT_TOKEN")
+                ajay_id = _get("AJAY_TELEGRAM_ID")
+                if token and ajay_id:
+                    bot = telebot.TeleBot(token)
+                    markup = telebot.types.InlineKeyboardMarkup()
+                    btn_approve = telebot.types.InlineKeyboardButton("✅ Approve & Render", callback_data=f"render_job_{job_id}")
+                    btn_rewrite = telebot.types.InlineKeyboardButton("🔄 Rewrite", callback_data=f"rewrite_job_{job_id}")
+                    markup.add(btn_approve, btn_rewrite)
+
+                    bot.send_message(ajay_id, preview_text, reply_markup=markup, parse_mode="Markdown")
+
+                    # Store job state temporarily so the callback can pick it up
+                    import pickle, os
+                    assets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "temp_assets")
+                    os.makedirs(assets_dir, exist_ok=True)
+                    with open(os.path.join(assets_dir, f"job_{job_id}.pkl"), "wb") as pf:
+                        pickle.dump({
+                            "channel": channel,
+                            "topic": topic,
+                            "fmt": fmt,
+                            "script_chunks": script_chunks,
+                            "render_mp4": render_mp4,
+                            "marketing": self.results.get("marketing", "")
+                        }, pf)
+
+                    print(f"[Approval Gate] Sent to Telegram. Pausing pipeline for job {job_id}.")
+                    return f"Script generated and sent for approval. Job ID: {job_id}"
+            except Exception as e:
+                print(f"[Approval Gate] Failed to send to Telegram: {e}")
+
+        return self.render_assets(channel, topic, fmt, script_chunks, render_mp4, voice_language, mood_for_voice, self.results.get("marketing", ""))
+
+    def render_assets(self, channel, topic, fmt, script_chunks, render_mp4, voice_language, mood_for_voice, marketing):
+        import os
+        from src.core.voice_engine import generate_voice
+        from src.core.image_engine import generate_image
+        import time
+        from tenacity import retry, stop_after_attempt, wait_exponential
+
+        self.results = getattr(self, "results", {})
+        self.results["marketing"] = marketing
+        self.results["generated_assets"] = []
+
+        # Define retry decorators for the APIs
+        @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+        def _safe_generate_voice(text_chunk, lang, mood_val, chan):
+            from src.core.voice_engine import generate_voice
+            return generate_voice(text_chunk, language=lang, mood=mood_val, channel=chan)
+
+        @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+        def _safe_generate_image(prompt_text):
+            from src.core.image_engine import generate_image
+            return generate_image(prompt_text)
+
         for chunk in script_chunks:
             part_num = chunk.get("part", 1)
             narration = chunk.get("narration", "")
@@ -314,28 +385,46 @@ OUTPUT SCHEMA:
 
             print(f"Processing Scene Part {part_num}...")
 
-            audio_path = None
-            try:
-                # Generate audio per chunk to force ElevenLabs to reset breathing and pacing per scene
-                audio_path = generate_voice(narration, language=voice_language, mood=mood_for_voice, channel=channel)
-            except Exception as e:
-                print(f"[Aria] Voice generation failed for part {part_num}: {e}")
+            # 1. Stateful Checkpointing Paths
+            assets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "temp_assets")
+            os.makedirs(assets_dir, exist_ok=True)
 
+            # Use a deterministic hash based on the narration text so it uniquely identifies the chunk
+            chunk_hash = abs(hash(narration + channel))
+            expected_audio = os.path.join(assets_dir, f"audio_{chunk_hash}.mp3")
+            expected_image = os.path.join(assets_dir, f"scene_{chunk_hash}.png")
+
+            # 2. AUDIO GENERATION (Skip if exists)
+            audio_path = None
+            if os.path.exists(expected_audio) and os.path.getsize(expected_audio) > 1000:
+                print(f"   [Aria] Checkpoint found: Audio for part {part_num} already exists. Skipping.")
+                audio_path = expected_audio
+            else:
+                try:
+                    # Retry wrapper for API
+                    gen_path = _safe_generate_voice(narration, voice_language, mood_for_voice, channel)
+                    if gen_path:
+                        # Move to deterministic path
+                        import shutil
+                        shutil.move(gen_path, expected_audio)
+                        audio_path = expected_audio
+                except Exception as e:
+                    print(f"   [Aria] Voice generation permanently failed for part {part_num} after retries: {e}")
+
+            # 3. IMAGE GENERATION (Skip if exists)
             image_path = None
-            try:
-                # Generate image directly linked to the narration! No more regex guessing.
-                img_bytes = generate_image(visual_prompt)
-                if img_bytes:
-                    assets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "temp_assets")
-                    os.makedirs(assets_dir, exist_ok=True)
-                    from src.core.video_engine import _FORMATS
-                    # If format is shorts, we typically generate larger images or square ones that we center-crop.
-                    # Generate_image handles the sizing natively if we pass width/height, but defaulting to wide works if cropped later.
-                    image_path = os.path.join(assets_dir, f"scene_{abs(hash(channel + topic))}_{part_num}.png")
-                    with open(image_path, "wb") as f:
-                        f.write(img_bytes)
-            except Exception as e:
-                print(f"[Mia] Image generation failed for part {part_num}: {e}")
+            if os.path.exists(expected_image) and os.path.getsize(expected_image) > 1000:
+                print(f"   [Mia] Checkpoint found: Image for part {part_num} already exists. Skipping.")
+                image_path = expected_image
+            else:
+                try:
+                    img_bytes = _safe_generate_image(visual_prompt)
+                    if img_bytes:
+                        with open(expected_image, "wb") as img_f:
+                            img_f.write(img_bytes)
+                        image_path = expected_image
+                except Exception as e:
+                    print(f"   [Mia] Image generation permanently failed for part {part_num} after retries: {e}")
 
             self.results["generated_assets"].append({
                 "part": part_num,

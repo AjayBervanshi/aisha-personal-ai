@@ -612,38 +612,82 @@ def cmd_channels(message):
 
 
 @bot.message_handler(commands=["produce"])
-def cmd_produce(message):
+
+def cmd_sandbox(message):
     if not is_admin(message): return unauthorized_response(message)
-    channel = message.text.replace("/produce", "").strip()
-    
-    VALID_CHANNELS = [
-        "Story With Aisha",
-        "Riya's Dark Whisper",
-        "Riya's Dark Romance Library",
-        "Aisha & Him"
-    ]
-    
-    if not channel or channel not in VALID_CHANNELS:
-        bot.send_message(
-            message.chat.id,
-            "Please specify a channel:\n\n"
-            "`/produce Story With Aisha`\n"
-            "`/produce Riya's Dark Whisper`\n"
-            "`/produce Riya's Dark Romance Library`\n"
-            "`/produce Aisha & Him`",
-            parse_mode="Markdown"
-        )
+    code = message.text.replace("/sandbox", "").strip()
+    if not code:
+        bot.send_message(message.chat.id, "Please provide Python code:\n`/sandbox print('hello')`", parse_mode="Markdown")
         return
 
-    bot.send_message(message.chat.id, f"Got it Ajju! Starting production for *{channel}*... Give me a few minutes! 💜🎬", parse_mode="Markdown")
+    bot.send_message(message.chat.id, "Running in E2B secure sandbox...")
+    from src.core.code_sandbox import execute_python_code
+    res = execute_python_code(code)
     
-    import subprocess, sys as _sys
-    project_root = str(Path(__file__).parent.parent.parent)
-    fmt = "Short/Reel" if channel == "Aisha & Him" else "Long Form"
-    subprocess.Popen([_sys.executable, "-m", "src.agents.run_youtube", "--channel", channel, "--format", fmt], cwd=project_root)
+    if res["success"]:
+        bot.send_message(message.chat.id, f"✅ *Success*\n```text\n{res['output']}\n```", parse_mode="Markdown")
+    else:
+        bot.send_message(message.chat.id, f"❌ *Failed*\n```text\n{res['error']}\n{res['output']}\n```", parse_mode="Markdown")
 
+def cmd_queue_status(message):
+    if not is_admin(message): return unauthorized_response(message)
+    try:
+        import os
+        from supabase import create_client
+        sb = create_client(os.getenv("SUPABASE_URL", ""), os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""))
+        queue = sb.table("content_queue").select("id, channel, youtube_title, status, scheduled_time").eq("status", "ready").execute()
+        if not queue.data:
+            bot.send_message(message.chat.id, "Queue is empty. No videos scheduled.")
+            return
 
-@bot.message_handler(commands=["upload"])
+        msg = "*🎥 Upcoming Drip-Feed Queue:*\n\n"
+        for i, item in enumerate(queue.data[:10]):
+            msg += f"{i+1}. *{item['youtube_title']}* ({item['channel']})\n   Scheduled: {item['scheduled_time'][:16]}\n\n"
+
+        if len(queue.data) > 10:
+            msg += f"...and {len(queue.data) - 10} more."
+
+        bot.send_message(message.chat.id, msg, parse_mode="Markdown")
+    except Exception as e:
+        bot.send_message(message.chat.id, f"Failed to check queue: {e}")
+
+bot.message_handler(commands=['sandbox'])(cmd_sandbox)
+bot.message_handler(commands=['queue'])(cmd_queue_status)
+
+# Replace the dumb terminal produce with background execution + approval
+def cmd_produce(message):
+    if not is_admin(message): return unauthorized_response(message)
+    # E.g. /produce Story With Aisha | My Topic
+    parts = message.text.replace("/produce", "").strip().split("|")
+    channel = parts[0].strip()
+    topic = parts[1].strip() if len(parts) > 1 else ""
+    
+    VALID_CHANNELS = ["Story With Aisha", "Riya's Dark Whisper", "Riya's Dark Romance Library", "Aisha & Him"]
+    if not channel or channel not in VALID_CHANNELS:
+        bot.send_message(message.chat.id, "Usage: `/produce Story With Aisha | A romantic rainy day`", parse_mode="Markdown")
+        return
+
+    bot.send_message(message.chat.id, f"Got it Ajju! Spining up the Writers' Room for *{channel}*... I'll ping you when the script is ready! 💜🎬", parse_mode="Markdown")
+    
+    def run_crew():
+        try:
+            from src.agents.youtube_crew import YouTubeCrew
+            crew = YouTubeCrew()
+            fmt = "Short/Reel" if channel == "Aisha & Him" else "Long Form"
+            res = crew.kickoff({
+                "channel": channel,
+                "topic": topic,
+                "format": fmt,
+                "render_video": True,
+                "require_approval": True # Activate Human-in-the-Loop!
+            })
+            # The crew itself handles sending the approval message to Telegram and returning here.
+        except Exception as e:
+            bot.send_message(message.chat.id, f"❌ Writers' Room failed: {e}")
+
+    import threading
+    threading.Thread(target=run_crew, daemon=True).start()
+
 def cmd_upload(message):
     """Upload the latest produced content to YouTube."""
     if not is_admin(message): return unauthorized_response(message)
@@ -3025,6 +3069,7 @@ if __name__ == "__main__":
             _schedule.every(4).hours.do(_autonomous_loop.run_studio_session)
             _schedule.every().day.at("20:30").do(run_self_improvement, _autonomous_loop)  # 2:00 AM IST
             _schedule.every().day.at("22:30").do(_autonomous_loop.run_temp_cleanup)       # 4:00 AM IST
+            _schedule.every().day.at("12:00").do(_autonomous_loop.run_content_publisher)  # 5:30 PM IST (Prime Shorts Time)
             _schedule.every().day.at("03:30").do(_autonomous_loop.run_key_expiry_check)   # 9:00 AM IST
             log.info("autonomous_loop status=schedule_registered")
             while True:
@@ -3056,6 +3101,69 @@ if __name__ == "__main__":
         bot.infinity_polling(timeout=60, long_polling_timeout=60)
 
 # ─── Self Improvement Callbacks ──────────────────────────────────────────
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("render_job_") or c.data.startswith("rewrite_job_"))
+def handle_job_approval(call):
+    if not is_admin(call):
+        bot.answer_callback_query(call.id, "Unauthorized", show_alert=True)
+        return
+
+    action, _, job_id = call.data.partition("_job_")
+
+    import pickle
+    import os
+    assets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "temp_assets")
+    job_file = os.path.join(assets_dir, f"job_{job_id}.pkl")
+
+    if not os.path.exists(job_file):
+        bot.edit_message_text("❌ This job has expired or cannot be found.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+        return
+
+    if action == "rewrite":
+        bot.edit_message_text("🔄 Script rejected. You can trigger a new generation.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+        os.remove(job_file)
+        return
+
+    # User approved!
+    bot.edit_message_text("✅ Script Approved! Starting the render farm. This will take a while...", chat_id=call.message.chat.id, message_id=call.message.message_id)
+
+    def background_render():
+        try:
+            with open(job_file, "rb") as pf:
+                job_data = pickle.load(pf)
+
+            from src.agents.youtube_crew import YouTubeCrew
+            crew = YouTubeCrew()
+            # Restore state
+            crew.results = {
+                "script_chunks": job_data["script_chunks"],
+                "marketing": job_data["marketing"],
+                "script": "\n".join([c.get("narration", "") for c in job_data["script_chunks"]])
+            }
+
+            channel = job_data["channel"]
+            mood_for_voice = "romantic" if ("Riya" in channel or "Aisha & Him" in channel) else "personal"
+            voice_language = "Hindi" if channel in ("Story With Aisha", "Riya's Dark Whisper", "Riya's Dark Romance Library") else "English"
+
+            final_res = crew.render_assets(
+                channel=job_data["channel"],
+                topic=job_data["topic"],
+                fmt=job_data["fmt"],
+                script_chunks=job_data["script_chunks"],
+                render_mp4=job_data["render_mp4"],
+                voice_language=voice_language,
+                mood_for_voice=mood_for_voice,
+                marketing=job_data["marketing"]
+            )
+            bot.send_message(call.message.chat.id, f"🎬 Render complete for {job_data['channel']}! Check Supabase Queue or server logs.")
+            os.remove(job_file)
+        except Exception as e:
+            bot.send_message(call.message.chat.id, f"❌ Render failed: {e}")
+
+    import threading
+    threading.Thread(target=background_render, daemon=True).start()
+
+
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("deploy_skill_"))
 def handle_deploy_skill(call):
