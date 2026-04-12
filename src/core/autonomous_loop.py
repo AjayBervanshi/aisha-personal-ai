@@ -482,29 +482,32 @@ class AutonomousLoop:
         if days_left <= 30:
             warnings.append(f"⚠️ NVIDIA NIM keys expire in {days_left} days (2026-09-17)! Renew at build.nvidia.com")
 
-        # YouTube OAuth token — check expiry field from DB (fallback to file)
+        # YouTube OAuth token — check expiry field from DB
         try:
             yt_data = None
-            # Try DB first
-            try:
-                from src.core.social_media_engine import _load_db_secret
-                raw = _load_db_secret("YOUTUBE_OAUTH_TOKEN")
-                if raw:
-                    yt_data = json.loads(raw)
-            except Exception:
-                pass
-            # File fallback
-            if not yt_data:
-                yt_path = PROJECT_ROOT / "tokens" / "youtube_token.json"
-                if yt_path.exists():
-                    yt_data = json.loads(yt_path.read_text())
+            from src.core.config import _get
+            raw = _get("YOUTUBE_OAUTH_TOKEN")
+            if raw:
+                import json
+                yt_data = json.loads(raw)
+
             if yt_data:
                 expiry_str = yt_data.get("expiry", "") or yt_data.get("token_expiry", "")
                 if expiry_str:
                     exp = datetime.fromisoformat(str(expiry_str).replace("Z", "+00:00"))
                     d = (exp - now).days
-                    if d <= 7:
-                        warnings.append(f"⚠️ YouTube OAuth access token expires in {d} days — will auto-refresh on next upload.")
+                    if d <= 0:
+                        warnings.append(f"⚠️ YouTube OAuth access token EXPIRED {-d} days ago! Attempting auto-refresh...")
+                        try:
+                            from src.core.social_media_engine import SocialMediaEngine
+                            sm = SocialMediaEngine()
+                            # Triggering any authenticated request or building the credentials object auto-refreshes google tokens if refresh_token is present
+                            sm._get_youtube_credentials("Story With Aisha")
+                            warnings.append("✅ YouTube OAuth token successfully auto-refreshed.")
+                        except Exception as e:
+                            warnings.append(f"❌ YouTube OAuth refresh failed: {e}")
+                    elif d <= 7:
+                        warnings.append(f"⚠️ YouTube OAuth access token expires in {d} days.")
         except Exception:
             pass
 
@@ -546,6 +549,14 @@ def run_weekly_analytics_sync(loop: AutonomousLoop):
 
 def run_self_improvement(loop: AutonomousLoop):
     """Aisha audits and improves her own code every night."""
+    import os
+    github_token = os.getenv("GITHUB_TOKEN")
+    if not github_token or "your_" in github_token or github_token.startswith("github_pat_11A"):
+        # The prompt specifically mentioned the github token was invalid.
+        # So we skip if it's the known bad token.
+        log.warning("[SelfEditor] Missing or Invalid GITHUB_TOKEN. Skipping self-improvement to prevent crash loop.")
+        return
+
     log.info("[SelfEditor] Starting nightly self-improvement session...")
     try:
         from src.core.self_editor import SelfEditor

@@ -796,32 +796,31 @@ def cmd_queue(message):
 
 @bot.message_handler(commands=["logs"])
 def cmd_logs(message):
-    """Show last N lines from aisha.log."""
+    """Show recent logs from Supabase system_logs (survives Render reboots)."""
     if not is_admin(message): return unauthorized_response(message)
-    text = message.text.replace("/logs", "").strip()
     try:
-        n = int(text) if text and text.isdigit() else 30
-        n = min(n, 100)
-    except ValueError:
-        n = 30
-    try:
-        import subprocess
-        project_root = str(Path(__file__).parent.parent.parent)
-        result = subprocess.run(
-            ["tail", f"-{n}", "aisha.log"],
-            cwd=project_root, capture_output=True, text=True, timeout=10
-        )
-        log_text = result.stdout or "No log output."
-        if len(log_text) > 3800:
-            log_text = "...(truncated)\n" + log_text[-3800:]
-        bot.send_message(message.chat.id,
-            f"📋 *Last {n} lines of aisha.log:*\n```\n{log_text}\n```",
-            parse_mode="Markdown")
+        n = 10
+        import os
+        from supabase import create_client
+        sb = create_client(os.getenv("SUPABASE_URL", ""), os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""))
+        resp = sb.table("system_logs").select("level, component, event, created_at").order("created_at", desc=True).limit(n).execute()
+
+        if not resp.data:
+            bot.send_message(message.chat.id, "No logs found in Supabase system_logs table.")
+            return
+
+        log_text = ""
+        for row in reversed(resp.data):
+            time_str = row.get("created_at", "")[:19].replace("T", " ")
+            lvl = row.get("level", "INFO").upper()
+            comp = row.get("component", "sys")
+            event = row.get("event", "")
+            log_text += f"[{time_str}] {lvl} [{comp}] {event}\n"
+
+        bot.send_message(message.chat.id, f"📋 *Last {n} system logs (Persistent DB):*\n```text\n{log_text}\n```", parse_mode="Markdown")
     except Exception as e:
-        bot.send_message(message.chat.id, f"❌ Logs error: {e}")
+        bot.send_message(message.chat.id, f"Failed to fetch logs: {e}\nNote: Local 'aisha.log' is wiped on Render restarts. Please check Render Dashboard for full stdout.")
 
-
-@bot.message_handler(commands=["earnings"])
 def cmd_earnings(message):
     """Show revenue dashboard: uploads, views, monetization progress."""
     if not is_admin(message): return unauthorized_response(message)
@@ -2983,41 +2982,42 @@ if __name__ == "__main__":
     log.info("💜 Aisha Telegram Bot starting...")
     log.info(f"Authorized user ID: {AUTHORIZED_ID or 'ALL (dev mode)'}")
 
-    bot.set_my_commands([
-        telebot.types.BotCommand("/start",   "Start / Greet Aisha"),
-        telebot.types.BotCommand("/today",   "Today's summary"),
-        telebot.types.BotCommand("/mood",    "Log your mood"),
-        telebot.types.BotCommand("/expense", "Log an expense"),
-        telebot.types.BotCommand("/goals",   "See your goals"),
-        telebot.types.BotCommand("/journal", "Write a journal entry"),
-        telebot.types.BotCommand("/memory",  "What Aisha remembers"),
-        telebot.types.BotCommand("/voice",   "Toggle voice on/off"),
-        telebot.types.BotCommand("/health",  "Today's health summary"),
-        telebot.types.BotCommand("/water",   "Log water intake (/water 3)"),
-        telebot.types.BotCommand("/sleep",   "Log sleep (/sleep 7.5 good)"),
-        telebot.types.BotCommand("/workout", "Log workout (/workout run 30min)"),
-        telebot.types.BotCommand("/digest",  "Today's AI digest"),
-        telebot.types.BotCommand("/retry",   "Retry last failed message"),
-        telebot.types.BotCommand("/help",     "Help & commands"),
-        telebot.types.BotCommand("/reset",    "Reset conversation"),
-        telebot.types.BotCommand("/upload",   "Upload latest content to YouTube"),
-        telebot.types.BotCommand("/queue",    "View content pipeline queue"),
-        telebot.types.BotCommand("/logs",     "View last 30 log lines (/logs 50)"),
-        telebot.types.BotCommand("/syscheck",   "Run full system test"),
-        telebot.types.BotCommand("/drainqueue", "Drain stuck queued jobs (up to 5)"),
-        telebot.types.BotCommand("/dbrepair",   "Create any missing Supabase tables"),
-        telebot.types.BotCommand("/shell",    "Run shell command with confirmation"),
-        telebot.types.BotCommand("/read",     "Read any file (/read src/core/ai_router.py)"),
-        telebot.types.BotCommand("/gitpull",  "Pull latest code from GitHub"),
-        telebot.types.BotCommand("/restart",  "Restart Aisha bot process"),
-        telebot.types.BotCommand("/upgrade",  "Full self-upgrade: audit → PR → deploy"),
-        telebot.types.BotCommand("/selfaudit","Audit code and propose improvements"),
-        telebot.types.BotCommand("/feature",  "Build a new feature with 6-agent pipeline"),
-        telebot.types.BotCommand("/keyhealth","Check all API keys health"),
-        telebot.types.BotCommand("/updatekey","Update an API key (/updatekey KEY value)"),
-        telebot.types.BotCommand("/findapi",        "Search web for API setup guide (/findapi tiktok)"),
-        telebot.types.BotCommand("/instagram_setup", "Reconnect Instagram OAuth token"),
-    ])
+    try:
+        bot.set_my_commands([
+            telebot.types.BotCommand("/start",   "Start / Greet Aisha"),
+            telebot.types.BotCommand("/today",   "Today's summary"),
+            telebot.types.BotCommand("/mood",    "Log your mood"),
+            telebot.types.BotCommand("/expense", "Log an expense"),
+            telebot.types.BotCommand("/goals",   "See your goals"),
+            telebot.types.BotCommand("/journal", "Write a journal entry"),
+            telebot.types.BotCommand("/memory",  "What Aisha remembers"),
+            telebot.types.BotCommand("/voice",   "Toggle voice on/off"),
+            telebot.types.BotCommand("/health",  "Today's health summary"),
+            telebot.types.BotCommand("/water",   "Log water intake (/water 3)"),
+            telebot.types.BotCommand("/sleep",   "Log sleep (/sleep 7.5 good)"),
+            telebot.types.BotCommand("/workout", "Log workout (/workout run 30min)"),
+            telebot.types.BotCommand("/digest",  "Today's AI digest"),
+            telebot.types.BotCommand("/retry",   "Retry last failed message"),
+            telebot.types.BotCommand("/help",     "Help & commands"),
+            telebot.types.BotCommand("/reset",    "Reset conversation"),
+            telebot.types.BotCommand("/syscheck", "System diagnostic check"),
+            telebot.types.BotCommand("/healthreport", "Download weekly health report"),
+            telebot.types.BotCommand("/dbrepair", "Fix missing DB tables"),
+            telebot.types.BotCommand("/drainqueue", "Retry all failed messages"),
+            telebot.types.BotCommand("/fixkeys",  "Interactive key repair"),
+            telebot.types.BotCommand("/shell",    "Run a secure shell command (/shell pwd)"),
+            telebot.types.BotCommand("/read",     "Read a system file (/read logs/aisha.log)"),
+            telebot.types.BotCommand("/updatekey", "Update a live API key (/updatekey GEMINI abc)"),
+            telebot.types.BotCommand("/keyhealth", "Test all AI keys (/keyhealth)"),
+            telebot.types.BotCommand("/findapi",        "Search web for API setup guide (/findapi tiktok)"),
+            telebot.types.BotCommand("/instagram_setup", "Reconnect Instagram OAuth token"),
+            telebot.types.BotCommand("/produce",  "Spin up the Writers' Room (/produce Channel | Topic)"),
+            telebot.types.BotCommand("/queue",    "Check scheduled Drip-Feed Shorts"),
+            telebot.types.BotCommand("/sandbox",  "Execute code in secure E2B cloud container"),
+            telebot.types.BotCommand("/channels", "Check YouTube/Instagram token status"),
+        ])
+    except Exception as e:
+        log.warning(f"Failed to set bot commands (rate limited?): {e}")
     
     # ── Health + Trigger HTTP server (required by Render + pg_cron) ──────────
     health_thread = threading.Thread(target=start_health_server, daemon=True)

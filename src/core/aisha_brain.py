@@ -654,6 +654,13 @@ class AishaBrain:
                         daemon=True,
                     ).start()
 
+            # ─── Post-Processing: Strip Meta-Commentary ─────────────────────
+            # Many models (especially open-source or heavily aligned ones) leak their system prompt
+            # by ending with "(Note: I answered this way because...)"
+            import re
+            response_text = re.sub(r'\n?\(Note:.*?\)$', '', response_text, flags=re.DOTALL | re.IGNORECASE)
+            response_text = re.sub(r'\n?\[Note:.*?\]$', '', response_text, flags=re.DOTALL | re.IGNORECASE)
+
             return response_text
 
         except Exception as e:
