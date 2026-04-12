@@ -426,23 +426,49 @@ class AutonomousLoop:
                 log.error(f"[Studio] Failed to launch production fallback: {ex}")
 
     def run_temp_cleanup(self):
-        """Delete temp voice/video files older than 24 hours to prevent disk exhaustion."""
+        """Delete temp files older than 24 hours, EXCEPT videos waiting in the Drip-Feed Queue."""
         import time as _time
+        import os
         cutoff = _time.time() - 86400  # 24 hours
         deleted = 0
+
+        # 1. Get a list of ALL video paths currently waiting in the queue so we don't delete them
+        protected_paths = set()
+        try:
+            from supabase import create_client
+            sb = create_client(os.getenv("SUPABASE_URL", ""), os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""))
+            queued_items = sb.table("content_queue").select("video_url").eq("status", "ready").execute()
+            if queued_items.data:
+                for item in queued_items.data:
+                    vid_url = item.get("video_url")
+                    if vid_url and vid_url.startswith(str(PROJECT_ROOT)):
+                        protected_paths.add(os.path.abspath(vid_url))
+        except Exception as e:
+            log.warning(f"[GarbageCollection] Failed to fetch protected queue items: {e}")
+
+        # 2. Iterate through folders and delete stale files (.pkl, .png, .mp3, .mp4, .ass)
         for folder in ["temp_voice", "temp_videos", "temp_assets"]:
             folder_path = PROJECT_ROOT / folder
             if not folder_path.exists():
                 continue
+
             for f in folder_path.iterdir():
-                if f.is_file() and f.stat().st_mtime < cutoff:
+                if not f.is_file():
+                    continue
+
+                abs_path = str(f.absolute())
+                if abs_path in protected_paths:
+                    continue # Do NOT delete if it is scheduled to post next week!
+
+                if f.stat().st_mtime < cutoff:
                     try:
                         f.unlink()
                         deleted += 1
                     except Exception:
                         pass
+
         if deleted > 0:
-            log.info(f"event=temp_cleanup deleted={deleted}_files")
+            log.info(f"event=temp_cleanup deleted={deleted}_files protected={len(protected_paths)}")
 
     def run_key_expiry_check(self):
         """Check API key expiry dates and alert Ajay via Telegram if any expire within 30 days."""
