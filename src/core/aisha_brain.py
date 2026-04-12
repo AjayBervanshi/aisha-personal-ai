@@ -488,9 +488,9 @@ class AishaBrain:
                         os.getenv("SUPABASE_URL", ""),
                         os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""),
                     )
-                    # Count content jobs
-                    total = sb.table("content_jobs").select("id", count="exact").execute()
-                    completed = sb.table("content_jobs").select("id", count="exact").eq("status", "completed").execute()
+                    # Count content jobs (optimized with .limit(0) to avoid fetching all rows into memory for count)
+                    total = sb.table("content_jobs").select("id", count="exact").limit(0).execute()
+                    completed = sb.table("content_jobs").select("id", count="exact").eq("status", "completed").limit(0).execute()
                     # Recent performance
                     perf = sb.table("content_performance").select("views,likes,platform").order("created_at", desc=True).limit(5).execute()
                     total_views = sum(r.get("views", 0) or 0 for r in (perf.data or []))
@@ -539,8 +539,9 @@ class AishaBrain:
                     os.getenv("SUPABASE_URL", ""),
                     os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""),
                 )
-                queued = sb.table("content_jobs").select("id,topic,channel", count="exact").eq("status", "queued").execute()
-                processing = sb.table("content_jobs").select("id,topic", count="exact").eq("status", "processing").execute()
+                # Query queued jobs using .limit(3) as we need data for the top 3, and .limit(0) for processing where only count is needed
+                queued = sb.table("content_jobs").select("id,topic,channel", count="exact").eq("status", "queued").limit(3).execute()
+                processing = sb.table("content_jobs").select("id", count="exact").eq("status", "processing").limit(0).execute()
                 q_count = queued.count or 0
                 p_count = processing.count or 0
                 if q_count == 0 and p_count == 0:
