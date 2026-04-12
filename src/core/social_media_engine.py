@@ -39,13 +39,21 @@ class SocialMediaEngine:
     Tokens are loaded from Supabase api_keys table; env vars used as fallback.
     """
 
-    # DB key names for credentials — both channels share the same accounts
+    # DB key names for each channel's credentials
     CHANNEL_TO_DB_KEY = {
         "Story With Aisha": {
             "instagram": "INSTAGRAM_TOKEN",
             "youtube": "YOUTUBE_OAUTH_TOKEN",
         },
         "Riya's Dark Whisper": {
+            "instagram": "INSTAGRAM_TOKEN",
+            "youtube": "YOUTUBE_OAUTH_TOKEN",
+        },
+        "Riya's Dark Romance Library": {
+            "instagram": "INSTAGRAM_TOKEN",
+            "youtube": "YOUTUBE_OAUTH_TOKEN",
+        },
+        "Aisha & Him": {
             "instagram": "INSTAGRAM_TOKEN",
             "youtube": "YOUTUBE_OAUTH_TOKEN",
         },
@@ -157,13 +165,10 @@ class SocialMediaEngine:
         if job_id:
             try:
                 sb = _get_supabase()
-                existing = sb.table("content_jobs").select("output").eq("id", job_id).single().execute()
-                if existing.data and existing.data.get("output"):
-                    output = existing.data["output"] if isinstance(existing.data["output"], dict) else {}
-                    ig_result = output.get("post_results", {}).get("instagram", {})
-                    if ig_result.get("success") and ig_result.get("post_id"):
-                        log.info(f"[Instagram] Job {job_id} already posted: {ig_result['post_id']}")
-                        return {"success": True, "post_id": ig_result["post_id"], "skipped": True}
+                existing = sb.table("content_queue").select("instagram_post_id").eq("id", job_id).single().execute()
+                if existing.data and existing.data.get("instagram_post_id"):
+                    log.info(f"[Instagram] Job {job_id} already posted: {existing.data['instagram_post_id']}")
+                    return {"success": True, "post_id": existing.data["instagram_post_id"], "skipped": True}
             except Exception as e:
                 log.warning(f"[Instagram] Idempotency check failed: {e}")
 
@@ -198,7 +203,6 @@ class SocialMediaEngine:
             if not container_id:
                 return {"success": False, "error": create_resp}
 
-            container_ready = False
             for _ in range(12):
                 status_resp = requests.get(
                     f"https://graph.instagram.com/v19.0/{container_id}",
@@ -207,14 +211,10 @@ class SocialMediaEngine:
                 ).json()
                 sc = status_resp.get("status_code") or status_resp.get("status", "")
                 if sc == "FINISHED":
-                    container_ready = True
                     break
                 if sc in ("ERROR", "EXPIRED"):
                     return {"success": False, "error": f"Container processing failed: {status_resp}"}
                 time.sleep(5)
-
-            if not container_ready:
-                return {"success": False, "error": f"Container not ready after 60s: last status={sc}"}
 
             publish_resp = requests.post(
                 f"{base_url}/media_publish",
@@ -224,9 +224,24 @@ class SocialMediaEngine:
 
             post_id = publish_resp.get("id")
 
+            # Persist post ID for idempotency
+            if job_id and post_id:
+                try:
+                    _get_supabase().table("content_queue").update({
+                        "instagram_post_id": post_id,
+                        "instagram_status": "published",
+                    }).eq("id", job_id).execute()
+                except Exception as db_err:
+                    log.warning(f"[Instagram] Could not persist post_id to DB: {db_err}")
+
             return {"success": True, "post_id": post_id}
         except Exception as e:
             log.error(f"[Instagram] Reel post failed: {e}")
+            if job_id:
+                try:
+                    _get_supabase().table("content_queue").update({"instagram_status": "failed"}).eq("id", job_id).execute()
+                except Exception as e:
+                    log.warning(f"[Instagram] Failed to update status to failed: {e}")
             return {"success": False, "error": str(e)}
 
     def post_instagram_image(self, image_url: str, caption: str, hashtags: list | None = None, channel: str = "Story With Aisha") -> dict:
@@ -276,13 +291,10 @@ class SocialMediaEngine:
         if job_id:
             try:
                 sb = _get_supabase()
-                existing = sb.table("content_jobs").select("output").eq("id", job_id).single().execute()
-                if existing.data and existing.data.get("output"):
-                    output = existing.data["output"] if isinstance(existing.data["output"], dict) else {}
-                    yt_result = output.get("post_results", {}).get("youtube", {})
-                    if yt_result.get("success") and yt_result.get("video_id"):
-                        log.info(f"[YouTube] Job {job_id} already uploaded: {yt_result.get('url')}")
-                        return {"success": True, "video_id": yt_result["video_id"], "url": yt_result.get("url", ""), "skipped": True}
+                existing = sb.table("content_queue").select("youtube_video_id", "youtube_url").eq("id", job_id).single().execute()
+                if existing.data and existing.data.get("youtube_video_id"):
+                    log.info(f"[YouTube] Job {job_id} already uploaded: {existing.data['youtube_url']}")
+                    return {"success": True, "video_id": existing.data["youtube_video_id"], "url": existing.data["youtube_url"], "skipped": True}
             except Exception as e:
                 log.warning(f"[YouTube] Idempotency check failed: {e}")
 
@@ -313,12 +325,29 @@ class SocialMediaEngine:
             video_id = response.get("id")
             url = f"https://youtube.com/watch?v={video_id}"
 
+            # Persist video ID for idempotency
+            if job_id:
+                try:
+                    sb = _get_supabase()
+                    sb.table("content_queue").update({
+                        "youtube_video_id": video_id,
+                        "youtube_url": url,
+                        "youtube_status": "published",
+                    }).eq("id", job_id).execute()
+                except Exception as db_err:
+                    log.warning(f"[YouTube] Could not persist video_id to DB: {db_err}")
+
             return {"success": True, "video_id": video_id, "url": url}
 
         except ImportError:
             return {"success": False, "error": "Install: pip install google-api-python-client google-auth"}
         except Exception as e:
             log.error(f"[YouTube] Upload failed: {e}")
+            if job_id:
+                try:
+                    _get_supabase().table("content_queue").update({"youtube_status": "failed"}).eq("id", job_id).execute()
+                except Exception as e:
+                    log.warning(f"[YouTube] Failed to update status to failed: {e}")
             return {"success": False, "error": str(e)}
 
     def cross_post(self, content_package: dict) -> dict:
@@ -328,11 +357,55 @@ class SocialMediaEngine:
         job_id = content_package.get("job_id")
         fmt = content_package.get("format", "landscape")
 
-        # YouTube
+        if fmt == "shorts":
+            # Drip-Feed Queueing System (Prevent Quota Burnout)
+            log.info("[SocialMediaEngine] Shorts format detected. Queueing for drip-feed schedule...")
+            
+            try:
+                import json
+                from datetime import datetime, timezone, timedelta
+                sb = _get_supabase()
+                
+                # In youtube_crew, if it was an array of chunks, we'd pass them here. 
+                # For now, we assume `cross_post` is called per chunk OR with the full package.
+                # Assuming this is called once per rendered short chunk:
+                
+                # Fetch how many items are already queued to determine staggered timing
+                # We want to post 1 short every 24 hours.
+                existing_queue = sb.table("content_queue").select("id").eq("status", "ready").eq("channel", channel).execute()
+                queue_count = len(existing_queue.data) if existing_queue.data else 0
+                
+                # Publish time = NOW + (queue_count * 24 hours)
+                publish_at = (datetime.now(timezone.utc) + timedelta(hours=24 * queue_count)).isoformat()
+                
+                desc = content_package.get("description", "")
+                if "#shorts" not in desc.lower():
+                    desc += "\n\n#shorts"
+
+                payload = {
+                    "channel": channel,
+                    "topic": content_package.get("topic", "Drip Feed Short"),
+                    "youtube_title": content_package.get("title", "New Short"),
+                    "seo_package": json.dumps({"description": desc, "tags": content_package.get("tags", [])}),
+                    "video_url": video_path, # We store local path here temporarily until cloud upload
+                    "status": "ready",
+                    "scheduled_time": publish_at
+                }
+                
+                sb.table("content_queue").insert(payload).execute()
+                
+                log.info(f"[SocialMediaEngine] Queued short for {publish_at} (Queue position: {queue_count + 1})")
+                results["queue_status"] = f"Queued for {publish_at}"
+                return results
+
+            except Exception as e:
+                log.error(f"[SocialMediaEngine] Failed to queue drip-feed short: {e}")
+                results["error"] = str(e)
+                return results
+
+        # YouTube (Immediate upload for Landscape)
         if video_path and os.path.exists(video_path):
             desc = content_package.get("description", "")
-            if fmt == "shorts" and "#shorts" not in desc.lower():
-                desc += "\n\n#shorts"
             yt_res = self.upload_youtube_video(
                 video_path=video_path,
                 title=content_package.get("title", "New Video"),
@@ -344,24 +417,21 @@ class SocialMediaEngine:
             )
             results["youtube"] = yt_res
 
-        # Instagram (Reel vs Image/Video)
+        # Instagram (Immediate upload for Landscape, if supported, otherwise skip)
         if video_path and os.path.exists(video_path):
-            if fmt == "shorts":
-                # Note: Instagram Graph API requires a public URL for videos, not a local file path.
-                # Aisha needs to host it somewhere first, or we assume video_url is passed if available.
-                video_url = content_package.get("video_url")
-                if video_url:
-                    ig_res = self.post_instagram_reel(
-                        video_url=video_url,
-                        caption=content_package.get("description", ""),
-                        hashtags=content_package.get("tags", []),
-                        channel=channel,
-                        job_id=job_id
-                    )
-                    results["instagram"] = ig_res
-                else:
-                    log.warning("[Instagram] Cannot post Reel directly from local file path without a public URL.")
-                    results["instagram"] = {"success": False, "error": "Missing public video_url for IG"}
+            video_url = content_package.get("video_url")
+            if video_url:
+                ig_res = self.post_instagram_reel(
+                    video_url=video_url,
+                    caption=content_package.get("description", ""),
+                    hashtags=content_package.get("tags", []),
+                    channel=channel,
+                    job_id=job_id
+                )
+                results["instagram"] = ig_res
+            else:
+                log.warning("[Instagram] Cannot post Reel directly from local file path without a public URL.")
+                results["instagram"] = {"success": False, "error": "Missing public video_url for IG"}
 
         return results
 
