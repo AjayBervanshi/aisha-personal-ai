@@ -667,8 +667,8 @@ def cmd_produce(message):
         bot.send_message(message.chat.id, "Usage: `/produce Story With Aisha | A romantic rainy day`", parse_mode="Markdown")
         return
 
-    bot.send_message(message.chat.id, f"Got it Ajju! Spining up the Writers' Room for *{channel}*... I'll ping you when the script is ready! 💜🎬", parse_mode="Markdown")
     
+
     def run_crew():
         try:
             from src.agents.youtube_crew import YouTubeCrew

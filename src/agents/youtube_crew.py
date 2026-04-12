@@ -59,29 +59,46 @@ class YouTubeCrew:
         self.ai = AIRouter()
         self.results = {}
 
-    def _generate(self, prompt: str, preferred_provider: str = None, nvidia_task_type: str = "writing") -> str:
-        if preferred_provider:
+    def _generate(self, prompt: str, preferred_provider: str = None, nvidia_task_type: str = "writing", max_tokens: int = 8192) -> str:
+        import concurrent.futures
+
+        def run_ai():
+            if preferred_provider:
+                try:
+                    result = self.ai._call_provider(
+                        preferred_provider,
+                        "You are an expert content creator for YouTube and Instagram storytelling channels.",
+                        prompt,
+                        [],
+                        None,
+                        nvidia_task_type=nvidia_task_type,
+                    )
+                    return result.strip()
+                except Exception as e:
+                    log.warning(f"youtube_crew error: {e}")
+
+            result = self.ai.generate(
+                system_prompt="You are an expert content creator for YouTube and Instagram storytelling channels.",
+                user_message=prompt,
+                nvidia_task_type=nvidia_task_type,
+            )
+            return result.text.strip()
+
+        # Enforce strict 60-second timeout on all LLM generation calls
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(run_ai)
             try:
-                result = self.ai._call_provider(
-                    preferred_provider,
-                    "You are an expert content creator for YouTube and Instagram storytelling channels.",
-                    prompt,
-                    [],
-                    None,
-                    nvidia_task_type=nvidia_task_type,
-                )
-                return result.strip()
-            except Exception as e:
-                log.warning(f"youtube_crew error: {e}")
+                return future.result(timeout=60)
+            except concurrent.futures.TimeoutError:
+                err_msg = f"[Timeout] AI Provider took longer than 60 seconds to respond."
+                log.error(err_msg)
+                raise TimeoutError(err_msg)
 
-        result = self.ai.generate(
-            system_prompt="You are an expert content creator for YouTube and Instagram storytelling channels.",
-            user_message=prompt,
-            nvidia_task_type=nvidia_task_type,
-        )
-        return result.text.strip()
-
-    def kickoff(self, inputs: dict) -> str:
+    def kickoff(self, inputs: dict, status_callback=None) -> str:
+        def _status(msg):
+            print(msg)
+            if status_callback:
+                status_callback(msg)
         channel = inputs.get("channel", "Story With Aisha")
         fmt = inputs.get("format", "Long Form")
         master_prompt = inputs.get("master_prompt", "")
@@ -95,18 +112,18 @@ class YouTubeCrew:
         nvidia_task = CHANNEL_AI_TASK_TYPE.get(channel, "writing")
 
         # Fetch real-time trends first — then use as topic if none given
-        print("[TrendEngine] Fetching real-time trends...")
+        _status("🔍 [TrendEngine] Fetching real-time trends...")
         trends = {}
         try:
             trends = get_trends_for_channel(channel)
         except Exception as e:
-            print(f"[TrendEngine] Warning: trend fetch failed ({e}), using fallback")
+            _status(f"⚠️ [TrendEngine] Warning: trend fetch failed ({e}), using fallback")
 
         # Use trending topic if none provided, or enhance provided topic with trend data
         raw_topic = inputs.get("topic", "")
         if not raw_topic and trends.get("recommended_topic"):
             topic = trends["recommended_topic"]
-            print(f"[TrendEngine] Auto-selected trending topic: {topic}")
+            _status(f"📈 [TrendEngine] Auto-selected trending topic: {topic}")
         else:
             topic = raw_topic or "A Late Night Secret"
 
@@ -121,7 +138,7 @@ class YouTubeCrew:
                 f"Best hook idea: {trends.get('hook_idea', '')}\n"
             )
 
-        print(f"[Crew] {channel} | {topic} | AI: {preferred_ai.upper()}")
+        _status(f"🎬 [Crew] {channel} | {topic} | AI: {preferred_ai.upper()}")
 
         # Use full channel identity prompt → minimal fallback
         channel_context = (
@@ -137,7 +154,7 @@ class YouTubeCrew:
             )
         )
 
-        print("[Riya] Researching trending angles + story brief...")
+        _status("🧠 [Riya] Researching trending angles + story brief...")
         self.results["research"] = self._generate(
             f"""You are Riya, the Story Researcher.
 {channel_context}
@@ -163,7 +180,7 @@ Output: 300 words max. Be specific and concrete.""",
         if inputs.get("series_id"):
             continuity_ctx = get_continuity_context(inputs["series_id"])
 
-        print("[Lexi] Writing the pure storytelling script...")
+        _status("✍️ [Lexi] Writing the pure storytelling script...")
         lexi_prompt = f"""You are Lexi, a top-tier Hollywood screenwriter and director.
 {channel_context}
 {continuity_ctx + chr(10) + chr(10) if continuity_ctx else ""}Story Brief:
@@ -199,7 +216,7 @@ He couldn't breathe. He closed his eyes and waited for the end..."""
         master_json_pipeline = []
         batch_size = 5
 
-        print(f"[Mia] Translating {len(scenes)} scenes into Video Engine JSON...")
+        _status(f"🎥 [Mia] Translating {len(scenes)} scenes into Video Engine JSON...")
 
         for i in range(0, len(scenes), batch_size):
             batch = scenes[i:i + batch_size]
@@ -228,9 +245,9 @@ He couldn't breathe. He closed his eyes and waited for the end..."""
             try:
                 batch_json = json.loads(cleaned_json)
                 master_json_pipeline.extend(batch_json)
-                print(f"      ... Processed batch {i // batch_size + 1}")
+                _status(f"      ... Processed batch {i // batch_size + 1}")
             except json.JSONDecodeError as e:
-                print(f"[Error] Mia failed JSON decode on batch {i // batch_size + 1}: {e}")
+                _status(f"❌ [Error] Mia failed JSON decode on batch {i // batch_size + 1}: {e}")
                 print(f"      Raw output: {cleaned_json[:200]}...")
                 # Fallback: just put the raw text in
                 for idx, scene in enumerate(batch):
@@ -240,7 +257,7 @@ He couldn't breathe. He closed his eyes and waited for the end..."""
         self.results["visuals"] = "\n".join([f"[Scene {c.get('part')}] {c.get('visual_prompt', '')}" for c in master_json_pipeline])
 
 
-        print("[Cappy] Building SEO package...")
+        _status("📈 [Cappy] Building SEO package...")
         is_short = ('short' in fmt.lower() or 'reel' in fmt.lower())
 
         cappy_prompt = f"""You are Cappy, the SEO and Viral Marketing Expert.
@@ -288,12 +305,12 @@ OUTPUT SCHEMA:
                             chunk["title"] = seo_array[idx].get("title", f"{topic} (Part {idx+1})")
                             chunk["tags"] = seo_array[idx].get("tags", ["#shorts", "#viral"])
             except Exception as e:
-                print(f"[Cappy] Failed to parse Shorts SEO array: {e}")
+                _status(f"❌ [Cappy] Failed to parse Shorts SEO array: {e}")
         else:
             # We can parse the single JSON block if needed later, for now we just keep the raw marketing string
             pass
 
-        print("[Aria+Mia] Generating voice, visuals, and thumbnail assets per chunk...")
+        _status("🗣️🎨 [Aria+Mia] Generating voice, visuals, and thumbnail assets per chunk...")
         self.results["voice_path"] = None
         self.results["thumbnail_path"] = None
         self.results["generated_assets"] = []
@@ -349,10 +366,10 @@ OUTPUT SCHEMA:
                             "marketing": self.results.get("marketing", "")
                         }, pf)
 
-                    print(f"[Approval Gate] Sent to Telegram. Pausing pipeline for job {job_id}.")
+                    _status(f"⏸️ [Approval Gate] Sent to Telegram. Pausing pipeline for job {job_id}.")
                     return f"Script generated and sent for approval. Job ID: {job_id}"
             except Exception as e:
-                print(f"[Approval Gate] Failed to send to Telegram: {e}")
+                _status(f"❌ [Approval Gate] Failed to send to Telegram: {e}")
 
         return self.render_assets(channel, topic, fmt, script_chunks, render_mp4, voice_language, mood_for_voice, self.results.get("marketing", ""))
 
@@ -383,7 +400,7 @@ OUTPUT SCHEMA:
             narration = chunk.get("narration", "")
             visual_prompt = chunk.get("visual_prompt", "")
 
-            print(f"Processing Scene Part {part_num}...")
+            _status(f"🔄 Processing Scene Part {part_num}...")
 
             # 1. Stateful Checkpointing Paths
             assets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "temp_assets")
@@ -456,9 +473,9 @@ OUTPUT SCHEMA:
                 )
                 if video_path:
                     self.results["video_path"] = video_path
-                    print(f"[VideoEngine] MP4 ready: {video_path}")
+                    _status(f"✅ [VideoEngine] MP4 ready: {video_path}")
             except Exception as e:
-                print(f"[VideoEngine] Video render failed: {e}")
+                _status(f"❌ [VideoEngine] Video render failed: {e}")
 
         final = (
             f"{'='*60}\n"
@@ -481,5 +498,5 @@ OUTPUT SCHEMA:
             f"{'='*60}"
         )
 
-        print("[Crew] Production complete!")
+        _status("🎉 [Crew] Production complete!")
         return final
