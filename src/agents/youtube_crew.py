@@ -84,15 +84,12 @@ class YouTubeCrew:
             )
             return result.text.strip()
 
-        # Enforce strict 60-second timeout on all LLM generation calls
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(run_ai)
-            try:
-                return future.result(timeout=60)
-            except concurrent.futures.TimeoutError:
-                err_msg = f"[Timeout] AI Provider took longer than 60 seconds to respond."
-                log.error(err_msg)
-                raise TimeoutError(err_msg)
+        # Execute AI generation directly.
+        # Note: Do not enforce a generic 60-second wrapper timeout here.
+        # The AIRouter's fallback chain needs time to try multiple providers.
+        # If Gemini fails (1s), Nvidia times out (60s), and Groq works (2s), the total time is 63s.
+        # A 60s hard wrapper timeout would prematurely kill the fallback chain!
+        return run_ai()
 
     def kickoff(self, inputs: dict, status_callback=None) -> str:
         def _status(msg):

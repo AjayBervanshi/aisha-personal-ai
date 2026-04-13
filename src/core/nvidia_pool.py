@@ -276,7 +276,7 @@ class NvidiaPool:
                 "temperature": temperature,
                 "top_p":       0.95,
             },
-            timeout=60,
+            timeout=15,
         )
 
         if resp.status_code == 200:

@@ -197,16 +197,12 @@ def synthesize_trends_with_ai(
     ddg_data: list[str],
 ) -> dict:
     """
-    Uses Gemini to synthesize raw trend data into actionable story angles.
+    Uses AIRouter to synthesize raw trend data into actionable story angles.
     Returns structured content strategy.
     """
     try:
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            return _fallback_trend_report(channel)
-
-        import requests as _req
-        _gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+        from src.core.ai_router import AIRouter
+        router = AIRouter()
 
         # Build context from trend data
         google_summary = ", ".join([t["query"] for t in google_data[:5]]) if google_data else "Not available"
@@ -240,19 +236,33 @@ Based on this data, generate a content strategy report. Return ONLY valid JSON:
     "best_thumbnail_concept": "Description of the most clickable thumbnail"
 }}"""
 
+        import logging
+        log = logging.getLogger("Aisha.TrendEngine")
+        log.info(f"[TrendEngine] Submitting raw trend data to AIRouter for synthesis...")
+
+        # Using generate() safely taps into the robust fallback chain (Gemini -> Nvidia -> Groq)
+        result = router.generate(
+            system_prompt="You are an expert JSON API. Return ONLY valid JSON.",
+            user_message=prompt,
+            nvidia_task_type="writing"
+        )
+
         import re
-        _resp = _req.post(_gemini_url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=60)
-        _resp.raise_for_status()
-        _text = _resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-        match = re.search(r'\{[\s\S]*\}', _text)
+        import json
+
+        # Result from AIRouter.generate() is an AIResult object (or string fallback)
+        res_text = getattr(result, "text", str(result))
+        match = re.search(r'\{[\s\S]*\}', res_text)
         if match:
             return json.loads(match.group(0))
 
     except Exception as e:
-        log.error(f"AI synthesis failed: {e}")
+        import logging
+        log = logging.getLogger("Aisha.TrendEngine")
+        log.error(f"AI synthesis failed entirely (caught Exception): {e}")
 
+    # Fallback to static dict if router completely fails
     return _fallback_trend_report(channel)
-
 
 def _fallback_trend_report(channel: str) -> dict:
     """Static fallback when all APIs fail."""
