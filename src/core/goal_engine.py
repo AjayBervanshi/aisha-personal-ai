@@ -144,11 +144,16 @@ class GoalEngine:
             data = json.loads(match.group(0))
 
             # Update DB for completed actions
-            for a_id in data.get("completed_action_ids", []):
-                self.supabase.table("aisha_daily_actions")\
-                    .update({"last_completed_at": datetime.now(timezone.utc).isoformat()})\
-                    .eq("id", a_id)\
-                    .execute()
+            completed_ids = data.get("completed_action_ids", [])
+            if completed_ids:
+                now_iso = datetime.now(timezone.utc).isoformat()
+                # Batch update in chunks of 100 to avoid PostgREST URL length limits
+                for i in range(0, len(completed_ids), 100):
+                    batch = completed_ids[i:i+100]
+                    self.supabase.table("aisha_daily_actions")\
+                        .update({"last_completed_at": now_iso})\
+                        .in_("id", batch)\
+                        .execute()
 
             return data.get("drill_sergeant_message", "")
 
