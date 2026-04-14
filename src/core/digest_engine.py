@@ -49,7 +49,7 @@ class DigestEngine:
                 user_message=prompt,
                 nvidia_task_type="writing"
             )
-            text = result.strip()
+            text = result.text.strip()
             log.info("event=daily_digest_done", chars=len(text))
             return text
         except Exception as e:
