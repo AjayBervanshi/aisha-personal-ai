@@ -161,7 +161,27 @@ class WorkflowEngine:
 
         elif node_type == "action.http_request":
             import urllib.request
-            req = urllib.request.Request(config.get("url", ""), method=config.get("method", "GET"))
+            from urllib.parse import urlparse
+
+            url = config.get("url", "")
+            parsed = urlparse(url)
+
+            if parsed.scheme not in ("http", "https"):
+                log.error(f"[Workflow] Blocked request with invalid scheme: {parsed.scheme}")
+                return None
+
+            host = parsed.hostname or ""
+
+            # SSRF Protection: Block internal and loopback IPs
+            blocked = ["localhost", "127.0.0.1", "0.0.0.0", "169.254.169.254"]
+            try:
+                if host in blocked or host.endswith(".local") or host.startswith("10.") or host.startswith("192.168.") or (host.startswith("172.") and len(host.split(".")) == 4 and 16 <= int(host.split(".")[1]) <= 31):
+                    log.error(f"[Workflow] Blocked SSRF attempt to internal host: {host}")
+                    return None
+            except ValueError:
+                pass
+
+            req = urllib.request.Request(url, method=config.get("method", "GET"))
             with urllib.request.urlopen(req, timeout=5) as r:
                 return r.read().decode('utf-8')
 
