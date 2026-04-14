@@ -39,29 +39,9 @@ class AutonomousLoop:
         self.telegram = telebot.TeleBot(bot_token) if bot_token else None
         self._used_topics = []  # Deduplication — never produce the same topic twice
 
-        # JARVIS Phase 3: Continuous Awareness
-        try:
-            from src.core.goal_engine import GoalEngine
-            self.goal_engine = GoalEngine(self.brain.supabase, self.brain.ai)
-        except Exception as e:
-            print(f"[Goal Engine] Error loading: {e}")
-            self.goal_engine = None
-
-        try:
-            from src.awareness.activity_analyzer import ActivityAnalyzer
-            self.activity_analyzer = ActivityAnalyzer(self.brain.supabase, self.brain.ai)
-            self._last_proactive_alert = None
-        except Exception as e:
-            print(f"[Activity Analyzer] Error loading: {e}")
-            self.activity_analyzer = None
-
-
-
         # New engines
         from src.core.notification_engine import NotificationEngine
         from src.core.digest_engine import DigestEngine
-
-
         from src.memory.memory_compressor import MemoryCompressor
         self.notif = NotificationEngine(self.brain, self.brain.memory)
         self.digest = DigestEngine(self.brain.memory, self.brain.ai)
@@ -250,9 +230,11 @@ class AutonomousLoop:
             try:
                 self.telegram.send_message(self.ajay_id, morning_text)
                 log.info("Sent morning check-in to Ajay on Telegram.")
-
+                
+                # Generate voice note as well!
                 from src.core.voice_engine import generate_voice, cleanup_voice_file
-                voice_path = generate_voice(morning_text, language="Hindi", mood="personal", use_for="chat")
+                from src.core.config import AISHA_ELEVENLABS_VOICE_ID
+                voice_path = generate_voice(morning_text, voice_id=AISHA_ELEVENLABS_VOICE_ID)
                 if voice_path:
                     with open(voice_path, 'rb') as vf:
                         self.telegram.send_voice(self.ajay_id, vf)
@@ -302,110 +284,52 @@ class AutonomousLoop:
         }}
         Return ONLY valid JSON.
         """
-
+        
         analysis_json = self.brain.think(prompt, platform="telegram")
-
+        
         # 3. Store the insights into Semantic / Deep Memory
         try:
             import json
             insights = json.loads(analysis_json.replace("```json", "").replace("```", "").strip())
             
+            # Save new facts
             for fact in insights.get("new_facts", []):
-                self.brain.memory.save_memory("general", "Consolidated fact", str(fact))
-
+                self.brain.memory.save_memory("fact", fact)
+                
+            # Log emotional state
             emotion = insights.get("emotional_state")
             if emotion:
-                self.brain.memory.save_memory("mood", "Yesterday's emotional state", str(emotion))
+                self.brain.memory.save_memory("emotion", f"Yesterday's mood: {emotion}")
                 
             log.info(f"Memory Consolidation Complete. Facts: {len(insights.get('new_facts', []))}")
         except Exception as e:
             log.error(f"Failed to parse memory consolidation JSON: {e}")
-
+            
         _log_to_db("INFO", "autonomous_loop", "job_completed: memory_consolidation")
 
 
 
-
-
-    def check_awareness_for_struggles(self):
-        """
-        JARVIS Phase 3 (Feature 3.3): Proactive Notifications.
-        Runs every 5 minutes to see if Ajay is struggling on his laptop screen
-        and sends a proactive message if he is stuck.
-        """
-        try:
-            if not self.activity_analyzer or not self.ajay_id or not self.telegram:
-                return
-
-            from datetime import datetime
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] 👁️ Checking Sidecar Awareness Logs...")
-            analysis = self.activity_analyzer.analyze_recent_activity()
-
-            if analysis and analysis.get("is_struggling"):
-                reason = analysis.get("struggle_reason", "")
-                if self._last_proactive_alert == reason:
-                    return
-
-                suggestion = analysis.get("proactive_suggestion", f"I see you're stuck on {reason}. Want me to take a look?")
-                self._last_proactive_alert = reason
-
-                print(f"[Aisha Proactive] Found struggle: {reason}")
-
-                self.telegram.send_message(
-                    self.ajay_id,
-                    f"*{suggestion}*\n\n*(I noticed you've been stuck on your screen for a while. Let me know if you need help!)*",
-                    parse_mode='Markdown'
-                )
-        except Exception as e:
-            print(f"Error checking awareness: {e}")
-    def _check_daily_post_limit(self) -> bool:
-        """Check if we've hit the daily post limit. Returns True if we can still post."""
-        try:
-            from src.core.config import CONTENT_SCHEDULE
-            max_posts = CONTENT_SCHEDULE.get("max_daily_posts", 3)
-            from datetime import datetime as dt_class, timezone, timedelta
-            today_start = dt_class.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-            completed = self.brain.supabase.table("content_jobs")\
-                .select("id")\
-                .eq("status", "completed")\
-                .gte("completed_at", today_start.isoformat())\
-                .execute()
-            count = len(completed.data) if completed.data else 0
-            if count >= max_posts:
-                log.info(f"[Studio] Daily limit reached ({count}/{max_posts}). Skipping.")
-                return False
-            log.info(f"[Studio] Posts today: {count}/{max_posts}")
-            return True
-        except Exception as e:
-            log.warning(f"[Studio] Could not check daily limit: {e}")
-            return True
-
     def run_studio_session(self):
-        """Aisha autonomously creates content for the primary channel.
+        """Aisha autonomously decides which channel needs content and starts the crew.
 
-        Uses only the configured primary YouTube channel + Instagram account.
-        Priority:
+        Priority order:
         1. Drain oldest queued job from the backlog (if any exist).
         2. Only when the queue is empty, generate a fresh topic and enqueue it.
-        3. Respects daily post limits to avoid spamming.
+        This ensures the backlog never grows unboundedly.
         """
         log.info(f"[{datetime.now()}] Aisha entering Studio for proactive session...")
         _log_to_db("INFO", "autonomous_loop", "job_started: studio_session")
 
-        if not self._check_daily_post_limit():
-            _log_to_db("INFO", "autonomous_loop", "studio_session_skipped: daily_limit_reached")
-            return
-
         try:
             from src.agents.antigravity_agent import AntigravityAgent
-            from src.core.config import ACTIVE_CHANNELS
             agent = AntigravityAgent()
 
+            # Step 1: Try to drain an existing queued job first
             existing_job = agent.fetch_next_job()
             if existing_job:
                 log.info(
                     f"[Studio] Draining backlog job {existing_job.get('id')} | "
-                    f"topic={existing_job.get('topic')}"
+                    f"channel={existing_job.get('channel')} | topic={existing_job.get('topic')}"
                 )
                 _log_to_db("INFO", "autonomous_loop", "studio_draining_backlog",
                            details={"job_id": existing_job.get("id"), "topic": existing_job.get("topic")})
@@ -417,40 +341,36 @@ class AutonomousLoop:
                     name=f"drain-job-{existing_job.get('id','?')[:8]}"
                 ).start()
                 log.info(f"[Studio] Backlog drain thread started for job {existing_job.get('id')}")
+                _log_to_db("INFO", "autonomous_loop", "job_completed: studio_session",
+                           details={"job_id": existing_job.get("id"), "mode": "backlog_drain"})
                 return
 
+            # Step 2: Queue is empty — generate a fresh topic
             import random
-            selected = random.choice(ACTIVE_CHANNELS)
-            channel = selected["name"]
-            is_adult = selected.get("content_type") == "adult"
-
-            if is_adult:
-                topic_prompt = (
-                    f"तू रिया है। '{channel}' के लिए एक bold, seductive, 18+ Hindi story topic suggest कर। "
-                    f"Topic ऐसा हो जो adult audience को तुरंत hook करे — forbidden, intense, desire। "
-                    f"Already used: {self._used_topics[-10:] if self._used_topics else 'none'}। "
-                    "सिर्फ topic title दे, Hindi में, और कुछ नहीं।"
-                )
-                system = "You are Riya, a bold adult content strategist for Hindi 18+ storytelling."
-            else:
-                topic_prompt = (
-                    f"तुम आयशा हो। '{channel}' के लिए एक viral Hindi love story topic suggest करो। "
-                    f"Topic ऐसा हो जो Indian audience को तुरंत attract करे। "
-                    f"Already used: {self._used_topics[-10:] if self._used_topics else 'none'}। "
-                    "सिर्फ topic title दो, Hindi में, और कुछ नहीं।"
-                )
-                system = "You are a viral content strategist for Hindi romantic storytelling."
+            channels = [
+                {"name": "Story With Aisha",          "format": "Long Form",   "vibe": "Romantic and Heart-touching"},
+                {"name": "Riya's Dark Whisper",        "format": "Long Form",   "vibe": "Seductive and Mysterious"},
+                {"name": "Riya's Dark Romance Library","format": "Long Form",   "vibe": "Intense Mafia/Obsessive Romance"},
+                {"name": "Aisha & Him",                "format": "Short/Reel",  "vibe": "Relatable Couple Moments/Dialogue"}
+            ]
+            selected = random.choice(channels)
 
             for attempt in range(5):
-                topic = self.brain.ai.generate(system, topic_prompt).text.strip()
+                prompt = (f"You are Aisha, the Creative Director. For channel '{selected['name']}', "
+                         f"suggest ONE viral {selected['vibe']} story topic title. "
+                         f"Already used: {self._used_topics[-10:] if self._used_topics else 'none'}. "
+                         "Return ONLY the topic title, nothing else.")
+                topic = self.brain.ai.generate("You are Aisha.", prompt).text.strip()
                 if topic not in self._used_topics:
                     self._used_topics.append(topic)
+                    # Cap at 200 entries — old topics can be reused after that
                     if len(self._used_topics) > 200:
                         self._used_topics = self._used_topics[-200:]
                     break
 
-            log.info(f"[Studio] Channel: '{channel}' | Topic: '{topic}'")
+            log.info(f"[Studio] Channel: '{selected['name']}' | Topic: '{topic}'")
 
+            # Notify Ajay — apply cooldown to avoid spam on rapid restarts
             global _last_startup_msg_time
             _now = time.time()
             _in_cooldown = (_now - _last_startup_msg_time) < _STARTUP_MSG_COOLDOWN
@@ -459,17 +379,21 @@ class AutonomousLoop:
                     _last_startup_msg_time = _now
                     self.telegram.send_message(
                         self.ajay_id,
-                        f"Starting new content production!\n"
-                        f"Topic: {topic}\n"
-                        f"I'll notify you when it's published."
+                        f"Ajju, I'm starting a new production for '{selected['name']}' right now!\n"
+                        f"Topic: '{topic}'\nI'll ping you when the script is ready! Let me cook. 💜"
                     )
                 except Exception as e:
                     log.warning(f"[Telegram] Failed to notify: {e}")
+            elif _in_cooldown:
+                log.info(
+                    f"[Studio] Startup notification skipped — sent "
+                    f"{int(_now - _last_startup_msg_time)}s ago (cooldown={_STARTUP_MSG_COOLDOWN}s)"
+                )
 
             job = agent.enqueue_job(
                 topic=topic,
-                channel=channel,
-                fmt="Short/Reel",
+                channel=selected["name"],
+                fmt=selected["format"],
                 platform_targets=["youtube", "instagram"],
                 auto_post=True,
                 payload={"render_video": True},
@@ -484,30 +408,67 @@ class AutonomousLoop:
             ).start()
             log.info(f"[Studio] Processing thread started for job {job.get('id')}")
             _log_to_db("INFO", "autonomous_loop", "job_completed: studio_session",
-                       details={"job_id": job.get("id"), "channel": channel, "topic": topic})
+                       details={"job_id": job.get("id"), "channel": selected["name"], "topic": topic})
 
         except Exception as e:
             log.error(f"[Studio] Session failed: {e}")
             _log_to_db("ERROR", "autonomous_loop", f"job_failed: studio_session: {e}")
+            # Fallback path: launch production script directly (no agent available)
+            try:
+                import subprocess, random as _rand, sys as _sys
+                _ch = _rand.choice(["Story With Aisha", "Aisha & Him"])
+                subprocess.Popen([
+                    _sys.executable, "-m", "src.agents.run_youtube",
+                    "--channel", _ch,
+                ], cwd=str(PROJECT_ROOT))
+                log.info(f"[Studio] Production crew launched via fallback for: {_ch}")
+            except Exception as ex:
+                log.error(f"[Studio] Failed to launch production fallback: {ex}")
 
     def run_temp_cleanup(self):
-        """Delete temp voice/video files older than 24 hours to prevent disk exhaustion."""
+        """Delete temp files older than 24 hours, EXCEPT videos waiting in the Drip-Feed Queue."""
         import time as _time
+        import os
         cutoff = _time.time() - 86400  # 24 hours
         deleted = 0
+        
+        # 1. Get a list of ALL video paths currently waiting in the queue so we don't delete them
+        protected_paths = set()
+        try:
+            from supabase import create_client
+            sb = create_client(os.getenv("SUPABASE_URL", ""), os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""))
+            queued_items = sb.table("content_queue").select("video_url").eq("status", "ready").execute()
+            if queued_items.data:
+                for item in queued_items.data:
+                    vid_url = item.get("video_url")
+                    if vid_url and vid_url.startswith(str(PROJECT_ROOT)):
+                        protected_paths.add(os.path.abspath(vid_url))
+        except Exception as e:
+            log.warning(f"[GarbageCollection] Failed to fetch protected queue items: {e}")
+
+        # 2. Iterate through folders and delete stale files (.pkl, .png, .mp3, .mp4, .ass)
         for folder in ["temp_voice", "temp_videos", "temp_assets"]:
             folder_path = PROJECT_ROOT / folder
             if not folder_path.exists():
                 continue
+                
             for f in folder_path.iterdir():
-                if f.is_file() and f.stat().st_mtime < cutoff:
+                if not f.is_file():
+                    continue
+                    
+                abs_path = str(f.absolute())
+                if abs_path in protected_paths:
+                    continue # Do NOT delete if it is scheduled to post next week!
+                    
+                if f.stat().st_mtime < cutoff:
                     try:
                         f.unlink()
                         deleted += 1
                     except Exception:
                         pass
+                        
         if deleted > 0:
-            log.info(f"event=temp_cleanup deleted={deleted}_files")
+            log.info(f"event=temp_cleanup deleted={deleted}_files protected={len(protected_paths)}")
 
     def run_key_expiry_check(self):
         """Check API key expiry dates and alert Ajay via Telegram if any expire within 30 days."""
@@ -521,29 +482,32 @@ class AutonomousLoop:
         if days_left <= 30:
             warnings.append(f"⚠️ NVIDIA NIM keys expire in {days_left} days (2026-09-17)! Renew at build.nvidia.com")
 
-        # YouTube OAuth token — check expiry field from DB (fallback to file)
+        # YouTube OAuth token — check expiry field from DB
         try:
             yt_data = None
-            # Try DB first
-            try:
-                from src.core.social_media_engine import _load_db_secret
-                raw = _load_db_secret("YOUTUBE_OAUTH_TOKEN")
-                if raw:
-                    yt_data = json.loads(raw)
-            except Exception:
-                pass
-            # File fallback
-            if not yt_data:
-                yt_path = PROJECT_ROOT / "tokens" / "youtube_token.json"
-                if yt_path.exists():
-                    yt_data = json.loads(yt_path.read_text())
+            from src.core.config import _get
+            raw = _get("YOUTUBE_OAUTH_TOKEN")
+            if raw:
+                import json
+                yt_data = json.loads(raw)
+                
             if yt_data:
                 expiry_str = yt_data.get("expiry", "") or yt_data.get("token_expiry", "")
                 if expiry_str:
                     exp = datetime.fromisoformat(str(expiry_str).replace("Z", "+00:00"))
                     d = (exp - now).days
-                    if d <= 7:
-                        warnings.append(f"⚠️ YouTube OAuth access token expires in {d} days — will auto-refresh on next upload.")
+                    if d <= 0:
+                        warnings.append(f"⚠️ YouTube OAuth access token EXPIRED {-d} days ago! Attempting auto-refresh...")
+                        try:
+                            from src.core.social_media_engine import SocialMediaEngine
+                            sm = SocialMediaEngine()
+                            # Triggering any authenticated request or building the credentials object auto-refreshes google tokens if refresh_token is present
+                            sm._get_youtube_credentials("Story With Aisha")
+                            warnings.append("✅ YouTube OAuth token successfully auto-refreshed.")
+                        except Exception as e:
+                            warnings.append(f"❌ YouTube OAuth refresh failed: {e}")
+                    elif d <= 7:
+                        warnings.append(f"⚠️ YouTube OAuth access token expires in {d} days.")
         except Exception:
             pass
 
@@ -585,6 +549,14 @@ def run_weekly_analytics_sync(loop: AutonomousLoop):
 
 def run_self_improvement(loop: AutonomousLoop):
     """Aisha audits and improves her own code every night."""
+    import os
+    github_token = os.getenv("GITHUB_TOKEN")
+    if not github_token or "your_" in github_token or github_token.startswith("github_pat_11A"):
+        # The prompt specifically mentioned the github token was invalid. 
+        # So we skip if it's the known bad token.
+        log.warning("[SelfEditor] Missing or Invalid GITHUB_TOKEN. Skipping self-improvement to prevent crash loop.")
+        return
+
     log.info("[SelfEditor] Starting nightly self-improvement session...")
     try:
         from src.core.self_editor import SelfEditor
@@ -668,9 +640,6 @@ def start_loop(once: bool = False):
     # ── High-frequency Polls ──────────────────────────────────────────
     # Task reminders — check every 5 min
     schedule.every(5).minutes.do(bot.run_task_reminder_poll)
-
-    # JARVIS Phase 3: Check screen activity every 5 minutes
-    schedule.every(5).minutes.do(bot.check_awareness_for_struggles)
     # Inactivity check — every 3 hours
     schedule.every(3).hours.do(bot.run_inactivity_check)
 

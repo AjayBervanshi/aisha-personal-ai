@@ -26,15 +26,15 @@ _sb_cache = {}
 def _fetch_from_supabase(key: str) -> str:
     if key in ["SUPABASE_URL", "SUPABASE_SERVICE_KEY", "SUPABASE_SERVICE_ROLE_KEY"]:
         return None
-
+        
     sb_url = os.getenv("SUPABASE_URL")
     sb_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
     if not sb_url or not sb_key:
         return None
-
+        
     if key in _sb_cache:
         return _sb_cache[key]
-
+        
     try:
         from supabase import create_client
         sb = create_client(sb_url, sb_key)
@@ -51,18 +51,18 @@ def _fetch_from_supabase(key: str) -> str:
 def _get(key: str, default: str = None, required: bool = False) -> str:
     # 1. Check Supabase first
     val = _fetch_from_supabase(key)
-
+    
     # 2. Fallback to ENV
     if not val:
         val = os.getenv(key)
-
+        
     if not val:
         val = default
-
+        
     if required and (not val or "your_" in val.lower()):
         print(f"[Config] MISSING REQUIRED: {key}")
         print(f"         Add it to your .env file or Supabase api_keys table.")
-
+        
     return val
 
 
@@ -131,8 +131,10 @@ AISHA_ELEVENLABS_VOICE_ID = "wdymxIQkYn7MJCYCQF2Q"   # Aisha — warm, emotional
 RIYA_ELEVENLABS_VOICE_ID  = "BpjGufoPiobT79j2vtj4"   # Riya  — seductive, bold narrator
 
 CHANNEL_VOICE_IDS: dict = {
-    "Story With Aisha":    AISHA_ELEVENLABS_VOICE_ID,
-    "Riya's Dark Whisper": RIYA_ELEVENLABS_VOICE_ID,
+    "Story With Aisha":            AISHA_ELEVENLABS_VOICE_ID,
+    "Riya's Dark Whisper":         RIYA_ELEVENLABS_VOICE_ID,
+    "Riya's Dark Romance Library": RIYA_ELEVENLABS_VOICE_ID,
+    "Aisha & Him":                 AISHA_ELEVENLABS_VOICE_ID,
 }
 
 # ══════════════════════════════════════════════════════════════
@@ -167,69 +169,57 @@ AI_MAX_TOKENS    = 16000  # Maximum for long-form story scripts
 AI_HISTORY_LIMIT = 20     # More context = smarter Aisha
 
 # ══════════════════════════════════════════════════════════════
-# ACTIVE CHANNELS
-# Story With Aisha: Romantic Hindi love stories (clean, emotional)
-#   AI: Gemini (warm, cinematic writing)
-# Riya's Dark Whisper: Bold, 18+ Hindi stories (adult content)
-#   AI: xAI Grok (uncensored) → NVIDIA Mistral-Large (fallback)
-# Both share ONE YouTube + ONE Instagram account for now.
+# CHANNEL → AI MODEL ROUTING
+# Riya channels: Mistral-Large-3 via NVIDIA NIM (writing pool)
+#   - 675B parameter model, minimal content filtering
+#   - Handles explicit adult/18+ Hindi romance content
+#   - 2 keys (KEY_02 + KEY_17) = 2,000 free credits/month for writing
+#   - Fallback: Groq LLaMA-3.3 (also handles mature content)
+# Aisha channels: Gemini — warm, emotional, cinematic
 # ══════════════════════════════════════════════════════════════
-PRIMARY_YOUTUBE_CHANNEL = _get("PRIMARY_YOUTUBE_CHANNEL", "Story With Aisha")
-PRIMARY_INSTAGRAM_ACCOUNT = _get("PRIMARY_INSTAGRAM_ACCOUNT", "story_with_aisha")
-
-# Channels Aisha manages — round-robin in studio sessions
-ACTIVE_CHANNELS = [
-    {
-        "name": "Story With Aisha",
-        "narrator": "Aisha",
-        "tone": "warm, emotional, cinematic, heart-touching",
-        "format": "Short/Reel",
-        "duration": "60-90 seconds",
-        "content_type": "clean",
-    },
-    {
-        "name": "Riya's Dark Whisper",
-        "narrator": "Riya",
-        "tone": "bold, seductive, psychological, slow-burn, 18+",
-        "format": "Short/Reel",
-        "duration": "60-90 seconds",
-        "content_type": "adult",
-    },
-]
-
-# AI provider per channel — determines which model writes the script
-# Riya uses xAI Grok (uncensored) because Gemini refuses adult content
 CHANNEL_AI_PROVIDER = {
-    "Story With Aisha":    "gemini",
-    "Riya's Dark Whisper": "xai",
+    "Story With Aisha":           "gemini",   # Warm, emotional
+    "Riya's Dark Whisper":        "nvidia",   # Mistral-Large-3 — explicit, dark
+    "Riya's Dark Romance Library":"nvidia",   # Mistral-Large-3 — intense, bold
+    "Aisha & Him":                "gemini",   # Light, relatable
 }
 
-# NVIDIA task type for NIM pool routing when NVIDIA is the fallback
+# Task type for NVIDIA NIM pool — ensures Riya uses the WRITING pool (Mistral-Large-3)
 CHANNEL_AI_TASK_TYPE = {
-    "Story With Aisha":    "writing",
-    "Riya's Dark Whisper": "writing",
+    "Story With Aisha":           "writing",
+    "Riya's Dark Whisper":        "writing",  # Routes to Mistral-Large-3 (675B)
+    "Riya's Dark Romance Library":"writing",  # Routes to Mistral-Large-3 (675B)
+    "Aisha & Him":                "writing",
 }
 
+# ══════════════════════════════════════════════════════════════
+# YOUTUBE CHANNELS
+# ══════════════════════════════════════════════════════════════
 YOUTUBE_CHANNELS = {
     "Story With Aisha": {
         "narrator": "Aisha",
         "tone": "warm, emotional, cinematic, heart-touching",
-        "format": "Short/Reel",
-        "duration": "60-90 seconds",
+        "format": "Long Form",
+        "duration": "8-15 min",
     },
     "Riya's Dark Whisper": {
         "narrator": "Riya",
-        "tone": "bold, seductive, psychological, 18+",
-        "format": "Short/Reel",
-        "duration": "60-90 seconds",
+        "tone": "mysterious, seductive, psychological",
+        "format": "Long Form",
+        "duration": "10-20 min",
     },
-}
-
-CONTENT_SCHEDULE = {
-    "youtube_shorts_times": ["10:00", "14:00", "19:00"],
-    "instagram_reels_times": ["11:00", "15:00", "20:00"],
-    "daily_target_posts": _get_int("DAILY_TARGET_POSTS", 3),
-    "max_daily_posts": _get_int("MAX_DAILY_POSTS", 4),
+    "Riya's Dark Romance Library": {
+        "narrator": "Riya",
+        "tone": "intense, addictive, mafia romance",
+        "format": "Long Form",
+        "duration": "15-25 min",
+    },
+    "Aisha & Him": {
+        "narrator": "Aisha",
+        "tone": "relatable, funny, sweet, real",
+        "format": "Short/Reel",
+        "duration": "30s-3 min",
+    },
 }
 
 # ══════════════════════════════════════════════════════════════

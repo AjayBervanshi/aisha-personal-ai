@@ -1,3 +1,5 @@
+import ast
+import operator
 import json
 import logging
 import re
@@ -16,6 +18,50 @@ class WorkflowEngine:
     def __init__(self, supabase_client, ai_router):
         self.supabase = supabase_client
         self.ai = ai_router
+
+    def _safe_eval(self, cond: str):
+        # Allowed operators
+        operators = {
+            ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
+            ast.Div: operator.truediv, ast.Mod: operator.mod, ast.Pow: operator.pow,
+            ast.BitXor: operator.xor, ast.USub: operator.neg, ast.Eq: operator.eq,
+            ast.NotEq: operator.ne, ast.Lt: operator.lt, ast.LtE: operator.le,
+            ast.Gt: operator.gt, ast.GtE: operator.ge, ast.Is: operator.is_,
+            ast.IsNot: operator.is_not, ast.In: lambda a, b: operator.contains(b, a),
+            ast.NotIn: lambda a, b: not operator.contains(b, a),
+            ast.And: lambda a, b: a and b, ast.Or: lambda a, b: a or b,
+            ast.Not: operator.not_
+        }
+
+        def _eval(node):
+            if isinstance(node, ast.Constant):
+                return node.value
+            elif isinstance(node, ast.List):
+                return [_eval(elt) for elt in node.elts]
+            elif isinstance(node, ast.Tuple):
+                return tuple(_eval(elt) for elt in node.elts)
+            elif isinstance(node, ast.BinOp):
+                return operators[type(node.op)](_eval(node.left), _eval(node.right))
+            elif isinstance(node, ast.UnaryOp):
+                return operators[type(node.op)](_eval(node.operand))
+            elif isinstance(node, ast.Compare):
+                left = _eval(node.left)
+                for op, right_node in zip(node.ops, node.comparators):
+                    right = _eval(right_node)
+                    if not operators[type(op)](left, right):
+                        return False
+                    left = right
+                return True
+            elif isinstance(node, ast.BoolOp):
+                if isinstance(node.op, ast.And):
+                    return all(_eval(v) for v in node.values)
+                elif isinstance(node.op, ast.Or):
+                    return any(_eval(v) for v in node.values)
+            else:
+                raise ValueError(f"Unsupported node type: {type(node)}")
+
+        parsed = ast.parse(cond, mode='eval').body
+        return _eval(parsed)
 
     def build_from_nl(self, description: str) -> Optional[str]:
         """
@@ -106,13 +152,10 @@ class WorkflowEngine:
             return res.text
 
         elif node_type == "logic.condition":
-            # Danger: eval is unsafe in production, but we use it for a rapid prototype
             try:
-                # Basic string replacement for pseudo-code
                 cond = config.get("condition", "False")
                 cond = cond.replace("contains", "in")
-                # Very restricted eval for prototype safety
-                return eval(cond, {"__builtins__": {}})
+                return self._safe_eval(cond)
             except Exception:
                 return False
 
