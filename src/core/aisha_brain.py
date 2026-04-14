@@ -489,8 +489,8 @@ class AishaBrain:
                         os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""),
                     )
                     # Count content jobs (optimized with .limit(0) to avoid fetching all rows into memory for count)
-                    total = sb.table("content_jobs").select("id", count="exact").limit(0).execute()
-                    completed = sb.table("content_jobs").select("id", count="exact").eq("status", "completed").limit(0).execute()
+                    total = sb.table("content_jobs").select("id", count="exact").execute(head=True)
+                    completed = sb.table("content_jobs").select("id", count="exact").eq("status", "completed").execute(head=True)
                     # Recent performance
                     perf = sb.table("content_performance").select("views,likes,platform").order("created_at", desc=True).limit(5).execute()
                     total_views = sum(r.get("views", 0) or 0 for r in (perf.data or []))
