@@ -541,7 +541,7 @@ class AishaBrain:
                 )
                 # Query queued jobs using .limit(3) as we need data for the top 3, and .limit(0) for processing where only count is needed
                 queued = sb.table("content_jobs").select("id,topic,channel", count="exact").eq("status", "queued").limit(3).execute()
-                processing = sb.table("content_jobs").select("id", count="exact").eq("status", "processing").limit(0).execute()
+                processing = sb.table("content_jobs").select("id", count="exact").eq("status", "processing").execute(head=True)
                 q_count = queued.count or 0
                 p_count = processing.count or 0
                 if q_count == 0 and p_count == 0:
