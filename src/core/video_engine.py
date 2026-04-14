@@ -69,9 +69,7 @@ def extract_scene_descriptions(script: str, channel: str, num_scenes: int = 7) -
         style = "Cinematic Noir, moody lighting" if "Riya" in channel else "Warm golden hour, natural lighting"
         prompt = f"Extract exactly {num_scenes} distinct scene descriptions from this script. They should be standalone prompts for an image generator. Format as a pure JSON list of strings. No markdown backticks. Script: {script[:2000]}"
         result = ai.generate(system_prompt="You are an expert AI image prompt engineer. Return ONLY a valid JSON list.", user_message=prompt, nvidia_task_type="writing")
-        import json
-        import re
-        match = re.search(r'\[.*?\]', result, re.DOTALL)
+        match = re.search(r'\[.*?\]', result.text, re.DOTALL)
         if match:
             scenes = json.loads(match.group(0))
             return [f"{s}. Style: {style}. Ultra HD, cinematic." for s in scenes[:num_scenes]]
