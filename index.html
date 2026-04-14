@@ -812,7 +812,7 @@
           <div class="msg-time">${msgTime}</div>
           <div class="msg-actions">
             <button class="msg-action-btn" onclick="speakText(this)" data-text="${text.replace(/"/g, '&quot;')}" aria-label="Speak message">🔊</button>
-            <button class="msg-action-btn" onclick="copyText('${text.replace(/'/g, "\\'")}', this)" aria-label="Copy message text">📋</button>
+            <button class="msg-action-btn" onclick="copyText(this)" data-text="${text.replace(/"/g, '&quot;')}" aria-label="Copy message text">📋</button>
           </div>
         </div>
       </div>`;
