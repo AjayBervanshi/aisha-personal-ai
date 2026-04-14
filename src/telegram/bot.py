@@ -24,6 +24,8 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 
 import telebot
 from telebot import types
+import time
+_oauth_states = {}  # Format: {state: (user_id, expiration_time)}
 from supabase import create_client
 from dotenv import load_dotenv
 
@@ -2566,10 +2568,23 @@ def cmd_instagram_setup(message):
     render_url = os.getenv("RENDER_EXTERNAL_URL", "https://aisha-bot-yudp.onrender.com")
     redirect_uri = f"{render_url}/instagram_callback"
 
+    import secrets
+    import time
+
+    # Generate secure state and bind it to user session with 15 min expiration
+    state = secrets.token_urlsafe(32)
+    _oauth_states[state] = (message.from_user.id, time.time() + 900)
+
+    # Cleanup expired states
+    expired = [k for k, v in _oauth_states.items() if v[1] < time.time()]
+    for k in expired:
+        _oauth_states.pop(k, None)
+
     from urllib.parse import urlencode
     params = urlencode({
         "client_id": app_id,
         "redirect_uri": redirect_uri,
+        "state": state,
         "scope": "instagram_basic,instagram_content_publish,pages_read_engagement,pages_manage_posts,public_profile",
         "response_type": "code",
     })
@@ -2665,6 +2680,34 @@ def _handle_instagram_oauth_callback(handler):
     redirect_uri = f"{render_url}/instagram_callback"
 
     error = params.get("error", [None])[0]
+
+    import time
+    state_param = params.get("state", [None])[0]
+
+    # Validate CSRF state token
+    if not state_param or state_param not in _oauth_states:
+        msg = "❌ CSRF validation failed: missing or invalid state parameter."
+        log.error(f"[Instagram OAuth] {msg}")
+        body = f"<html><body>{msg}</body></html>".encode()
+        handler.send_response(400)
+        handler.send_header("Content-Type", "text/html")
+        handler.send_header("Content-Length", str(len(body)))
+        handler.end_headers()
+        handler.wfile.write(body)
+        return
+
+    user_id, expiration = _oauth_states.pop(state_param)
+
+    if time.time() > expiration:
+        msg = "❌ CSRF validation failed: state token expired."
+        log.error(f"[Instagram OAuth] {msg}")
+        body = f"<html><body>{msg}</body></html>".encode()
+        handler.send_response(400)
+        handler.send_header("Content-Type", "text/html")
+        handler.send_header("Content-Length", str(len(body)))
+        handler.end_headers()
+        handler.wfile.write(body)
+        return
     if error:
         msg = f"❌ Instagram OAuth denied: {params.get('error_description', ['unknown'])[0]}"
         log.error(f"[Instagram OAuth] {msg}")
