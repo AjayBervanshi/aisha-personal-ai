@@ -27,8 +27,7 @@
 **Vulnerability:** A new webhook endpoint (`/api/callme/transcript`) was added to log phone conversations into semantic memory without checking the `X-Trigger-Secret` header, meaning any attacker could craft arbitrary POST requests to inject false memories directly into Aisha's database.
 **Learning:** All new REST endpoints added to the internal HTTP server MUST enforce the `TRIGGER_SECRET` fail-secure mechanism before processing the payload.
 **Prevention:** Added `X-Trigger-Secret` validation to the new endpoint matching the exact fail-secure logic used by the existing `pg_cron` trigger.
-
-## 2024-05-18 - Prevent RCE in WorkflowEngine logic condition parsing
-**Vulnerability:** Arbitrary Code Execution (RCE) via `eval()` when evaluating workflow node logic conditions.
-**Learning:** Using `eval(cond, {"__builtins__": {}})` is not safe, as attackers can bypass `__builtins__` restrictions via generator expressions or class hierarchies (like `[].__class__.__base__.__subclasses__()`).
-**Prevention:** Use an AST-based safe evaluator for parsing simple logic conditions, whitelisting only explicitly safe AST nodes (like `ast.Compare`, `ast.Constant`, and `ast.Name`).
+## 2026-04-13 - [CRITICAL] Remote Code Execution via eval()
+**Vulnerability:** The workflow engine used Python's built-in `eval()` to execute condition strings in logic nodes.
+**Learning:** Even when passing a restricted global dict (`{"__builtins__": {}}`), `eval()` remains highly unsafe and vulnerable to code injection/RCE, as users can still access system functions through other means or crash the application.
+**Prevention:** Never use `eval()` on untrusted input. Instead, use an Abstract Syntax Tree (AST) evaluator with an explicit whitelist of allowed node types (`ast.parse`) or use a secure alternative like `asteval` library.
