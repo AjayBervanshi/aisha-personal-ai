@@ -144,11 +144,17 @@ class GoalEngine:
             data = json.loads(match.group(0))
 
             # Update DB for completed actions
-            for a_id in data.get("completed_action_ids", []):
-                self.supabase.table("aisha_daily_actions")\
-                    .update({"last_completed_at": datetime.now(timezone.utc).isoformat()})\
-                    .eq("id", a_id)\
-                    .execute()
+            completed_ids = data.get("completed_action_ids", [])
+            if isinstance(completed_ids, list) and completed_ids:
+                # Deduplicate and filter out empty values to ensure clean batching
+                unique_ids = list(set(str(a_id) for a_id in completed_ids if a_id))
+                now_iso = datetime.now(timezone.utc).isoformat()
+                for i in range(0, len(unique_ids), 100):
+                    batch = unique_ids[i:i+100]
+                    self.supabase.table("aisha_daily_actions")\
+                        .update({"last_completed_at": now_iso})\
+                        .in_("id", batch)\
+                        .execute()
 
             return data.get("drill_sergeant_message", "")
 
