@@ -13,11 +13,14 @@ Refactored to use:
 """
 
 import json
+import logging
 import re
 import threading
 from datetime import datetime
 from typing import Optional
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 # Project root for relative imports and background process launching
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -44,12 +47,17 @@ from src.memory.memory_manager import MemoryManager
 
 class AishaBrain:
     def __init__(self):
-        # Initialize AI Router (handles Gemini, OpenAI, Groq, Mistral, Ollama)
         self.ai = AIRouter()
-
-        # Initialize Supabase
         self.supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
         self.memory   = MemoryManager(self.supabase)
+
+        # Live skill registry — skills Aisha creates persist and are reused
+        try:
+            from src.skills.skill_registry import SkillRegistry
+            self.skills = SkillRegistry()
+        except Exception as e:
+            log.warning(f"[Brain] SkillRegistry init failed: {e}")
+            self.skills = None
 
         # Per-user conversation histories — keyed by Telegram user_id (int).
         # Owner's history is warm-started from Supabase; guest histories start empty.
@@ -90,7 +98,7 @@ class AishaBrain:
         try:
             from src.core.config import AUTHORIZED_ID
             return int(AUTHORIZED_ID)
-        except Exception:
+        except (ImportError, AttributeError, ValueError, TypeError):
             return None
 
     def _load_history_from_db(self, user_id: Optional[int] = None) -> list:
@@ -151,133 +159,433 @@ class AishaBrain:
         return hist
 
     # ─── NLP Intent Router ───────────────────────────────────────────────────
-    # Maps natural language to tool actions — no commands needed.
-    # Patterns are checked before AI generation. Matching fires the tool in a
-    # background thread and returns an instant acknowledgement.
+    # Aisha understands natural language. No slash commands needed.
+    # User just talks normally: "ek video bana do", "YouTube pe post karo",
+    # "aaj ka digest bhejo", "channel ka status kya hai" — Aisha gets it.
 
     _INTENT_PATTERNS = [
-        # Content creation
+        # ── CONTENT CREATION (highest priority — revenue generating) ──────
+        # Hindi: "ek video banao", "story banao aur post karo", "content create karo"
+        # English: "make a video", "create a reel", "produce content for YouTube"
+        # Mixed: "YouTube pe ek short daal do", "Instagram reel banao"
         (re.compile(
-            r"(make|create|produce|generate|shoot|record|bana[ao]?|ek video|shorts?).{0,50}"
-            r"(video|content|youtube|short|reel|episode)",
+            r"(make|create|produce|generate|bana[ao]?|bana do|likho|likh do|daal do|dal do|post karo).{0,60}"
+            r"(video|content|youtube|short|reel|episode|kahani|story|kahaniya)|"
+            r"(video|content|short|reel|story|kahani).{0,40}"
+            r"(bana[ao]?|bana do|create|produce|likho|daal|dal|post)|"
+            r"(youtube|insta|instagram).{0,30}(pe|par|ke liye|for).{0,30}"
+            r"(bana|create|post|upload|daal|dal)|"
+            r"(ek|naya|nayi|new|aur ek|one more).{0,30}(video|reel|short|content|episode)|"
+            r"start.{0,20}produc|go.{0,10}live|let.{0,5}s.{0,5}cook|"
+            r"kuch.{0,20}(bana|post|upload)|shoot.{0,20}(video|content)",
             re.I,
         ), "content_creation"),
-        # Key health check
+
+        # ── RIYA CONTENT (detect when user specifically wants Riya/adult) ──
+        (re.compile(
+            r"riya.{0,40}(video|story|kahani|content|bana|likho|post)|"
+            r"(dark|bold|adult|18\+|hot|sexy).{0,30}(video|story|kahani|content|bana)|"
+            r"(video|story|content).{0,30}(riya|dark whisper|bold|adult)",
+            re.I,
+        ), "riya_content"),
+
+        # ── CHANNEL STATUS / ANALYTICS ────────────────────────────────────
+        # "channel ka status", "how's the channel doing", "views kitne aaye"
+        (re.compile(
+            r"(channel|youtube|insta).{0,30}(status|stats|analytics|performance|views|subscribers|kaisa|kaise)|"
+            r"(views|subscribers|likes|earnings|kamai|paisa).{0,30}(kitne|kitna|how many|check|batao|dikhao)|"
+            r"(content|video).{0,20}(performance|stats)|"
+            r"kamai.{0,20}(kitni|batao|dikhao|check)|earning",
+            re.I,
+        ), "channel_status"),
+
+        # ── DAILY DIGEST / REPORT ─────────────────────────────────────────
+        # "aaj ka report", "digest bhejo", "summary dikhao", "kya hua aaj"
+        (re.compile(
+            r"(aaj|today|kal|yesterday).{0,30}(report|summary|digest|recap|kya hua)|"
+            r"(digest|report|summary).{0,20}(bhejo|dikhao|send|show|de do)|"
+            r"(morning|evening|daily|weekly).{0,20}(report|digest|summary|briefing)|"
+            r"kya.{0,10}(hua|chal raha|ho raha).{0,10}(aaj|today)",
+            re.I,
+        ), "digest"),
+
+        # ── QUEUE / JOB STATUS ────────────────────────────────────────────
+        # "queue mein kya hai", "koi video pending hai?", "kitne jobs hain"
+        (re.compile(
+            r"(queue|pending|jobs?|tasks?).{0,30}(status|kitne|how many|kya hai|check|dikhao)|"
+            r"(kitne|how many).{0,20}(video|content|jobs?|tasks?).{0,20}(pending|queue|left)|"
+            r"kya.{0,15}(pending|queue|process|running)",
+            re.I,
+        ), "queue_status"),
+
+        # ── AI PROVIDER STATUS ────────────────────────────────────────────
         (re.compile(
             r"(check|test|verify).{0,30}(api key|key|groq|gemini|openai|nvidia|provider)|"
             r"(api key|key).{0,20}(broken|dead|not working|fail|invalid|expired)|"
-            r"(groq|openai|anthropic|gemini|nvidia).{0,20}(broken|dead|fail|not working)",
+            r"(groq|openai|anthropic|gemini|nvidia|grok|xai).{0,20}(broken|dead|fail|not working|status|check)|"
+            r"(ai|provider).{0,20}(status|kaise|working|check)|"
+            r"kon.{0,10}(si|sa).{0,10}(ai|model).{0,15}(chal|work|active)",
             re.I,
         ), "key_health"),
-        # Update a key
+
+        # ── KEY UPDATE ────────────────────────────────────────────────────
         (re.compile(
             r"(update|change|replace|set|new).{0,30}(key|token|api).{0,40}(gsk_|sk-|nvapi-|AIza|xai-)|"
             r"(gsk_|sk-proj-|nvapi-|AIzaSy|xai-)\S{10,}",
             re.I,
         ), "key_update"),
-        # Search for a new API / platform
+
+        # ── SYSTEM CHECK ─────────────────────────────────────────────────
         (re.compile(
-            r"(find|search|how to get|get the?).{0,30}(api|token|key).{0,30}(for|of)?\s+\w+|"
-            r"add.{0,20}(tiktok|twitter|x\.com|facebook|instagram|snapchat|youtube).{0,20}(api|support)|"
-            r"(tiktok|twitter|snapchat|pinterest).{0,20}(api|key|access)",
-            re.I,
-        ), "api_search"),
-        # System / health check
-        (re.compile(
-            r"(aisha|tum|tu).{0,20}(theek|okay|ok|fine|working|alive|running|status)|"
+            r"(aisha|tum|tu).{0,20}(theek|okay|ok|fine|working|alive|running|status|kaisi)|"
             r"(system|server|render|bot).{0,20}(check|status|health|ok|fine)|"
-            r"sab.{0,20}(theek|okay|chala)",
+            r"sab.{0,20}(theek|okay|chala|chal)|"
+            r"(health|status).{0,10}(check|report)",
             re.I,
         ), "syscheck"),
-        # Self-improve
+
+        # ── SELF-IMPROVE ─────────────────────────────────────────────────
         (re.compile(
-            r"(improve|upgrade|update).{0,30}(yourself|khud ko|apne aap|code|yourself)|"
-            r"(add|build|develop).{0,30}(feature|capability|function).{0,30}(yourself|apne aap)",
+            r"(improve|upgrade|update).{0,30}(yourself|khud ko|apne aap|code)|"
+            r"(add|build|develop).{0,30}(feature|capability|function).{0,30}(yourself|apne aap)|"
+            r"khud.{0,15}(ko|se).{0,15}(better|improve|sudhar)",
             re.I,
         ), "self_improve"),
-        # File repair
+
+        # ── CODE AGENT (fix bugs, add features, modify codebase) ─────
+        # "fix the bug in voice_engine", "add error handling to bot.py"
+        # "apne code mein ye fix karo", "ye feature add karo"
+        (re.compile(
+            r"(fix|debug|patch|solve).{0,40}(bug|error|crash|issue|problem|code)|"
+            r"(add|implement|write|build).{0,30}(feature|function|handler|support|code|module).{0,30}(in|to|for)|"
+            r"(code|file|module).{0,20}(mein|me|mai).{0,20}(fix|change|add|improve|update)|"
+            r"apne.{0,20}(code|file).{0,20}(mein|me).{0,20}(fix|add|change|improve)|"
+            r"(ye|yeh|this).{0,20}(fix|change|add|improve).{0,15}(karo|kar do|kar de)|"
+            r"(can you|tum).{0,20}(fix|add|change|write|build|create).{0,30}(code|feature|function|module|handler)",
+            re.I,
+        ), "code_agent"),
+
+        # ── FILE REPAIR ──────────────────────────────────────────────────
         (re.compile(
             r"(repair|restore|fix|heal).{0,30}(file|code|yourself|bot\.py|aisha)|"
             r"(file|code).{0,20}(corrupt|broken|damaged|missing)",
             re.I,
         ), "file_repair"),
-        # Block user — natural language: "block Jash", "remove Jash", "ban Jash"
+
+        # ── BLOCK USER ───────────────────────────────────────────────────
         (re.compile(
-            r"(block|ban|remove|kick).{1,30}\b(\w+)\b",
+            r"(block|ban|remove|kick)\s+(?:user\s+)?(\w+)",
             re.I,
         ), "block_user"),
     ]
 
+    # Patterns that indicate a task/action request (not just conversation)
+    _TASK_INDICATORS = re.compile(
+        r"(find|check|get|show|tell|search|look up|fetch|calculate|convert|track|monitor|"
+        r"dhundh|batao|dikhao|nikalo|pata karo|check karo|search karo|"
+        r"can you|could you|please|kya tum|tum .{0,20} kar sakti|"
+        r"write.{0,10}code|create.{0,10}(script|tool|function)|code likh|"
+        r"what.{0,5}(is|are) the|kya hai|kitna|kitne|kitni)",
+        re.I,
+    )
+
     def _detect_and_route_intent(self, user_message: str, is_owner: bool = True) -> Optional[str]:
         """
-        Check message against intent patterns.
-        If matched, fire the tool in background and return an acknowledgement string.
-        Returns None if no intent matched (falls through to normal AI chat).
+        Understand what Ajay wants from natural language — no commands needed.
+
+        Priority:
+        1. Check built-in intent patterns (content creation, status, etc.)
+        2. Check if an existing skill can handle this request
+        3. If it looks like a task but no skill exists → create one on the fly
+        4. Return None for normal conversation
         """
+        # 1. Built-in intents first
         for pattern, intent in self._INTENT_PATTERNS:
             if pattern.search(user_message):
                 return self._fire_intent(intent, user_message, is_owner=is_owner)
+
+        # 2-3. Skill-based handling (owner only)
+        if is_owner and self.skills and self._TASK_INDICATORS.search(user_message):
+            return self._handle_skill_request(user_message)
+
         return None
 
-    def _fire_intent(self, intent: str, user_message: str, is_owner: bool = True) -> Optional[str]:
-        """Execute a detected intent in a background thread. Returns acknowledgement or None."""
-        import os
+    def _handle_skill_request(self, user_message: str) -> Optional[str]:
+        """
+        Check if an existing skill can handle this, or create a new one.
+        Returns the skill output, or None to fall through to AI chat.
+        """
+        # Check for existing skill
+        match = self.skills.find_skill(user_message)
+        if match:
+            skill_name, skill_func = match
+            log.info(f"[Brain] Found existing skill: {skill_name}")
+            def _run():
+                try:
+                    output = self.skills.run_skill(skill_name)
+                    import telebot
+                    bot = telebot.TeleBot(os.getenv("TELEGRAM_BOT_TOKEN", ""))
+                    ajay_id = os.getenv("AJAY_TELEGRAM_ID", "")
+                    if bot and ajay_id:
+                        bot.send_message(ajay_id, f"[Skill: {skill_name}]\n\n{output[:3000]}")
+                except Exception as e:
+                    log.error(f"[Brain] Skill execution failed: {e}")
+            threading.Thread(target=_run, daemon=True, name=f"skill-{skill_name}").start()
+            return f"Mere paas iske liye already ek tool hai! '{skill_name}' chala rahi hoon, result abhi aata hai..."
 
-        # SECURITY: Only the authorized owner can trigger system-level intents.
-        if not is_owner and intent in ("key_health", "key_update", "api_search", "self_improve", "file_repair", "block_user", "content_creation"):
-            # Guests should not trigger any background tool execution
+        # No existing skill — does this look like something worth creating a skill for?
+        # Skip short messages, greetings, or emotional messages
+        if len(user_message) < 20:
+            return None
+        msg_lower = user_message.lower()
+        skip_words = ["how are you", "kaise ho", "good morning", "thanks", "ok", "haan", "nahi",
+                       "i love", "miss you", "sorry", "hello", "hi ", "bye"]
+        if any(w in msg_lower for w in skip_words):
             return None
 
-        # SENSITIVE OPERATIONS REQUIRE THE SECRET CODE
+        # Create new skill on the fly
+        log.info(f"[Brain] No skill found — creating new one for: {user_message[:60]}")
+        def _create_and_run():
+            try:
+                skill_name = self.skills.create_and_register_skill(user_message, ai_router=self.ai)
+                if skill_name:
+                    output = self.skills.run_skill(skill_name)
+                    import telebot
+                    bot = telebot.TeleBot(os.getenv("TELEGRAM_BOT_TOKEN", ""))
+                    ajay_id = os.getenv("AJAY_TELEGRAM_ID", "")
+                    if bot and ajay_id:
+                        bot.send_message(
+                            ajay_id,
+                            f"Maine ek naya skill seekh liya: '{skill_name}'\n\n"
+                            f"Result:\n{output[:3000]}\n\n"
+                            f"Ab jab bhi tu yeh poochega, main ye skill use karungi — dobara banana nahi padega!"
+                        )
+                else:
+                    log.warning("[Brain] Skill creation failed — falling back to AI chat")
+            except Exception as e:
+                log.error(f"[Brain] On-demand skill creation failed: {e}")
+        threading.Thread(target=_create_and_run, daemon=True, name="skill-create").start()
+        return (
+            "Iske liye mere paas abhi koi tool nahi hai, lekin main ek bana rahi hoon! "
+            "Code likha jayega, test hoga, aur save ho jayega — "
+            "agle baar se seedha result milega bina wait ke."
+        )
+
+    def _extract_topic_from_message(self, message: str) -> str:
+        """Extract the story topic from a natural language content request."""
+        msg = message.strip()
+        # Remove common command words to extract the topic
+        for phrase in [
+            "make a video about", "make a video on", "create a video about", "create a reel about",
+            "ek video banao", "video bana do", "story banao", "kahani likho",
+            "YouTube pe post karo", "Instagram pe daal do", "post karo", "upload karo",
+            "for YouTube", "for Instagram", "YouTube short", "Instagram reel",
+            "Riya ke liye", "Aisha ke liye", "riya", "aisha",
+        ]:
+            msg = re.sub(re.escape(phrase), "", msg, flags=re.I).strip()
+        # Remove leading/trailing punctuation
+        msg = msg.strip(".,!?;: ")
+        if len(msg) > 10:
+            return msg
+        return ""
+
+    def _detect_channel_from_message(self, message: str) -> str:
+        """Detect which channel the user wants from natural language."""
+        msg_lower = message.lower()
+        if any(w in msg_lower for w in ["riya", "dark", "bold", "adult", "18+", "hot", "sexy"]):
+            return "Riya's Dark Whisper"
+        return ""  # empty = use default
+
+    def _fire_intent(self, intent: str, user_message: str, is_owner: bool = True) -> Optional[str]:
+        """Execute a detected intent in background. Returns human acknowledgement."""
+        import os
+
+        if not is_owner and intent in (
+            "key_health", "key_update", "self_improve", "file_repair",
+            "block_user", "content_creation", "riya_content",
+            "channel_status", "digest", "queue_status", "code_agent",
+        ):
+            return None
+
         high_risk_intents = ("key_update", "self_improve", "file_repair", "block_user")
         if intent in high_risk_intents:
-            # Check if user message contains the secret code (e.g. "code: aisha-69")
-            # We use a simple case-insensitive search for the code.
             if AISHA_SECRET_CODE.lower() not in user_message.lower():
-                print(f"[Brain] Sensitive intent '{intent}' blocked: Missing secret code.")
-                return None # Fall through to AI chat (Aisha won't execute)
+                log.info(f"[Brain] Sensitive intent '{intent}' blocked: no secret code")
+                return None
 
-        # ── Content creation ──────────────────────────────────────────────────
+        # ── CONTENT CREATION (Aisha channel) ──────────────────────────────
         if intent == "content_creation":
+            topic = self._extract_topic_from_message(user_message)
+            channel = self._detect_channel_from_message(user_message)
+
             def _create():
                 try:
                     from src.agents.antigravity_agent import AntigravityAgent
+                    from src.core.config import PRIMARY_YOUTUBE_CHANNEL
                     agent = AntigravityAgent()
-                    # Detect channel from message
-                    msg_lower = user_message.lower()
-                    if "riya" in msg_lower or "dark" in msg_lower or "romance" in msg_lower:
-                        channel = "Riya's Dark Romance Library"
-                    else:
-                        channel = "Aisha & Him"
-                    job = agent.enqueue_job(topic=user_message, channel=channel)
-                    print(f"[Brain] Content job enqueued: {job.get('id', '?')[:8]}")
+                    ch = channel or PRIMARY_YOUTUBE_CHANNEL
+                    job = agent.enqueue_job(
+                        topic=topic or user_message,
+                        channel=ch,
+                        payload={"render_video": True},
+                    )
+                    log.info(f"[Brain] Content job enqueued: {job.get('id', '?')[:8]} | channel={ch}")
+                    # Process immediately in this thread
+                    result = agent.process_job(job)
+                    log.info(f"[Brain] Content job done: {result.get('post_results', {})}")
                 except Exception as e:
-                    print(f"[Brain] Content creation failed: {e}")
-            threading.Thread(target=_create, daemon=True).start()
+                    log.error(f"[Brain] Content creation failed: {e}")
+            threading.Thread(target=_create, daemon=True, name="content-create").start()
+
+            ch_name = channel or "Story With Aisha"
+            if topic:
+                return (
+                    f"Chal rahi hoon! '{ch_name}' ke liye '{topic}' pe video bana rahi hoon. "
+                    f"Script likha jayega, voice record hogi, video render hoga, aur YouTube + Instagram pe post ho jayega. "
+                    f"Jaise hi live hoga, tujhe bataungi!"
+                )
             return (
-                "Ha bilkul, Ajju! I'm queuing up the content production now. "
-                "I'll pick a topic, write the script, record the voice, render the video, "
-                "and upload it — I'll text you when it's live! 💜🎬"
+                f"Shuru kar rahi hoon! '{ch_name}' ke liye ek trending topic dhundh ke video bana rahi hoon. "
+                f"Script, voice, video, thumbnail — sab karungi aur post karungi. "
+                f"Thoda wait kar, jaise hi ready hoga notify karungi!"
             )
 
-        # ── API key health ────────────────────────────────────────────────────
+        # ── RIYA CONTENT (explicit Riya request) ─────────────────────────
+        if intent == "riya_content":
+            topic = self._extract_topic_from_message(user_message)
+
+            def _create_riya():
+                try:
+                    from src.agents.antigravity_agent import AntigravityAgent
+                    agent = AntigravityAgent()
+                    job = agent.enqueue_job(
+                        topic=topic or user_message,
+                        channel="Riya's Dark Whisper",
+                        payload={"render_video": True},
+                    )
+                    agent.process_job(job)
+                except Exception as e:
+                    log.error(f"[Brain] Riya content failed: {e}")
+            threading.Thread(target=_create_riya, daemon=True, name="riya-create").start()
+
+            if topic:
+                return (
+                    f"Riya mode ON! '{topic}' pe ek bold story likh rahi hoon. "
+                    f"Grok se script aayega, Riya ki voice se record hoga, aur post ho jayega. "
+                    f"Thoda time de, mast content aayega!"
+                )
+            return (
+                "Riya aa gayi! Ek hot trending topic dhundh ke bold story bana rahi hoon. "
+                "Script, voice, video — sab Riya style mein. Jaise hi ready hoga bataungi!"
+            )
+
+        # ── CHANNEL STATUS / ANALYTICS ────────────────────────────────────
+        if intent == "channel_status":
+            def _status():
+                try:
+                    from supabase import create_client
+                    sb = create_client(
+                        os.getenv("SUPABASE_URL", ""),
+                        os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""),
+                    )
+                    # ⚡ Bolt: Performance Optimization
+                    # Added .limit(1) to count="exact" queries to prevent O(N) memory/network overhead
+                    # Reduces response payload from N rows down to 1 row when only the count is needed.
+                    # Expected impact: Faster database responses and significantly reduced memory usage for large tables.
+                    # Count content jobs
+                    total = sb.table("content_jobs").select("id", count="exact").limit(1).execute()
+                    completed = sb.table("content_jobs").select("id", count="exact").eq("status", "completed").limit(1).execute()
+                    # Recent performance
+                    perf = sb.table("content_performance").select("views,likes,platform").order("created_at", desc=True).limit(5).execute()
+                    total_views = sum(r.get("views", 0) or 0 for r in (perf.data or []))
+                    total_likes = sum(r.get("likes", 0) or 0 for r in (perf.data or []))
+
+                    import telebot
+                    bot = telebot.TeleBot(os.getenv("TELEGRAM_BOT_TOKEN", ""))
+                    ajay_id = os.getenv("AJAY_TELEGRAM_ID", "")
+                    if bot and ajay_id:
+                        bot.send_message(ajay_id,
+                            f"Channel Status Report:\n\n"
+                            f"Total content jobs: {total.count or 0}\n"
+                            f"Completed: {completed.count or 0}\n"
+                            f"Recent views (last 5): {total_views}\n"
+                            f"Recent likes (last 5): {total_likes}\n"
+                        )
+                except Exception as e:
+                    log.error(f"[Brain] Channel status failed: {e}")
+            threading.Thread(target=_status, daemon=True).start()
+            return "Channel ka status check kar rahi hoon — abhi report bhejti hoon!"
+
+        # ── DIGEST / REPORT ───────────────────────────────────────────────
+        if intent == "digest":
+            def _digest():
+                try:
+                    from src.core.digest_engine import DigestEngine
+                    from src.memory.memory_manager import MemoryManager
+                    from src.core.ai_router import AIRouter
+                    de = DigestEngine(MemoryManager(), AIRouter())
+                    digest_text = de.generate_daily_digest()
+                    import telebot
+                    bot = telebot.TeleBot(os.getenv("TELEGRAM_BOT_TOKEN", ""))
+                    ajay_id = os.getenv("AJAY_TELEGRAM_ID", "")
+                    if bot and ajay_id:
+                        bot.send_message(ajay_id, digest_text)
+                except Exception as e:
+                    log.error(f"[Brain] Digest failed: {e}")
+            threading.Thread(target=_digest, daemon=True).start()
+            return "Aaj ka digest bana rahi hoon — 30 second mein bhejti hoon!"
+
+        # ── QUEUE STATUS ──────────────────────────────────────────────────
+        if intent == "queue_status":
+            try:
+                from supabase import create_client
+                sb = create_client(
+                    os.getenv("SUPABASE_URL", ""),
+                    os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""),
+                )
+                # ⚡ Bolt: Performance Optimization
+                # Added .limit(3) and .limit(1) to count="exact" queries since the data is only used up to these amounts
+                # (processing data is just counted, queued data only reads up to 3 topics).
+                # This prevents O(N) memory/network overhead from fetching all queued/processing rows when only a few are needed.
+                queued = sb.table("content_jobs").select("id,topic,channel", count="exact").eq("status", "queued").limit(3).execute()
+                processing = sb.table("content_jobs").select("id,topic", count="exact").eq("status", "processing").limit(1).execute()
+                q_count = queued.count or 0
+                p_count = processing.count or 0
+                if q_count == 0 and p_count == 0:
+                    return "Queue bilkul khali hai! Bol, kya banau?"
+                parts = []
+                if p_count > 0:
+                    parts.append(f"{p_count} video abhi process ho rahi hai")
+                if q_count > 0:
+                    topics = [r.get("topic", "?")[:40] for r in (queued.data or [])[:3]]
+                    parts.append(f"{q_count} queue mein hain: {', '.join(topics)}")
+                return " | ".join(parts)
+            except Exception as e:
+                log.error(f"[Brain] Queue status failed: {e}")
+                return None
+
+        # ── KEY HEALTH ────────────────────────────────────────────────────
         if intent == "key_health":
             def _check():
                 try:
-                    from src.core.credential_manager import CredentialManager
-                    cm = CredentialManager()
-                    cm.run_daily_health_check()
+                    from src.core.daily_audit import check_ai_providers
+                    results = check_ai_providers()
+                    import telebot
+                    bot = telebot.TeleBot(os.getenv("TELEGRAM_BOT_TOKEN", ""))
+                    ajay_id = os.getenv("AJAY_TELEGRAM_ID", "")
+                    report = "AI Provider Status:\n\n"
+                    for provider, status in results.items():
+                        icon = "OK" if status == "ok" else "FAIL"
+                        report += f"  {icon} {provider}: {status}\n"
+                    if bot and ajay_id:
+                        bot.send_message(ajay_id, report)
                 except Exception as e:
-                    print(f"[Brain] Key health check failed: {e}")
+                    log.error(f"[Brain] Key health check failed: {e}")
             threading.Thread(target=_check, daemon=True).start()
-            return (
-                "Running a full API key health check now. "
-                "I'll test all providers and send you a report in ~30 seconds! 🔑"
-            )
+            return "Sab AI providers check kar rahi hoon — report abhi aata hai!"
 
-        # ── Key update ────────────────────────────────────────────────────────
+        # ── KEY UPDATE ────────────────────────────────────────────────────
         if intent == "key_update":
-            # Try to extract key name and value from message
             known_prefixes = {
                 "gsk_": "GROQ_API_KEY", "sk-proj-": "OPENAI_API_KEY",
                 "sk-ant-": "ANTHROPIC_API_KEY", "nvapi-": "NVIDIA_KEY_05",
@@ -291,7 +599,6 @@ class AishaBrain:
                     extracted_key = m.group(1).strip(".,;\"'")
                     key_name = name
                     break
-            # Also check for explicit key name in message
             for name in ["GROQ_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY",
                          "ANTHROPIC_API_KEY", "XAI_API_KEY", "ELEVENLABS_API_KEY"]:
                 if name.lower() in user_message.lower() or name.replace("_API_KEY", "").lower() in user_message.lower():
@@ -314,59 +621,56 @@ class AishaBrain:
                             headers=h, timeout=10,
                         )
                         os.environ[key_name] = extracted_key
-                        print(f"[Brain] Key updated via NLP: {key_name}")
+                        log.info(f"[Brain] Key updated: {key_name}")
                     except Exception as e:
-                        print(f"[Brain] Key update failed: {e}")
+                        log.error(f"[Brain] Key update failed: {e}")
                 threading.Thread(target=_update, daemon=True).start()
-                return (
-                    f"Done, Ajju! I've updated `{key_name}` with the new key you gave me. "
-                    f"I'll use it immediately — say `/keyhealth` if you want me to verify it works! 🔑✅"
-                )
-            return None  # Let AI handle the message naturally
-
-        # ── API search ────────────────────────────────────────────────────────
-        if intent == "api_search":
-            # Extract platform name
-            platform_match = re.search(
-                r"(tiktok|twitter|x\.com|facebook|instagram|snapchat|youtube|pinterest|"
-                r"discord|twitch|spotify|reddit|linkedin)\b",
-                user_message, re.I
-            )
-            if platform_match:
-                platform = platform_match.group(1)
-                def _search():
-                    try:
-                        from src.core.api_discovery import APIDiscoveryAgent
-                        APIDiscoveryAgent().notify_ajay_api_setup(platform)
-                    except Exception as e:
-                        print(f"[Brain] API search failed: {e}")
-                threading.Thread(target=_search, daemon=True).start()
-                return (
-                    f"Let me search how to get the {platform.title()} API for you! "
-                    f"I'll send you the signup steps and direct link in a moment. 🔍"
-                )
+                return f"Done! {key_name} update kar diya. Abhi se use karungi!"
             return None
 
-        # ── System check ─────────────────────────────────────────────────────
+        # ── SYSTEM CHECK ──────────────────────────────────────────────────
         if intent == "syscheck":
-            return None  # Fall through to AI — Aisha will answer naturally
+            return None  # Fall through — Aisha answers naturally via AI
 
-        # ── Self-improve ──────────────────────────────────────────────────────
+        # ── SELF-IMPROVE ──────────────────────────────────────────────────
         if intent == "self_improve":
             def _improve():
                 try:
-                    from src.core.self_editor import run_improvement_session
-                    run_improvement_session()
+                    from src.core.self_editor import SelfEditor
+                    SelfEditor().run_improvement_session()
                 except Exception as e:
-                    print(f"[Brain] Self-improve failed: {e}")
+                    log.error(f"[Brain] Self-improve failed: {e}")
             threading.Thread(target=_improve, daemon=True).start()
             return (
-                "Thik hai, Ajju! Triggering my self-improvement session now. "
-                "I'll audit my own code, find something to make better, write the improvement, "
-                "and text you when I'm upgraded! 💪🧠"
+                "Self-improvement session shuru kar rahi hoon! "
+                "Apna code audit karungi, kuch better banaungi, PR create karungi. "
+                "Jaise hi done hoga bataungi!"
             )
 
-        # ── File repair ───────────────────────────────────────────────────────
+        # ── CODE AGENT (multi-file fix/feature, like Claude) ──────────
+        if intent == "code_agent":
+            def _code_task():
+                try:
+                    from src.core.code_agent import CodeAgent
+                    agent = CodeAgent()
+                    result = agent.run_task(user_message, auto_merge=True)
+                    log.info(f"[CodeAgent] Result: {result['status']} | files: {result.get('files_changed', [])}")
+                except Exception as e:
+                    log.error(f"[Brain] Code agent failed: {e}")
+            threading.Thread(target=_code_task, daemon=True, name="code-agent").start()
+            return (
+                "Code agent activate ho gaya! Main ab:\n"
+                "1. Samajh rahi hoon kya fix/add karna hai\n"
+                "2. Related files read karungi\n"
+                "3. Fix generate karungi\n"
+                "4. Test karungi (syntax + import)\n"
+                "5. Multi-file PR banaungi\n"
+                "6. Merge karungi\n"
+                "7. Deploy trigger karungi\n\n"
+                "Jaise hi done hoga Telegram pe report bhejungi!"
+            )
+
+        # ── FILE REPAIR ───────────────────────────────────────────────────
         if intent == "file_repair":
             def _repair():
                 try:
@@ -528,6 +832,47 @@ class AishaBrain:
         # 3. Build dynamic system prompt
         system_prompt = build_system_prompt(context)
 
+        # 3.4. Inject Continuous Awareness (JARVIS Phase 3)
+        # Pull the last 5 minutes of screen context from the sidecar
+        try:
+            if not is_owner:
+                pass # Do not leak screen context to guests
+            else:
+                from datetime import datetime, timedelta, timezone
+                five_mins_ago = datetime.now(timezone.utc) - timedelta(minutes=5)
+                # Get latest 3 unique window logs
+                awareness_res = self.supabase.table("aisha_awareness_logs")\
+                    .select("active_window, screen_text, created_at")\
+                    .eq("sidecar_id", "local-laptop")\
+                    .gte("created_at", five_mins_ago.isoformat())\
+                    .order("created_at", desc=True)\
+                    .limit(3)\
+                    .execute()
+
+                if awareness_res.data:
+                    system_prompt += "\n\n[AWARENESS CONTEXT - What Ajay is looking at right now]:\n"
+                    for entry in awareness_res.data:
+                        ts = entry['created_at'].split('.')[0]
+                        win = entry.get('active_window', 'Unknown App')
+                        text = entry.get('screen_text', '')[:500]
+                        system_prompt += f"[{ts}] Active Window: {win}\n"
+                        if text:
+                            system_prompt += f"Screen Text: {text}...\n"
+                    system_prompt += "\n(Use this context if Ajay says 'look at this', 'what am I doing', or needs help with what's on screen.)\n"
+        except Exception as e:
+            print(f"[Awareness Injection] Error: {e}")
+
+        # 3.5. Inject Vault Knowledge Graph context
+        try:
+            from src.memory.vault_manager import vault
+            # Simple heuristic: inject Ajay's base graph if owner is talking
+            if is_owner:
+                ajay_graph = vault.retrieve_entity_graph("Ajay")
+                if ajay_graph:
+                    system_prompt += f"\n\n[Vault Knowledge Graph - Ajay]:\n{ajay_graph}"
+        except Exception as e:
+            print(f"[Vault Injection] Error: {e}")
+
         # 4. Resolve per-user history and append the incoming message
         history = self._get_user_history(uid, is_owner)
         history.append({"role": "user", "content": user_message})
@@ -613,12 +958,176 @@ class AishaBrain:
                 import subprocess
                 print(f"[Aisha] User requested video production. Launching Crew...")
                 # Start the runner in the background so she can still talk to him
-                subprocess.Popen(["python", "-m", "src.agents.run_youtube", f"--topic={user_message}"], cwd=str(PROJECT_ROOT))
+                import sys as _sys
+                subprocess.Popen([_sys.executable, "-m", "src.agents.run_youtube", f"--topic={user_message}"], cwd=str(PROJECT_ROOT))
                 response_text += "\n\nSure thing, Ajju! 💜 I've just started the production crew on the studio floor. I'll notify you via email and Telegram the moment the first draft is ready for you! 🎬💸"
 
-            # 7. CAPABILITY GAP DETECTION (The "Jules" Research Loop)
+            # 7. AUTONOMOUS SUB-AGENT DELEGATION (JARVIS Upgrade)
+            # Aisha detects if the task is complex and requires specialized help before responding.
+            delegation_triggers = ["research", "analyze", "deep dive", "find out", "calculate"]
+            if any(t in user_message.lower() for t in delegation_triggers):
+                import logging
+                logging.getLogger(__name__).info("[Brain] Complex task detected. Waking up AgentTaskManager...")
+                try:
+                    from src.agents.agent_manager import agent_manager
 
-            # 7. Update History & Save to Supabase
+                    # Determine which agent to use
+                    target_agent = "researcher"
+                    if "analyze" in user_message.lower() or "calculate" in user_message.lower():
+                        target_agent = "analyst"
+
+                    # Delegate the task to the specialized agent
+                    agent_result = agent_manager.delegate(
+                        agent_name=target_agent,
+                        task=user_message,
+                        context={"history": history[-3:]}
+                    )
+
+                    # In a full implementation, Aisha would read agent_result and generate a natural response.
+                    # For this prototype, we only append it if it actually found something useful.
+                    if "Task completed:" in agent_result:
+                        response_text += f"\n\n*(Behind the scenes: My {target_agent.capitalize()} agent found: {agent_result})*"
+                except Exception as e:
+                    print(f"Error calling sub-agent: {e}")
+
+
+            # 8.5. WORKFLOW ENGINE (JARVIS Phase 4)
+            # Detects if user is asking to automate a routine or background script
+            workflow_triggers = ["automate this", "every morning at", "every day", "create a workflow", "schedule a task"]
+            if any(t in user_message.lower() for t in workflow_triggers):
+                if is_owner:
+                    from src.core.workflow_engine import WorkflowEngine
+                    engine = WorkflowEngine(self.supabase, self.ai)
+                    summary = engine.build_from_nl(user_message)
+                    if summary:
+                        response_text += f"\n\n{summary}"
+                else:
+                    response_text += "\n\n*(Guest mode: Workflow automation disabled)*"
+
+            # 8. GOAL ENGINE (JARVIS Phase 4)
+            # Detects if user is setting a new long-term goal
+            goal_triggers = ["i want to achieve", "my goal is to", "set a goal to"]
+            if any(t in user_message.lower() for t in goal_triggers):
+                if is_owner:
+                    from src.core.goal_engine import GoalEngine
+                    engine = GoalEngine(self.supabase, self.ai)
+                    summary = engine.parse_new_goal(user_message)
+                    if summary:
+                        response_text += f"\n\n*(I have set up your new OKR Goal Tracker based on this request:)*\n{summary}"
+                else:
+                    response_text += "\n\n*(Guest mode: Goal tracking disabled)*"
+
+            # 9. OS-LEVEL SIDECAR INTEGRATION (JARVIS Phase 2)
+            # Aisha detects if the user wants to execute a command on their machine.
+            sidecar_triggers = ["on my laptop", "run command", "on my computer"]
+            desktop_triggers = ["what windows", "focus on", "type this"]
+            browser_triggers = ["open website", "go to", "read page", "what tabs"]
+            fs_triggers = ["read my file", "write to file", "what's in my folder", "list directory"]
+
+            if any(t in user_message.lower() for t in fs_triggers):
+                if not is_owner:
+                    return "Sorry, I can only execute local filesystem commands for my owner, Ajay. 🚫"
+
+                from src.api.sidecar_server import sidecar_manager
+                action = "list_dir"
+                args = {}
+
+                # Basic heuristic extraction for prototype
+                if "read" in user_message.lower() or "cat" in user_message.lower():
+                    action = "read_file"
+                    args = {"path": user_message.split()[-1].strip()}
+                elif "write" in user_message.lower():
+                    action = "write_file"
+                    args = {"path": "output.txt", "content": user_message}
+                else:
+                    action = "list_dir"
+                    args = {"path": user_message.split()[-1].strip() if len(user_message.split()) > 3 else "."}
+
+                target_sidecar = "local-laptop"
+                task_id = sidecar_manager.dispatch_command(
+                    sidecar_id=target_sidecar,
+                    command_type="fs_action",
+                    payload={"action": action, "args": args}
+                )
+                if task_id:
+                    response_text += f"\n\n*(I have dispatched a filesystem action [{action}] to your laptop. Awaiting execution...)*"
+
+            elif any(t in user_message.lower() for t in browser_triggers):
+                if not is_owner:
+                    return "Sorry, I can only control the local browser for my owner, Ajay. 🚫"
+
+                from src.api.sidecar_server import sidecar_manager
+                action = "navigate"
+                args = {}
+                if "what tabs" in user_message.lower():
+                    action = "list_tabs"
+                elif "read page" in user_message.lower():
+                    action = "extract_text"
+                else:
+                    words = user_message.split()
+                    url = next((w for w in words if "http" in w or ".com" in w), "https://google.com")
+                    args = {"url": url}
+
+                target_sidecar = "local-laptop"
+                task_id = sidecar_manager.dispatch_command(
+                    sidecar_id=target_sidecar,
+                    command_type="browser_action",
+                    payload={"action": action, "args": args}
+                )
+                if task_id:
+                    response_text += f"\n\n*(I have dispatched a browser action [{action}] to your laptop. Awaiting execution...)*"
+
+            elif any(t in user_message.lower() for t in desktop_triggers):
+                if not is_owner:
+                    return "Sorry, I can only control the local desktop for my owner, Ajay. 🚫"
+
+                from src.api.sidecar_server import sidecar_manager
+                action = "list_windows"
+                args = {}
+                if "focus" in user_message.lower():
+                    action = "focus_window"
+                    args = {"title": user_message.split("focus on")[-1].strip()}
+                elif "type" in user_message.lower():
+                    action = "type_text"
+                    args = {"text": user_message.split("type")[-1].strip()}
+
+                target_sidecar = "local-laptop"
+                task_id = sidecar_manager.dispatch_command(
+                    sidecar_id=target_sidecar,
+                    command_type="desktop_action",
+                    payload={"action": action, "args": args}
+                )
+                if task_id:
+                    response_text += f"\n\n*(I have dispatched a desktop action [{action}] to your laptop. Awaiting execution...)*"
+
+            elif any(t in user_message.lower() for t in sidecar_triggers):
+                if not is_owner:
+                    return "Sorry, I can only execute local shell commands for my owner, Ajay. 🚫"
+
+                from src.api.sidecar_server import sidecar_manager
+                intent_prompt = f"""
+                The user wants to execute a command on their local laptop.
+                User Request: {user_message}
+
+                If you understand the exact terminal/shell command they want to run, reply with ONLY the exact command.
+                For example: "open https://google.com" or "ls -la"
+                If you are unsure or the request is dangerous, reply with "NONE".
+                """
+                cmd_result = self.ai.generate(system_prompt="You are a strict command translator.", user_message=intent_prompt)
+
+                if cmd_result and cmd_result.text.strip() != "NONE":
+                    target_sidecar = "local-laptop"
+                    task_id = sidecar_manager.dispatch_command(
+                        sidecar_id=target_sidecar,
+                        command_type="shell_exec",
+                        payload={"command": cmd_result.text.strip()}
+                    )
+                    if task_id:
+                        response_text += f"\n\n*(I have dispatched the command `{cmd_result.text.strip()}` to your laptop. Awaiting execution...)*"
+
+            # 10. CAPABILITY GAP DETECTION (The "Jules" Research Loop)
+
+            # 9. Update History & Save to Supabase
             history.append({"role": "assistant", "content": response_text})
 
             # Persist to DB — guest turns are tagged with their user_id so they
@@ -705,53 +1214,74 @@ class AishaBrain:
 
 
 
+
     def _auto_extract_memory(self, user_msg: str, aisha_reply: str):
         """
-        Auto-detect important information in the conversation and save to memory.
-        Enhanced with an LLM prompt to dynamically parse context into JSON!
+        JARVIS Upgrade (Feature 1.3): Auto-detect entities, facts, and relationships
+        and store them in the structured Knowledge Graph Vault.
         """
         try:
             extraction_prompt = f"""
-            Analyze the following message from Ajay and Aisha's reply.
+            Analyze the following conversation:
             Ajay: {user_msg}
             Aisha: {aisha_reply}
             
-            Does this conversation contain important new long-term information about Ajay's life, goals, finances, preferences, or significant events that Aisha should remember forever?
-            If YES, extract it in the following strictly valid JSON format:
+            Does this conversation contain important long-term factual information about Ajay, people he knows, places, or his projects?
+            If YES, extract it into this strict JSON format for a Knowledge Graph:
             {{
                 "extract": true,
-                "category": "finance" | "goal" | "preference" | "event" | "other",
-                "title": "Short descriptive title",
-                "content": "Detailed description of what Ajay said and any plans discussed",
-                "importance": 1-5,
-                "tags": ["list", "of", "relevant", "string", "tags"]
+                "entities": [
+                    {{"name": "Entity Name", "type": "person|place|project|concept", "description": "Brief description"}}
+                ],
+                "facts": [
+                    {{"entity_name": "Entity Name", "entity_type": "type", "fact": "The factual statement"}}
+                ],
+                "relationships": [
+                    {{"source": "Entity 1", "source_type": "type", "target": "Entity 2", "target_type": "type", "relation": "e.g., likes, owns, works_at"}}
+                ]
             }}
-            If NO important new standalone information is present, return:
+            If NO important standalone facts are present, return:
             {{ "extract": false }}
             
             Return ONLY valid JSON. No backticks.
             """
             import re
             import json
-            # Ask the router to generate the extraction data
+            from src.memory.vault_manager import vault
+
             result = self.ai.generate(
-                system_prompt="You are an expert JSON parser.", 
+                system_prompt="You are an expert JSON parser and Knowledge Graph extractor.",
                 user_message=extraction_prompt
             )
             match = re.search(r'\{.*\}', result.text, re.DOTALL)
             if match:
                 data = json.loads(match.group(0))
                 if data.get("extract"):
+                    # Extract Facts
+                    for fact in data.get("facts", []):
+                        vault.add_fact(fact["entity_name"], fact["entity_type"], fact["fact"])
+
+                    # Extract Relationships
+                    for rel in data.get("relationships", []):
+                        vault.add_relationship(
+                            rel["source"], rel["source_type"],
+                            rel["target"], rel["target_type"],
+                            rel["relation"]
+                        )
+
+                    # Backward Compatibility: Also save the legacy text memory so existing UI features don't break
                     from datetime import datetime
                     self.memory.save_memory(
-                        category=data.get("category", "other"),
-                        title=f"{data.get('title', 'Memory')} - {datetime.now().strftime('%d %b %Y')}",
-                        content=data.get("content", f"Ajay said: {user_msg[:300]}"),
-                        importance=data.get("importance", 3),
-                        tags=data.get("tags", ["auto-extracted"])
+                        category="other",
+                        title=f"Extracted Vault Memory - {datetime.now().strftime('%d %b %Y')}",
+                        content=json.dumps(data, indent=2),
+                        importance=3,
+                        tags=["auto-extracted", "vault"]
                     )
+
+                    print(f"[Vault] Extracted facts and entities from conversation and updated legacy memory.")
         except Exception as e:
-            print(f"[Memory Extraction LLM] Error: {e}")
+            print(f"[Vault Extraction LLM] Error: {e}")
 
     def reset_session(self, caller_id: Optional[int] = None):
         """Clear in-memory conversation history for a specific user (or all users).

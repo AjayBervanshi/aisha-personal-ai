@@ -69,7 +69,9 @@ def extract_scene_descriptions(script: str, channel: str, num_scenes: int = 7) -
         style = "Cinematic Noir, moody lighting" if "Riya" in channel else "Warm golden hour, natural lighting"
         prompt = f"Extract exactly {num_scenes} distinct scene descriptions from this script. They should be standalone prompts for an image generator. Format as a pure JSON list of strings. No markdown backticks. Script: {script[:2000]}"
         result = ai.generate(system_prompt="You are an expert AI image prompt engineer. Return ONLY a valid JSON list.", user_message=prompt, nvidia_task_type="writing")
-        match = re.search(r'\[.*?\]', result.text, re.DOTALL)
+        import json
+        import re
+        match = re.search(r'\[.*?\]', result, re.DOTALL)
         if match:
             scenes = json.loads(match.group(0))
             return [f"{s}. Style: {style}. Ultra HD, cinematic." for s in scenes[:num_scenes]]
@@ -293,9 +295,15 @@ def render_video(
     log.info(f"[VideoEngine] Rendering {settings.format} ({width}×{height}) for '{channel}': {topic}")
 
     try:
-        # Load audio and get duration
         audio = AudioFileClip(voice_path)
         total_duration = audio.duration
+        if not total_duration or total_duration <= 0:
+            log.error("[VideoEngine] Audio file has no duration — cannot render video")
+            try:
+                audio.close()
+            except Exception:
+                pass
+            return None
         log.info(f"[VideoEngine] Audio duration: {total_duration:.1f}s")
 
         # Step 1: Extract scene descriptions

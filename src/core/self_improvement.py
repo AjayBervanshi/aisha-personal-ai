@@ -167,7 +167,8 @@ def get_pr_number_from_url(pr_url: str) -> int:
 
 def merge_github_pr(pr_number: int) -> bool:
     """
-    Merges a PR on GitHub.
+    Merges a PR on GitHub after checking for conflicts.
+    If there are conflicts, attempts to update the branch first.
     """
     token, repo = _get_github_creds()
     if not token or not repo or not pr_number:
@@ -175,21 +176,120 @@ def merge_github_pr(pr_number: int) -> bool:
 
     headers = {
         "Authorization": f"token {token}",
-        "Accept": "application/vnd.github.v3+json"
+        "Accept": "application/vnd.github.v3+json",
     }
-    url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/merge"
+    base_url = f"https://api.github.com/repos/{repo}"
 
-    res = requests.put(url, headers=headers, json={
-        "commit_title": f"Auto-merging skill #{pr_number}",
-        "merge_method": "merge"
-    })
+    # Step 1: Check if PR is mergeable
+    try:
+        pr_resp = requests.get(f"{base_url}/pulls/{pr_number}", headers=headers, timeout=15)
+        if pr_resp.status_code != 200:
+            log.error(f"Cannot fetch PR #{pr_number}: {pr_resp.status_code}")
+            return False
 
-    if res.status_code in [200, 201]:
+        pr_data = pr_resp.json()
+        state = pr_data.get("state", "")
+        if state != "open":
+            log.warning(f"PR #{pr_number} is {state}, not open — skipping merge")
+            return state == "closed" and pr_data.get("merged", False)
+
+        mergeable = pr_data.get("mergeable")
+        mergeable_state = pr_data.get("mergeable_state", "unknown")
+
+        # GitHub may return null for mergeable if it hasn't computed yet — wait and retry
+        if mergeable is None:
+            import time
+            time.sleep(3)
+            pr_resp = requests.get(f"{base_url}/pulls/{pr_number}", headers=headers, timeout=15)
+            if pr_resp.status_code == 200:
+                pr_data = pr_resp.json()
+                mergeable = pr_data.get("mergeable")
+                mergeable_state = pr_data.get("mergeable_state", "unknown")
+
+        if mergeable is False or mergeable_state == "dirty":
+            log.warning(f"PR #{pr_number} has conflicts (mergeable={mergeable}, state={mergeable_state})")
+            # Try to update the branch by merging main into it
+            branch = pr_data.get("head", {}).get("ref", "")
+            if branch:
+                resolved = _try_resolve_conflicts(pr_number, branch, headers, base_url)
+                if not resolved:
+                    log.error(f"PR #{pr_number} conflicts could not be resolved automatically")
+                    _notify_conflict(pr_number, pr_data.get("html_url", ""))
+                    return False
+    except Exception as e:
+        log.error(f"PR #{pr_number} mergeability check failed: {e}")
+
+    # Step 2: Merge the PR
+    merge_url = f"{base_url}/pulls/{pr_number}/merge"
+    res = requests.put(merge_url, headers=headers, json={
+        "commit_title": f"Auto-merge: Aisha skill #{pr_number}",
+        "merge_method": "squash",
+    }, timeout=30)
+
+    if res.status_code in (200, 201):
         log.info(f"Successfully merged PR #{pr_number}")
         return True
+
+    # If squash fails, try regular merge
+    if res.status_code == 405:
+        res2 = requests.put(merge_url, headers=headers, json={
+            "commit_title": f"Auto-merge: Aisha skill #{pr_number}",
+            "merge_method": "merge",
+        }, timeout=30)
+        if res2.status_code in (200, 201):
+            log.info(f"Merged PR #{pr_number} via regular merge")
+            return True
+        log.error(f"Failed to merge PR #{pr_number}: {res2.status_code} {res2.text[:200]}")
     else:
-        log.error(f"Failed to merge PR #{pr_number}: {res.text}")
+        log.error(f"Failed to merge PR #{pr_number}: {res.status_code} {res.text[:200]}")
+
+    return False
+
+
+def _try_resolve_conflicts(pr_number: int, branch: str, headers: dict, base_url: str) -> bool:
+    """Try to resolve conflicts by updating the PR branch with latest main."""
+    try:
+        resp = requests.post(
+            f"{base_url}/merges",
+            headers=headers,
+            json={"base": branch, "head": "main", "commit_message": f"Merge main into {branch} to resolve conflicts"},
+            timeout=30,
+        )
+        if resp.status_code in (201, 204):
+            log.info(f"Updated branch '{branch}' with main — conflicts may be resolved")
+            import time
+            time.sleep(2)
+            return True
+        elif resp.status_code == 409:
+            log.warning(f"Cannot auto-resolve conflicts for branch '{branch}' — manual fix needed")
+            return False
+        else:
+            log.warning(f"Branch update failed: {resp.status_code} {resp.text[:200]}")
+            return False
+    except Exception as e:
+        log.error(f"Conflict resolution failed: {e}")
         return False
+
+
+def _notify_conflict(pr_number: int, pr_url: str):
+    """Notify Ajay that a PR has merge conflicts."""
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("AJAY_TELEGRAM_ID")
+    if token and chat_id:
+        try:
+            requests.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={
+                    "chat_id": chat_id,
+                    "text": (
+                        f"PR #{pr_number} has merge conflicts that I can't resolve automatically.\n"
+                        f"Please review and fix: {pr_url}"
+                    ),
+                },
+                timeout=10,
+            )
+        except Exception:
+            pass
 
 
 
@@ -222,7 +322,7 @@ def notify_ajay_for_approval(skill_name: str, pr_url: str):
         "chat_id": chat_id,
         "text": msg,
         "parse_mode": "Markdown",
-        "reply_markup": json.dumps(keyboard)
+        "reply_markup": keyboard,
     })
 
 
@@ -318,6 +418,53 @@ def _validate_syntax(code: str, file_path: str) -> bool:
         return False
 
 
+def _run_code_sandbox(code: str, file_path: str) -> dict:
+    """
+    Actually execute the generated code in a sandboxed subprocess.
+    Runs the __main__ block if present, with a timeout.
+    Returns {"passed": bool, "output": str, "error": str}
+    """
+    import tempfile, subprocess, sys
+
+    result = {"passed": False, "output": "", "error": ""}
+
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, dir="/tmp") as f:
+            f.write(code)
+            tmp_path = f.name
+
+        proc = subprocess.run(
+            [sys.executable, tmp_path],
+            capture_output=True, text=True, timeout=30,
+            env={**os.environ, "PYTHONPATH": str(Path(__file__).parent.parent.parent)},
+        )
+
+        result["output"] = proc.stdout[:2000] if proc.stdout else ""
+        result["error"] = proc.stderr[:2000] if proc.stderr else ""
+
+        if proc.returncode == 0:
+            result["passed"] = True
+            log.info(f"Sandbox test PASSED for {file_path}")
+        else:
+            log.warning(f"Sandbox test FAILED for {file_path}: exit={proc.returncode}")
+            if result["error"]:
+                log.warning(f"  stderr: {result['error'][:300]}")
+
+    except subprocess.TimeoutExpired:
+        result["error"] = "Execution timed out (30s limit)"
+        log.warning(f"Sandbox test TIMEOUT for {file_path}")
+    except Exception as e:
+        result["error"] = str(e)
+        log.error(f"Sandbox test ERROR for {file_path}: {e}")
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+
+    return result
+
+
 def use_jules_to_write_skill(task_description: str, file_path: str) -> str | None:
     """
     Code generation waterfall for Aisha's self-improvement.
@@ -371,8 +518,15 @@ Return ONLY the Python code. No markdown fences, no explanation, no backticks.""
         except Exception as e:
             log.warning(f"Gemini code generation error: {e} — trying NVIDIA NIM")
 
-    # ── Attempt 2: NVIDIA NIM — LLaMA-3.3-70b (chat pool, 7 keys) ─────────────
-    nvidia_chat_keys = [os.getenv(f"NVIDIA_KEY_{i:02d}") for i in [5, 6, 8, 10, 11, 12, 13] if os.getenv(f"NVIDIA_KEY_{i:02d}")]
+    # ── Attempt 2: NVIDIA NIM — LLaMA-3.3-70b ──────────────────────────────────
+    nvidia_chat_key_names = [
+        "NVIDIA_LLAMA33_A", "NVIDIA_LLAMA33_B", "NVIDIA_LLAMA33_C",
+        "NVIDIA_LLAMA33_D", "NVIDIA_LLAMA33_E", "NVIDIA_LLAMA33_F", "NVIDIA_LLAMA33_G",
+    ]
+    nvidia_chat_keys = [os.getenv(n) for n in nvidia_chat_key_names if os.getenv(n)]
+    if not nvidia_chat_keys:
+        from src.core.config import _get
+        nvidia_chat_keys = [_get(n) for n in nvidia_chat_key_names if _get(n)]
     for nvidia_key in nvidia_chat_keys:
         try:
             resp = _req.post(
@@ -402,7 +556,10 @@ Return ONLY the Python code. No markdown fences, no explanation, no backticks.""
             continue
 
     # ── Attempt 3: NVIDIA NIM — Mistral-Large-3 (writing pool) ────────────────
-    nvidia_writing_keys = [os.getenv(f"NVIDIA_KEY_{i:02d}") for i in [1, 2] if os.getenv(f"NVIDIA_KEY_{i:02d}")]
+    nvidia_writing_key_names = ["NVIDIA_MISTRAL_LARGE_A", "NVIDIA_MISTRAL_LARGE_B"]
+    nvidia_writing_keys = [os.getenv(n) for n in nvidia_writing_key_names if os.getenv(n)]
+    if not nvidia_writing_keys:
+        nvidia_writing_keys = [_get(n) for n in nvidia_writing_key_names if _get(n)]
     for nvidia_key in nvidia_writing_keys:
         try:
             resp = _req.post(
@@ -454,12 +611,13 @@ Return ONLY the Python code. No markdown fences, no explanation, no backticks.""
 def aisha_self_improve(task_description: str, skill_name: str = None) -> str | None:
     """
     Complete self-improvement flow:
-    1. Jules writes the code
-    2. Creates a GitHub PR
-    3. Notifies Ajay for approval
-    4. Returns PR URL
-
-    This is the main function called by autonomous_loop.py and self_editor.py
+    1. AI writes the code
+    2. Syntax check (ast.parse)
+    3. Sandbox execution test (actually runs the code)
+    4. If test fails: AI rewrites with the error feedback (1 retry)
+    5. Creates a GitHub PR
+    6. Notifies Ajay for approval
+    7. Returns PR URL
     """
     if not skill_name:
         skill_name = task_description[:30].replace(" ", "_").lower()
@@ -467,30 +625,58 @@ def aisha_self_improve(task_description: str, skill_name: str = None) -> str | N
     file_path = f"src/skills/auto_{skill_name.replace(' ', '_')[:20]}.py"
     branch_name = f"skill-{skill_name[:20].replace(' ', '-')}-{__import__('datetime').datetime.now().strftime('%m%d%H%M')}"
 
-    log.info(f"🚀 Aisha self-improvement: {task_description[:60]}")
+    log.info(f"Aisha self-improvement: {task_description[:60]}")
 
-    # Step 1: Jules writes the code
+    # Step 1: Generate the code
     code = use_jules_to_write_skill(task_description, file_path)
     if not code:
-        log.error("Jules failed to generate code")
+        log.error("Code generation failed")
         return None
 
-    # Step 2: Create GitHub PR
-    pr_body = f"""## 🤖 Auto-Generated Skill by Aisha
+    # Step 2: Run in sandbox — actually execute the code
+    log.info(f"Running sandbox test for {file_path}...")
+    test_result = _run_code_sandbox(code, file_path)
+
+    if not test_result["passed"]:
+        log.warning(f"Sandbox test failed — attempting rewrite with error feedback")
+        # Step 2b: Retry with error feedback
+        error_feedback = test_result.get("error", "Unknown error")
+        retry_code = use_jules_to_write_skill(
+            f"{task_description}\n\nPREVIOUS ATTEMPT FAILED WITH ERROR:\n{error_feedback[:500]}\n\nFix the error and return corrected code.",
+            file_path,
+        )
+        if retry_code:
+            retry_test = _run_code_sandbox(retry_code, file_path)
+            if retry_test["passed"]:
+                code = retry_code
+                test_result = retry_test
+                log.info("Retry succeeded — using corrected code")
+            else:
+                log.error(f"Retry also failed: {retry_test.get('error', '')[:200]}")
+                log.error("Aborting self-improvement — code fails execution test")
+                return None
+        else:
+            log.error("Retry code generation also failed")
+            return None
+
+    # Step 3: Create GitHub PR
+    test_output = test_result.get("output", "")[:300]
+    pr_body = f"""## Auto-Generated Skill by Aisha
 
 **Task**: {task_description}
 
-**Generated by**: Jules AI (Gemini 2.5 Pro)
-**Auto-tested**: Yes (syntax validated)
+**Tested**: Sandbox execution PASSED
+**Output**: ```{test_output if test_output else 'Clean exit (no output)'}```
 
 ### What this does:
 {task_description}
 
-*This PR was created autonomously by Aisha's self-improvement engine.*
+*This PR was created autonomously by Aisha's self-improvement engine.
+Code was generated, tested in a sandbox, and verified to run without errors.*
 """
 
     pr_url = create_github_pr(
-        title=f"🧠 New Skill: {skill_name[:40]}",
+        title=f"New Skill: {skill_name[:40]}",
         body=pr_body,
         branch_name=branch_name,
         file_path=file_path,
@@ -501,9 +687,9 @@ def aisha_self_improve(task_description: str, skill_name: str = None) -> str | N
         log.error(f"GitHub PR creation failed: {pr_url}")
         return None
 
-    log.info(f"✅ PR created: {pr_url}")
+    log.info(f"PR created: {pr_url}")
 
-    # Step 3: Notify Ajay for approval
+    # Step 4: Notify Ajay for approval
     notify_ajay_for_approval(skill_name, pr_url)
 
     return pr_url

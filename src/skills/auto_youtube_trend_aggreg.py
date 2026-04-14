@@ -1,12 +1,8 @@
 import logging
 import os
-from datetime import datetime, timedelta
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from google.oauth2 import service_account
 from google.cloud import bigquery
-from google.cloud.bigquery import Client
-import json
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

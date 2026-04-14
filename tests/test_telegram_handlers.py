@@ -15,8 +15,8 @@ with patch('os.getenv') as mock_getenv:
     mock_getenv.side_effect = side_effect
 
     import sys
-sys.modules['supabase'] = MagicMock()
-with patch('src.core.aisha_brain.create_client'):
+    sys.modules['supabase'] = MagicMock()
+    with patch('src.core.aisha_brain.create_client'):
         with patch('src.telegram.bot.telebot'):
             with patch('src.telegram.bot.AishaBrain'):
                 with patch('src.telegram.bot.create_client'):

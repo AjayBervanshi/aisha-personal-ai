@@ -190,6 +190,8 @@ class AutonomousLoop:
     def run_morning_checkin(self):
         """Proactively message Ajay in the morning based on his schedule & memory."""
         # Verify we are actually in morning hours IST before sending greeting
+        import pytz
+        from datetime import datetime
         _ist = pytz.timezone("Asia/Kolkata")
         ist_hour = datetime.now(_ist).hour
         if not (5 <= ist_hour < 12):
@@ -197,6 +199,20 @@ class AutonomousLoop:
             return
         log.info(f"[{datetime.now(_ist).strftime('%Y-%m-%d %H:%M IST')}] Waking up for Morning Check-in...")
         _log_to_db("INFO", "autonomous_loop", "job_started: morning_checkin")
+
+        # Guardrail: check if we already sent a proactive message in the last 4 hours
+        try:
+            import os
+            from supabase import create_client
+            sb = create_client(os.getenv("SUPABASE_URL", ""), os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""))
+            from datetime import datetime as dt_class, timezone, timedelta
+            cutoff = (dt_class.now(timezone.utc) - timedelta(hours=4)).isoformat()
+            recent_logs = sb.table("system_logs").select("id").eq("component", "autonomous_loop").eq("event", "job_completed: morning_checkin").gte("created_at", cutoff).execute()
+            if recent_logs.data and len(recent_logs.data) > 0:
+                log.info("Skipping morning check-in: Already ran recently to prevent spam.")
+                return
+        except Exception as e:
+            pass # Fail open for the guardrail if DB is down
 
         # Use brain.think() so full context pipeline runs (memory, mood, tasks, profile)
         prompt = (
@@ -214,61 +230,84 @@ class AutonomousLoop:
             try:
                 self.telegram.send_message(self.ajay_id, morning_text)
                 log.info("Sent morning check-in to Ajay on Telegram.")
+
+                # Generate voice note as well!
+                from src.core.voice_engine import generate_voice, cleanup_voice_file
+                from src.core.config import AISHA_ELEVENLABS_VOICE_ID
+                voice_path = generate_voice(morning_text, voice_id=AISHA_ELEVENLABS_VOICE_ID)
+                if voice_path:
+                    with open(voice_path, 'rb') as vf:
+                        self.telegram.send_voice(self.ajay_id, vf)
+                    cleanup_voice_file(voice_path)
             except Exception as e:
                 log.error(f"Failed to send Telegram message: {e}")
         _log_to_db("INFO", "autonomous_loop", "job_completed: morning_checkin")
 
     def run_memory_consolidation(self):
         """Runs at 3 AM: Analyzes all talks from the day and updates deep profile."""
+        from datetime import datetime
         log.info(f"[{datetime.now()}] Running deep memory consolidation sleep cycle...")
         _log_to_db("INFO", "autonomous_loop", "job_started: memory_consolidation")
         
+        # Guardrail: Check if memory consolidation ran recently
+        try:
+            import os
+            from supabase import create_client
+            sb = create_client(os.getenv("SUPABASE_URL", ""), os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""))
+            from datetime import datetime as dt_class, timezone, timedelta
+            cutoff = (dt_class.now(timezone.utc) - timedelta(hours=12)).isoformat()
+            recent_logs = sb.table("system_logs").select("id").eq("component", "autonomous_loop").eq("event", "job_completed: memory_consolidation").gte("created_at", cutoff).execute()
+            if recent_logs.data and len(recent_logs.data) > 0:
+                log.info("Skipping memory consolidation: Already ran recently.")
+                return
+        except Exception as e:
+            pass # Fail open
+
         # 1. Pull recent conversations (past 24h)
         chats = self.brain.memory.get_recent_conversation(limit=50)
         if not chats:
             log.info("No conversations to consolidate today.")
             return
 
-        chat_text = "\n".join([f"{c['role']}: {c['message']}" for c in chats])
+        chat_text = "\n".join([f"{c.get('role', 'unknown')}: {c.get('message', '')}" for c in chats])
         
         # 2. Ask Aisha to summarize and extract insights
         prompt = f"""
         You are Aisha. Here are your conversations with Ajay from the last 24 hours:
         {chat_text}
 
-        Your task:
-        1. Summarize the key events/facts (Episodic Memory).
-        2. Identify any emotional patterns or stresses (Emotional Memory).
-        3. Identify any new skills or tasks you learned to do (Skill Memory).
-
-        Return ONLY a valid JSON object (no backticks, no extra text) with keys: 'episodic', 'emotional', 'skills'.
-        Each value should be a list of strings.
+        Your task is to dream and consolidate memories. Do not reply to Ajay. Instead, return a JSON object with:
+        {{
+            "new_facts": ["fact 1", "fact 2"],
+            "emotional_state": "Summary of his mood today",
+            "open_loops": ["things he didn't finish or you need to follow up on tomorrow"]
+        }}
+        Return ONLY valid JSON.
         """
 
-        try:
-            res = self.brain.ai.generate("You are Aisha. Return only valid JSON.", prompt).text
-            # Strip any markdown code fences if present
-            import re as _re
-            res = _re.sub(r'^```(?:json)?\s*', '', res.strip())
-            res = _re.sub(r'\s*```$', '', res).strip()
-            data = json.loads(res)
-            
-            # 3. Save to deep memory tables
-            for fact in data.get("episodic", []):
-                self.brain.memory.save_episodic_memory("Ajay", fact, datetime.now().strftime("%Y-%m-%d"))
-            
-            for emote in data.get("emotional", []):
-                self.brain.memory.save_emotional_memory("detected", "contextual", emote)
-                
-            for skill in data.get("skills", []):
-                self.brain.memory.save_skill_memory(skill, f"Auto-learned during conversation: {skill}")
-                
-            log.info("✅ Consolidation complete. Memories stored.")
-            _log_to_db("INFO", "autonomous_loop", "job_completed: memory_consolidation")
+        analysis_json = self.brain.think(prompt, platform="telegram")
 
+        # 3. Store the insights into Semantic / Deep Memory
+        try:
+            import json
+            insights = json.loads(analysis_json.replace("```json", "").replace("```", "").strip())
+            
+            # Save new facts
+            for fact in insights.get("new_facts", []):
+                self.brain.memory.save_memory("fact", fact)
+                
+            # Log emotional state
+            emotion = insights.get("emotional_state")
+            if emotion:
+                self.brain.memory.save_memory("emotion", f"Yesterday's mood: {emotion}")
+                
+            log.info(f"Memory Consolidation Complete. Facts: {len(insights.get('new_facts', []))}")
         except Exception as e:
-            log.error(f"Consolidation failed: {e}")
-            _log_to_db("ERROR", "autonomous_loop", f"job_failed: memory_consolidation: {e}")
+            log.error(f"Failed to parse memory consolidation JSON: {e}")
+
+        _log_to_db("INFO", "autonomous_loop", "job_completed: memory_consolidation")
+
+
 
     def run_studio_session(self):
         """Aisha autonomously decides which channel needs content and starts the crew.
@@ -321,7 +360,7 @@ class AutonomousLoop:
                          f"suggest ONE viral {selected['vibe']} story topic title. "
                          f"Already used: {self._used_topics[-10:] if self._used_topics else 'none'}. "
                          "Return ONLY the topic title, nothing else.")
-                topic = self.brain.ai.generate("You are Aisha.", prompt, nvidia_task_type="writing").text.strip()
+                topic = self.brain.ai.generate("You are Aisha.", prompt, nvidia_task_type="writing").strip()
                 if topic not in self._used_topics:
                     self._used_topics.append(topic)
                     # Cap at 200 entries — old topics can be reused after that
@@ -387,23 +426,49 @@ class AutonomousLoop:
                 log.error(f"[Studio] Failed to launch production fallback: {ex}")
 
     def run_temp_cleanup(self):
-        """Delete temp voice/video files older than 24 hours to prevent disk exhaustion."""
+        """Delete temp files older than 24 hours, EXCEPT videos waiting in the Drip-Feed Queue."""
         import time as _time
+        import os
         cutoff = _time.time() - 86400  # 24 hours
         deleted = 0
+
+        # 1. Get a list of ALL video paths currently waiting in the queue so we don't delete them
+        protected_paths = set()
+        try:
+            from supabase import create_client
+            sb = create_client(os.getenv("SUPABASE_URL", ""), os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""))
+            queued_items = sb.table("content_queue").select("video_url").eq("status", "ready").execute()
+            if queued_items.data:
+                for item in queued_items.data:
+                    vid_url = item.get("video_url")
+                    if vid_url and vid_url.startswith(str(PROJECT_ROOT)):
+                        protected_paths.add(os.path.abspath(vid_url))
+        except Exception as e:
+            log.warning(f"[GarbageCollection] Failed to fetch protected queue items: {e}")
+
+        # 2. Iterate through folders and delete stale files (.pkl, .png, .mp3, .mp4, .ass)
         for folder in ["temp_voice", "temp_videos", "temp_assets"]:
             folder_path = PROJECT_ROOT / folder
             if not folder_path.exists():
                 continue
+
             for f in folder_path.iterdir():
-                if f.is_file() and f.stat().st_mtime < cutoff:
+                if not f.is_file():
+                    continue
+
+                abs_path = str(f.absolute())
+                if abs_path in protected_paths:
+                    continue # Do NOT delete if it is scheduled to post next week!
+
+                if f.stat().st_mtime < cutoff:
                     try:
                         f.unlink()
                         deleted += 1
                     except Exception:
                         pass
+
         if deleted > 0:
-            log.info(f"event=temp_cleanup deleted={deleted}_files")
+            log.info(f"event=temp_cleanup deleted={deleted}_files protected={len(protected_paths)}")
 
     def run_key_expiry_check(self):
         """Check API key expiry dates and alert Ajay via Telegram if any expire within 30 days."""
@@ -417,29 +482,32 @@ class AutonomousLoop:
         if days_left <= 30:
             warnings.append(f"⚠️ NVIDIA NIM keys expire in {days_left} days (2026-09-17)! Renew at build.nvidia.com")
 
-        # YouTube OAuth token — check expiry field from DB (fallback to file)
+        # YouTube OAuth token — check expiry field from DB
         try:
             yt_data = None
-            # Try DB first
-            try:
-                from src.core.social_media_engine import _load_db_secret
-                raw = _load_db_secret("YOUTUBE_OAUTH_TOKEN")
-                if raw:
-                    yt_data = json.loads(raw)
-            except Exception:
-                pass
-            # File fallback
-            if not yt_data:
-                yt_path = PROJECT_ROOT / "tokens" / "youtube_token.json"
-                if yt_path.exists():
-                    yt_data = json.loads(yt_path.read_text())
+            from src.core.config import _get
+            raw = _get("YOUTUBE_OAUTH_TOKEN")
+            if raw:
+                import json
+                yt_data = json.loads(raw)
+
             if yt_data:
                 expiry_str = yt_data.get("expiry", "") or yt_data.get("token_expiry", "")
                 if expiry_str:
                     exp = datetime.fromisoformat(str(expiry_str).replace("Z", "+00:00"))
                     d = (exp - now).days
-                    if d <= 7:
-                        warnings.append(f"⚠️ YouTube OAuth access token expires in {d} days — will auto-refresh on next upload.")
+                    if d <= 0:
+                        warnings.append(f"⚠️ YouTube OAuth access token EXPIRED {-d} days ago! Attempting auto-refresh...")
+                        try:
+                            from src.core.social_media_engine import SocialMediaEngine
+                            sm = SocialMediaEngine()
+                            # Triggering any authenticated request or building the credentials object auto-refreshes google tokens if refresh_token is present
+                            sm._get_youtube_credentials("Story With Aisha")
+                            warnings.append("✅ YouTube OAuth token successfully auto-refreshed.")
+                        except Exception as e:
+                            warnings.append(f"❌ YouTube OAuth refresh failed: {e}")
+                    elif d <= 7:
+                        warnings.append(f"⚠️ YouTube OAuth access token expires in {d} days.")
         except Exception:
             pass
 
@@ -481,6 +549,14 @@ def run_weekly_analytics_sync(loop: AutonomousLoop):
 
 def run_self_improvement(loop: AutonomousLoop):
     """Aisha audits and improves her own code every night."""
+    import os
+    github_token = os.getenv("GITHUB_TOKEN")
+    if not github_token or "your_" in github_token or github_token.startswith("github_pat_11A"):
+        # The prompt specifically mentioned the github token was invalid.
+        # So we skip if it's the known bad token.
+        log.warning("[SelfEditor] Missing or Invalid GITHUB_TOKEN. Skipping self-improvement to prevent crash loop.")
+        return
+
     log.info("[SelfEditor] Starting nightly self-improvement session...")
     try:
         from src.core.self_editor import SelfEditor

@@ -24,6 +24,8 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 
 import telebot
 from telebot import types
+import time
+_oauth_states = {}  # Format: {state: (user_id, expiration_time)}
 from supabase import create_client
 from dotenv import load_dotenv
 
@@ -612,38 +614,82 @@ def cmd_channels(message):
 
 
 @bot.message_handler(commands=["produce"])
-def cmd_produce(message):
+
+def cmd_sandbox(message):
     if not is_admin(message): return unauthorized_response(message)
-    channel = message.text.replace("/produce", "").strip()
-    
-    VALID_CHANNELS = [
-        "Story With Aisha",
-        "Riya's Dark Whisper",
-        "Riya's Dark Romance Library",
-        "Aisha & Him"
-    ]
-    
-    if not channel or channel not in VALID_CHANNELS:
-        bot.send_message(
-            message.chat.id,
-            "Please specify a channel:\n\n"
-            "`/produce Story With Aisha`\n"
-            "`/produce Riya's Dark Whisper`\n"
-            "`/produce Riya's Dark Romance Library`\n"
-            "`/produce Aisha & Him`",
-            parse_mode="Markdown"
-        )
+    code = message.text.replace("/sandbox", "").strip()
+    if not code:
+        bot.send_message(message.chat.id, "Please provide Python code:\n`/sandbox print('hello')`", parse_mode="Markdown")
         return
 
-    bot.send_message(message.chat.id, f"Got it Ajju! Starting production for *{channel}*... Give me a few minutes! 💜🎬", parse_mode="Markdown")
+    bot.send_message(message.chat.id, "Running in E2B secure sandbox...")
+    from src.core.code_sandbox import execute_python_code
+    res = execute_python_code(code)
     
-    import subprocess, sys as _sys
-    project_root = str(Path(__file__).parent.parent.parent)
-    fmt = "Short/Reel" if channel == "Aisha & Him" else "Long Form"
-    subprocess.Popen([_sys.executable, "-m", "src.agents.run_youtube", "--channel", channel, "--format", fmt], cwd=project_root)
+    if res["success"]:
+        bot.send_message(message.chat.id, f"✅ *Success*\n```text\n{res['output']}\n```", parse_mode="Markdown")
+    else:
+        bot.send_message(message.chat.id, f"❌ *Failed*\n```text\n{res['error']}\n{res['output']}\n```", parse_mode="Markdown")
 
+def cmd_queue_status(message):
+    if not is_admin(message): return unauthorized_response(message)
+    try:
+        import os
+        from supabase import create_client
+        sb = create_client(os.getenv("SUPABASE_URL", ""), os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""))
+        queue = sb.table("content_queue").select("id, channel, youtube_title, status, scheduled_time").eq("status", "ready").execute()
+        if not queue.data:
+            bot.send_message(message.chat.id, "Queue is empty. No videos scheduled.")
+            return
 
-@bot.message_handler(commands=["upload"])
+        msg = "*🎥 Upcoming Drip-Feed Queue:*\n\n"
+        for i, item in enumerate(queue.data[:10]):
+            msg += f"{i+1}. *{item['youtube_title']}* ({item['channel']})\n   Scheduled: {item['scheduled_time'][:16]}\n\n"
+
+        if len(queue.data) > 10:
+            msg += f"...and {len(queue.data) - 10} more."
+
+        bot.send_message(message.chat.id, msg, parse_mode="Markdown")
+    except Exception as e:
+        bot.send_message(message.chat.id, f"Failed to check queue: {e}")
+
+bot.message_handler(commands=['sandbox'])(cmd_sandbox)
+bot.message_handler(commands=['queue'])(cmd_queue_status)
+
+# Replace the dumb terminal produce with background execution + approval
+def cmd_produce(message):
+    if not is_admin(message): return unauthorized_response(message)
+    # E.g. /produce Story With Aisha | My Topic
+    parts = message.text.replace("/produce", "").strip().split("|")
+    channel = parts[0].strip()
+    topic = parts[1].strip() if len(parts) > 1 else ""
+    
+    VALID_CHANNELS = ["Story With Aisha", "Riya's Dark Whisper", "Riya's Dark Romance Library", "Aisha & Him"]
+    if not channel or channel not in VALID_CHANNELS:
+        bot.send_message(message.chat.id, "Usage: `/produce Story With Aisha | A romantic rainy day`", parse_mode="Markdown")
+        return
+
+    
+
+    def run_crew():
+        try:
+            from src.agents.youtube_crew import YouTubeCrew
+            crew = YouTubeCrew()
+            fmt = "Short/Reel" if channel == "Aisha & Him" else "Long Form"
+            res = crew.kickoff({
+                "channel": channel,
+                "topic": topic,
+                "format": fmt,
+                "render_video": True,
+                "require_approval": True # Activate Human-in-the-Loop!
+            })
+            # The crew itself handles sending the approval message to Telegram and returning here.
+        except Exception as e:
+            bot.send_message(message.chat.id, f"❌ Writers' Room failed: {e}")
+
+    import threading
+    threading.Thread(target=run_crew, daemon=True).start()
+
 def cmd_upload(message):
     """Upload the latest produced content to YouTube."""
     if not is_admin(message): return unauthorized_response(message)
@@ -752,32 +798,31 @@ def cmd_queue(message):
 
 @bot.message_handler(commands=["logs"])
 def cmd_logs(message):
-    """Show last N lines from aisha.log."""
+    """Show recent logs from Supabase system_logs (survives Render reboots)."""
     if not is_admin(message): return unauthorized_response(message)
-    text = message.text.replace("/logs", "").strip()
     try:
-        n = int(text) if text and text.isdigit() else 30
-        n = min(n, 100)
-    except ValueError:
-        n = 30
-    try:
-        import subprocess
-        project_root = str(Path(__file__).parent.parent.parent)
-        result = subprocess.run(
-            ["tail", f"-{n}", "aisha.log"],
-            cwd=project_root, capture_output=True, text=True, timeout=10
-        )
-        log_text = result.stdout or "No log output."
-        if len(log_text) > 3800:
-            log_text = "...(truncated)\n" + log_text[-3800:]
-        bot.send_message(message.chat.id,
-            f"📋 *Last {n} lines of aisha.log:*\n```\n{log_text}\n```",
-            parse_mode="Markdown")
+        n = 10
+        import os
+        from supabase import create_client
+        sb = create_client(os.getenv("SUPABASE_URL", ""), os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""))
+        resp = sb.table("system_logs").select("level, component, event, created_at").order("created_at", desc=True).limit(n).execute()
+
+        if not resp.data:
+            bot.send_message(message.chat.id, "No logs found in Supabase system_logs table.")
+            return
+
+        log_text = ""
+        for row in reversed(resp.data):
+            time_str = row.get("created_at", "")[:19].replace("T", " ")
+            lvl = row.get("level", "INFO").upper()
+            comp = row.get("component", "sys")
+            event = row.get("event", "")
+            log_text += f"[{time_str}] {lvl} [{comp}] {event}\n"
+
+        bot.send_message(message.chat.id, f"📋 *Last {n} system logs (Persistent DB):*\n```text\n{log_text}\n```", parse_mode="Markdown")
     except Exception as e:
-        bot.send_message(message.chat.id, f"❌ Logs error: {e}")
+        bot.send_message(message.chat.id, f"Failed to fetch logs: {e}\nNote: Local 'aisha.log' is wiped on Render restarts. Please check Render Dashboard for full stdout.")
 
-
-@bot.message_handler(commands=["earnings"])
 def cmd_earnings(message):
     """Show revenue dashboard: uploads, views, monetization progress."""
     if not is_admin(message): return unauthorized_response(message)
@@ -2523,10 +2568,23 @@ def cmd_instagram_setup(message):
     render_url = os.getenv("RENDER_EXTERNAL_URL", "https://aisha-bot-yudp.onrender.com")
     redirect_uri = f"{render_url}/instagram_callback"
 
+    import secrets
+    import time
+
+    # Generate secure state and bind it to user session with 15 min expiration
+    state = secrets.token_urlsafe(32)
+    _oauth_states[state] = (message.from_user.id, time.time() + 900)
+
+    # Cleanup expired states
+    expired = [k for k, v in _oauth_states.items() if v[1] < time.time()]
+    for k in expired:
+        _oauth_states.pop(k, None)
+
     from urllib.parse import urlencode
     params = urlencode({
         "client_id": app_id,
         "redirect_uri": redirect_uri,
+        "state": state,
         "scope": "instagram_basic,instagram_content_publish,pages_read_engagement,pages_manage_posts,public_profile",
         "response_type": "code",
     })
@@ -2622,6 +2680,34 @@ def _handle_instagram_oauth_callback(handler):
     redirect_uri = f"{render_url}/instagram_callback"
 
     error = params.get("error", [None])[0]
+
+    import time
+    state_param = params.get("state", [None])[0]
+
+    # Validate CSRF state token
+    if not state_param or state_param not in _oauth_states:
+        msg = "❌ CSRF validation failed: missing or invalid state parameter."
+        log.error(f"[Instagram OAuth] {msg}")
+        body = f"<html><body>{msg}</body></html>".encode()
+        handler.send_response(400)
+        handler.send_header("Content-Type", "text/html")
+        handler.send_header("Content-Length", str(len(body)))
+        handler.end_headers()
+        handler.wfile.write(body)
+        return
+
+    user_id, expiration = _oauth_states.pop(state_param)
+
+    if time.time() > expiration:
+        msg = "❌ CSRF validation failed: state token expired."
+        log.error(f"[Instagram OAuth] {msg}")
+        body = f"<html><body>{msg}</body></html>".encode()
+        handler.send_response(400)
+        handler.send_header("Content-Type", "text/html")
+        handler.send_header("Content-Length", str(len(body)))
+        handler.end_headers()
+        handler.wfile.write(body)
+        return
     if error:
         msg = f"❌ Instagram OAuth denied: {params.get('error_description', ['unknown'])[0]}"
         log.error(f"[Instagram OAuth] {msg}")
@@ -2836,6 +2922,37 @@ class _AishaHTTPHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
 
+        # ── CallMe Transcription Endpoint ──────────────────────────────────────
+        if self.path.startswith("/api/callme/transcript"):
+            secret = self.headers.get("X-Trigger-Secret", "")
+            if not TRIGGER_SECRET or secret != TRIGGER_SECRET:
+                self.send_response(403)
+                self.end_headers()
+                self.wfile.write(b'{"error":"forbidden"}')
+                return
+            content_length = int(self.headers.get("Content-Length", 0))
+            post_data = self.rfile.read(content_length).decode("utf-8")
+            try:
+                import json
+                payload = json.loads(post_data)
+                transcript = payload.get("transcript", "")
+                caller = payload.get("caller", "Ajay")
+                if transcript:
+                    log.info(f"[CallMe] Received phone transcript from {caller}: {transcript[:50]}...")
+                    # Save to Aisha's memory!
+                    from src.core.aisha_brain import AishaBrain
+                    brain = AishaBrain()
+                    brain.memory.save_memory("general", f"Phone call with {caller}: {transcript}")
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"status":"ok"}')
+                return
+            except Exception as e:
+                log.error(f"[CallMe] Webhook failed: {e}")
+                self.send_response(500)
+                self.end_headers()
+                return
+
         # ── pg_cron trigger endpoint ───────────────────────────────────────────
         secret = self.headers.get("X-Trigger-Secret", "")
         if not TRIGGER_SECRET or secret != TRIGGER_SECRET:
@@ -2908,41 +3025,42 @@ if __name__ == "__main__":
     log.info("💜 Aisha Telegram Bot starting...")
     log.info(f"Authorized user ID: {AUTHORIZED_ID or 'ALL (dev mode)'}")
 
-    bot.set_my_commands([
-        telebot.types.BotCommand("/start",   "Start / Greet Aisha"),
-        telebot.types.BotCommand("/today",   "Today's summary"),
-        telebot.types.BotCommand("/mood",    "Log your mood"),
-        telebot.types.BotCommand("/expense", "Log an expense"),
-        telebot.types.BotCommand("/goals",   "See your goals"),
-        telebot.types.BotCommand("/journal", "Write a journal entry"),
-        telebot.types.BotCommand("/memory",  "What Aisha remembers"),
-        telebot.types.BotCommand("/voice",   "Toggle voice on/off"),
-        telebot.types.BotCommand("/health",  "Today's health summary"),
-        telebot.types.BotCommand("/water",   "Log water intake (/water 3)"),
-        telebot.types.BotCommand("/sleep",   "Log sleep (/sleep 7.5 good)"),
-        telebot.types.BotCommand("/workout", "Log workout (/workout run 30min)"),
-        telebot.types.BotCommand("/digest",  "Today's AI digest"),
-        telebot.types.BotCommand("/retry",   "Retry last failed message"),
-        telebot.types.BotCommand("/help",     "Help & commands"),
-        telebot.types.BotCommand("/reset",    "Reset conversation"),
-        telebot.types.BotCommand("/upload",   "Upload latest content to YouTube"),
-        telebot.types.BotCommand("/queue",    "View content pipeline queue"),
-        telebot.types.BotCommand("/logs",     "View last 30 log lines (/logs 50)"),
-        telebot.types.BotCommand("/syscheck",   "Run full system test"),
-        telebot.types.BotCommand("/drainqueue", "Drain stuck queued jobs (up to 5)"),
-        telebot.types.BotCommand("/dbrepair",   "Create any missing Supabase tables"),
-        telebot.types.BotCommand("/shell",    "Run shell command with confirmation"),
-        telebot.types.BotCommand("/read",     "Read any file (/read src/core/ai_router.py)"),
-        telebot.types.BotCommand("/gitpull",  "Pull latest code from GitHub"),
-        telebot.types.BotCommand("/restart",  "Restart Aisha bot process"),
-        telebot.types.BotCommand("/upgrade",  "Full self-upgrade: audit → PR → deploy"),
-        telebot.types.BotCommand("/selfaudit","Audit code and propose improvements"),
-        telebot.types.BotCommand("/feature",  "Build a new feature with 6-agent pipeline"),
-        telebot.types.BotCommand("/keyhealth","Check all API keys health"),
-        telebot.types.BotCommand("/updatekey","Update an API key (/updatekey KEY value)"),
-        telebot.types.BotCommand("/findapi",        "Search web for API setup guide (/findapi tiktok)"),
-        telebot.types.BotCommand("/instagram_setup", "Reconnect Instagram OAuth token"),
-    ])
+    try:
+        bot.set_my_commands([
+            telebot.types.BotCommand("/start",   "Start / Greet Aisha"),
+            telebot.types.BotCommand("/today",   "Today's summary"),
+            telebot.types.BotCommand("/mood",    "Log your mood"),
+            telebot.types.BotCommand("/expense", "Log an expense"),
+            telebot.types.BotCommand("/goals",   "See your goals"),
+            telebot.types.BotCommand("/journal", "Write a journal entry"),
+            telebot.types.BotCommand("/memory",  "What Aisha remembers"),
+            telebot.types.BotCommand("/voice",   "Toggle voice on/off"),
+            telebot.types.BotCommand("/health",  "Today's health summary"),
+            telebot.types.BotCommand("/water",   "Log water intake (/water 3)"),
+            telebot.types.BotCommand("/sleep",   "Log sleep (/sleep 7.5 good)"),
+            telebot.types.BotCommand("/workout", "Log workout (/workout run 30min)"),
+            telebot.types.BotCommand("/digest",  "Today's AI digest"),
+            telebot.types.BotCommand("/retry",   "Retry last failed message"),
+            telebot.types.BotCommand("/help",     "Help & commands"),
+            telebot.types.BotCommand("/reset",    "Reset conversation"),
+            telebot.types.BotCommand("/syscheck", "System diagnostic check"),
+            telebot.types.BotCommand("/healthreport", "Download weekly health report"),
+            telebot.types.BotCommand("/dbrepair", "Fix missing DB tables"),
+            telebot.types.BotCommand("/drainqueue", "Retry all failed messages"),
+            telebot.types.BotCommand("/fixkeys",  "Interactive key repair"),
+            telebot.types.BotCommand("/shell",    "Run a secure shell command (/shell pwd)"),
+            telebot.types.BotCommand("/read",     "Read a system file (/read logs/aisha.log)"),
+            telebot.types.BotCommand("/updatekey", "Update a live API key (/updatekey GEMINI abc)"),
+            telebot.types.BotCommand("/keyhealth", "Test all AI keys (/keyhealth)"),
+            telebot.types.BotCommand("/findapi",        "Search web for API setup guide (/findapi tiktok)"),
+            telebot.types.BotCommand("/instagram_setup", "Reconnect Instagram OAuth token"),
+            telebot.types.BotCommand("/produce",  "Spin up the Writers' Room (/produce Channel | Topic)"),
+            telebot.types.BotCommand("/queue",    "Check scheduled Drip-Feed Shorts"),
+            telebot.types.BotCommand("/sandbox",  "Execute code in secure E2B cloud container"),
+            telebot.types.BotCommand("/channels", "Check YouTube/Instagram token status"),
+        ])
+    except Exception as e:
+        log.warning(f"Failed to set bot commands (rate limited?): {e}")
     
     # ── Health + Trigger HTTP server (required by Render + pg_cron) ──────────
     health_thread = threading.Thread(target=start_health_server, daemon=True)
@@ -2994,6 +3112,7 @@ if __name__ == "__main__":
             _schedule.every(4).hours.do(_autonomous_loop.run_studio_session)
             _schedule.every().day.at("20:30").do(run_self_improvement, _autonomous_loop)  # 2:00 AM IST
             _schedule.every().day.at("22:30").do(_autonomous_loop.run_temp_cleanup)       # 4:00 AM IST
+            _schedule.every().day.at("12:00").do(_autonomous_loop.run_content_publisher)  # 5:30 PM IST (Prime Shorts Time)
             _schedule.every().day.at("03:30").do(_autonomous_loop.run_key_expiry_check)   # 9:00 AM IST
             log.info("autonomous_loop status=schedule_registered")
             while True:
@@ -3025,6 +3144,69 @@ if __name__ == "__main__":
         bot.infinity_polling(timeout=60, long_polling_timeout=60)
 
 # ─── Self Improvement Callbacks ──────────────────────────────────────────
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("render_job_") or c.data.startswith("rewrite_job_"))
+def handle_job_approval(call):
+    if not is_admin(call):
+        bot.answer_callback_query(call.id, "Unauthorized", show_alert=True)
+        return
+
+    action, _, job_id = call.data.partition("_job_")
+
+    import pickle
+    import os
+    assets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "temp_assets")
+    job_file = os.path.join(assets_dir, f"job_{job_id}.pkl")
+
+    if not os.path.exists(job_file):
+        bot.edit_message_text("❌ This job has expired or cannot be found.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+        return
+
+    if action == "rewrite":
+        bot.edit_message_text("🔄 Script rejected. You can trigger a new generation.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+        os.remove(job_file)
+        return
+
+    # User approved!
+    bot.edit_message_text("✅ Script Approved! Starting the render farm. This will take a while...", chat_id=call.message.chat.id, message_id=call.message.message_id)
+
+    def background_render():
+        try:
+            with open(job_file, "rb") as pf:
+                job_data = pickle.load(pf)
+
+            from src.agents.youtube_crew import YouTubeCrew
+            crew = YouTubeCrew()
+            # Restore state
+            crew.results = {
+                "script_chunks": job_data["script_chunks"],
+                "marketing": job_data["marketing"],
+                "script": "\n".join([c.get("narration", "") for c in job_data["script_chunks"]])
+            }
+
+            channel = job_data["channel"]
+            mood_for_voice = "romantic" if ("Riya" in channel or "Aisha & Him" in channel) else "personal"
+            voice_language = "Hindi" if channel in ("Story With Aisha", "Riya's Dark Whisper", "Riya's Dark Romance Library") else "English"
+
+            final_res = crew.render_assets(
+                channel=job_data["channel"],
+                topic=job_data["topic"],
+                fmt=job_data["fmt"],
+                script_chunks=job_data["script_chunks"],
+                render_mp4=job_data["render_mp4"],
+                voice_language=voice_language,
+                mood_for_voice=mood_for_voice,
+                marketing=job_data["marketing"]
+            )
+            bot.send_message(call.message.chat.id, f"🎬 Render complete for {job_data['channel']}! Check Supabase Queue or server logs.")
+            os.remove(job_file)
+        except Exception as e:
+            bot.send_message(call.message.chat.id, f"❌ Render failed: {e}")
+
+    import threading
+    threading.Thread(target=background_render, daemon=True).start()
+
+
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("deploy_skill_"))
 def handle_deploy_skill(call):

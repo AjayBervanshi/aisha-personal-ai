@@ -1,100 +1,96 @@
 import logging
 import re
-from src.core.config import Config
+from typing import Dict
 
-logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-class VoiceValidator:
+def validate_text(text: str) -> bool:
     """
-    Validates user input for voice generation to prevent potential security issues and ensures rate and pitch settings are within acceptable ranges.
+    Validate the input text.
 
-    The VoiceValidator class provides a standardized way to handle errors and exceptions, making it easier to implement robust error handling in the voice generation system.
-    It integrates with the existing voice generation system without requiring significant changes to the existing codebase.
+    Args:
+    text (str): The input text to be validated.
 
-    Attributes:
-        config (Config): The application configuration.
-
-    Methods:
-        validate_text: Validates the input text to prevent SQL injection and XSS attacks.
-        validate_rate: Validates the rate setting to ensure it is within the acceptable range.
-        validate_pitch: Validates the pitch setting to ensure it is within the acceptable range.
+    Returns:
+    bool: True if the text is valid, False otherwise.
     """
+    if not text:
+        logging.error("Text is empty")
+        return False
+    if len(text) > 1000:
+        logging.error("Text is too long. Maximum allowed length is 1000 characters.")
+        return False
+    return True
 
-    def __init__(self, config: Config):
-        self.config = config
+def validate_language(language: str) -> bool:
+    """
+    Validate the input language code.
 
-    def validate_text(self, text: str) -> str:
-        """
-        Validates the input text to prevent SQL injection and XSS attacks.
+    Args:
+    language (str): The input language code to be validated.
 
-        Args:
-            text (str): The input text to be validated.
+    Returns:
+    bool: True if the language code is valid, False otherwise.
+    """
+    valid_languages = ["en", "fr", "es", "de", "it", "pt", "zh", "ja", "ko"]
+    if language not in valid_languages:
+        logging.error(f"Invalid language code: {language}. Supported languages are: {', '.join(valid_languages)}")
+        return False
+    return True
 
-        Returns:
-            str: The validated text.
+def validate_mood(mood: str) -> bool:
+    """
+    Validate the input mood setting.
 
-        Raises:
-            ValueError: If the input text is empty or contains malicious characters.
-        """
-        if not text:
-            logger.error("Input text is empty")
-            raise ValueError("Input text is empty")
+    Args:
+    mood (str): The input mood setting to be validated.
 
-        if re.search(r"[<>\/\\;]", text):
-            logger.error("Input text contains malicious characters")
-            raise ValueError("Input text contains malicious characters")
+    Returns:
+    bool: True if the mood setting is valid, False otherwise.
+    """
+    valid_moods = ["happy", "sad", "neutral"]
+    if mood not in valid_moods:
+        logging.error(f"Invalid mood setting: {mood}. Supported moods are: {', '.join(valid_moods)}")
+        return False
+    return True
 
-        return text
+def validate_input(text: str, language: str, mood: str) -> Dict[str, bool]:
+    """
+    Validate the input parameters.
 
-    def validate_rate(self, rate: float) -> float:
-        """
-        Validates the rate setting to ensure it is within the acceptable range.
+    Args:
+    text (str): The input text to be validated.
+    language (str): The input language code to be validated.
+    mood (str): The input mood setting to be validated.
 
-        Args:
-            rate (float): The rate setting to be validated.
-
-        Returns:
-            float: The validated rate setting.
-
-        Raises:
-            ValueError: If the rate setting is outside the acceptable range.
-        """
-        if rate < self.config.min_rate or rate > self.config.max_rate:
-            logger.error(f"Rate setting {rate} is outside the acceptable range [{self.config.min_rate}, {self.config.max_rate}]")
-            raise ValueError(f"Rate setting {rate} is outside the acceptable range [{self.config.min_rate}, {self.config.max_rate}]")
-
-        return rate
-
-    def validate_pitch(self, pitch: float) -> float:
-        """
-        Validates the pitch setting to ensure it is within the acceptable range.
-
-        Args:
-            pitch (float): The pitch setting to be validated.
-
-        Returns:
-            float: The validated pitch setting.
-
-        Raises:
-            ValueError: If the pitch setting is outside the acceptable range.
-        """
-        if pitch < self.config.min_pitch or pitch > self.config.max_pitch:
-            logger.error(f"Pitch setting {pitch} is outside the acceptable range [{self.config.min_pitch}, {self.config.max_pitch}]")
-            raise ValueError(f"Pitch setting {pitch} is outside the acceptable range [{self.config.min_pitch}, {self.config.max_pitch}]")
-
-        return pitch
-
-def __main__():
-    config = Config()
-    validator = VoiceValidator(config)
-
-    try:
-        text = validator.validate_text("Hello, World!")
-        rate = validator.validate_rate(1.5)
-        pitch = validator.validate_pitch(1.2)
-        logger.info(f"Validated text: {text}, rate: {rate}, pitch: {pitch}")
-    except ValueError as e:
-        logger.error(f"Validation error: {e}")
+    Returns:
+    Dict[str, bool]: A dictionary containing the validation results for each input parameter.
+    """
+    validation_results = {
+        "text": validate_text(text),
+        "language": validate_language(language),
+        "mood": validate_mood(mood)
+    }
+    return validation_results
 
 if __name__ == "__main__":
-    __main__()
+    text = "Hello, world!"
+    language = "en"
+    mood = "happy"
+    validation_results = validate_input(text, language, mood)
+    logging.info(f"Validation results: {validation_results}")
+    text = ""
+    language = "en"
+    mood = "happy"
+    validation_results = validate_input(text, language, mood)
+    logging.info(f"Validation results: {validation_results}")
+    text = "Hello, world!"
+    language = "invalid"
+    mood = "happy"
+    validation_results = validate_input(text, language, mood)
+    logging.info(f"Validation results: {validation_results}")
+    text = "Hello, world!"
+    language = "en"
+    mood = "invalid"
+    validation_results = validate_input(text, language, mood)
+    logging.info(f"Validation results: {validation_results}")

@@ -87,9 +87,10 @@ def save_episode(series_id: str, episode_number: int, title: str,
             "content_job_id": content_job_id,
         }).execute()
         # Increment current_episode counter on series
+        from datetime import datetime, timezone
         sb.table("aisha_series").update({
             "current_episode": episode_number,
-            "updated_at": "now()",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }).eq("id", series_id).execute()
         return True
     except Exception as e:

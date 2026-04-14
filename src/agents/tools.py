@@ -1,17 +1,17 @@
 from crewai.tools import tool
 import os
 import requests
-from src.core.voice_engine import generate_voice
+from src.core.voice_engine import generate_voice_for_content
 
 @tool("elevenlabs_voice_tool")
-def elevenlabs_voice_tool(text: str, language: str = "English", mood: str = "casual") -> str:
+def elevenlabs_voice_tool(text: str, language: str = "Hindi", mood: str = "storytelling") -> str:
     """
-    Generates a voice note using ElevenLabs.
-    Input should be the text to speak, language, and mood.
+    Generates a voice note using ElevenLabs (primary) with Edge-TTS fallback.
+    Input should be the text to speak and language.
     Returns the path to the generated audio file.
     """
     try:
-        path = generate_voice(text, language=language, mood=mood)
+        path = generate_voice_for_content(text, language=language)
         return f"Voice generated successfully at: {path}"
     except Exception as e:
         return f"Error generating voice: {str(e)}"

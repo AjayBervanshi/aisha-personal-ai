@@ -1,8 +1,6 @@
-import os
 import signal
 import logging
 import pickle
-import atexit
 import sys
 from contextlib import contextmanager
 from functools import wraps

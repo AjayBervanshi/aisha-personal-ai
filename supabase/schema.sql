@@ -161,3 +161,182 @@ create table if not exists aisha_users (
     updated_at timestamp with time zone default timezone('utc'::text, now()),
     constraint valid_role check (role in ('admin', 'guest'))
 );
+-- =========================================================================
+-- JARVIS UPGRADE: Knowledge Graph Vault (Feature 1.3)
+-- Transforms flat memory into an Entity-Relationship Graph
+-- =========================================================================
+
+-- 1. Vault Entities (Things, People, Places, Concepts)
+CREATE TABLE IF NOT EXISTS vault_entities (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,          -- e.g., "Apple", "John Doe", "Project X"
+    type TEXT NOT NULL,          -- e.g., "organization", "person", "project", "concept"
+    description TEXT,            -- Summarized context about this entity
+    aliases TEXT[] DEFAULT ARRAY[]::TEXT[],
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+    UNIQUE(name, type)
+);
+
+-- 2. Vault Facts (Discrete, atomic pieces of knowledge tied to an entity)
+CREATE TABLE IF NOT EXISTS vault_facts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    entity_id UUID REFERENCES vault_entities(id) ON DELETE CASCADE,
+    fact TEXT NOT NULL,          -- e.g., "Was founded in 1976", "Is allergic to peanuts"
+    confidence FLOAT DEFAULT 1.0,
+    source TEXT DEFAULT 'conversation',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- 3. Vault Relationships (How entities connect to each other)
+CREATE TABLE IF NOT EXISTS vault_relationships (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    source_entity_id UUID REFERENCES vault_entities(id) ON DELETE CASCADE,
+    target_entity_id UUID REFERENCES vault_entities(id) ON DELETE CASCADE,
+    relationship_type TEXT NOT NULL, -- e.g., "works_for", "is_interested_in", "owns"
+    weight FLOAT DEFAULT 1.0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+    UNIQUE(source_entity_id, target_entity_id, relationship_type)
+);
+
+-- Add indexes for fast graph traversal
+CREATE INDEX IF NOT EXISTS idx_vault_facts_entity ON vault_facts(entity_id);
+CREATE INDEX IF NOT EXISTS idx_vault_rel_source ON vault_relationships(source_entity_id);
+CREATE INDEX IF NOT EXISTS idx_vault_rel_target ON vault_relationships(target_entity_id);
+-- =========================================================================
+-- JARVIS UPGRADE: OS-Level Sidecar (Feature 2.1)
+-- Uses Supabase as the message broker between the Cloud Brain and Local Laptop
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS sidecar_commands (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    sidecar_id TEXT NOT NULL,
+    command_type TEXT NOT NULL,
+    payload JSONB NOT NULL,
+    status TEXT DEFAULT 'pending', -- 'pending', 'processing', 'completed', 'failed'
+    result JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_sidecar_status ON sidecar_commands(sidecar_id, status);
+
+-- Secure the table with Row Level Security (RLS)
+ALTER TABLE sidecar_commands ENABLE ROW LEVEL SECURITY;
+
+-- Only service_role can insert/update/read (meaning the Python server with SUPABASE_SERVICE_KEY)
+-- Local sidecar must also run with SUPABASE_SERVICE_KEY to poll the queue
+CREATE POLICY "Service Role Full Access"
+ON sidecar_commands
+USING (auth.role() = 'service_role')
+WITH CHECK (auth.role() = 'service_role');
+-- =========================================================================
+-- JARVIS UPGRADE: Continuous Awareness (Feature 3.1)
+-- Stores the latest screen OCR and active window context from the sidecar
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS aisha_awareness_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    sidecar_id TEXT NOT NULL,
+    active_window TEXT,
+    screen_text TEXT,
+    has_visual_change BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- We only really care about the last 10 minutes of awareness for context injection.
+-- We can add a pg_cron job or Supabase Edge Function to prune old logs later to save space.
+CREATE INDEX IF NOT EXISTS idx_awareness_time ON aisha_awareness_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_awareness_sidecar ON aisha_awareness_logs(sidecar_id);
+
+-- Enforce RLS so only the service role (Aisha and Sidecar) can access
+ALTER TABLE aisha_awareness_logs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Service Role Full Access" ON aisha_awareness_logs
+USING (auth.role() = 'service_role')
+WITH CHECK (auth.role() = 'service_role');
+-- =========================================================================
+-- JARVIS UPGRADE: Goal Pursuit (Feature 4.1)
+-- Stores Objectives, Key Results, and Daily Actions
+-- =========================================================================
+
+-- 1. Objectives (High Level Goals)
+CREATE TABLE IF NOT EXISTS aisha_objectives (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title TEXT NOT NULL,
+    description TEXT,
+    deadline TIMESTAMP WITH TIME ZONE,
+    status TEXT DEFAULT 'active', -- active, achieved, failed, dropped
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- 2. Key Results (Measurable outcomes for an objective)
+CREATE TABLE IF NOT EXISTS aisha_key_results (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    objective_id UUID REFERENCES aisha_objectives(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    target_value FLOAT DEFAULT 1.0,
+    current_value FLOAT DEFAULT 0.0,
+    unit TEXT DEFAULT 'completion',
+    score FLOAT GENERATED ALWAYS AS (
+        CASE
+            WHEN target_value = 0 THEN 0.0
+            ELSE LEAST(current_value / target_value, 1.0)
+        END
+    ) STORED,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- 3. Daily Actions (The habits required to hit Key Results)
+CREATE TABLE IF NOT EXISTS aisha_daily_actions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    key_result_id UUID REFERENCES aisha_key_results(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    frequency TEXT DEFAULT 'daily', -- daily, weekly
+    last_completed_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- RLS Enforcement
+ALTER TABLE aisha_objectives ENABLE ROW LEVEL SECURITY;
+ALTER TABLE aisha_key_results ENABLE ROW LEVEL SECURITY;
+ALTER TABLE aisha_daily_actions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Service Role Full Access" ON aisha_objectives USING (auth.role() = 'service_role');
+CREATE POLICY "Service Role Full Access" ON aisha_key_results USING (auth.role() = 'service_role');
+CREATE POLICY "Service Role Full Access" ON aisha_daily_actions USING (auth.role() = 'service_role');
+-- =========================================================================
+-- JARVIS UPGRADE: Visual/NLP Workflow Engine (Feature 4.2 & 4.3)
+-- Stores workflow graph definitions (Nodes and Edges) and execution logs.
+-- =========================================================================
+
+-- 1. Workflow Definitions
+CREATE TABLE IF NOT EXISTS aisha_workflows (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title TEXT NOT NULL,
+    description TEXT,
+    trigger_type TEXT NOT NULL, -- e.g., 'cron', 'webhook', 'email', 'manual'
+    trigger_config JSONB DEFAULT '{}'::jsonb, -- e.g., {"schedule": "0 9 * * *"}
+    nodes JSONB NOT NULL,       -- Array of node objects (id, type, config, position)
+    edges JSONB NOT NULL,       -- Array of edge connections (source_node, target_node)
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- 2. Workflow Execution History
+CREATE TABLE IF NOT EXISTS aisha_workflow_executions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workflow_id UUID REFERENCES aisha_workflows(id) ON DELETE CASCADE,
+    status TEXT DEFAULT 'running', -- running, completed, failed, self_healing
+    started_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+    finished_at TIMESTAMP WITH TIME ZONE,
+    error_message TEXT,
+    state_snapshot JSONB DEFAULT '{}'::jsonb -- The final output variables/state of the run
+);
+
+-- RLS Enforcement
+ALTER TABLE aisha_workflows ENABLE ROW LEVEL SECURITY;
+ALTER TABLE aisha_workflow_executions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Service Role Full Access" ON aisha_workflows USING (auth.role() = 'service_role');
+CREATE POLICY "Service Role Full Access" ON aisha_workflow_executions USING (auth.role() = 'service_role');

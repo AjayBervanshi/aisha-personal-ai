@@ -113,3 +113,72 @@ def test_detect_failure_patterns_multiple():
     assert "false_action_claim" in types
     assert "command_error" in types
     assert len(patterns) == 3
+
+import requests
+from unittest.mock import patch
+
+@patch("src.core.failure_detector.requests.get")
+def test_get_recent_failures_connection_error(mock_get):
+    """Test that a ConnectionError from Supabase is caught and returns []"""
+    from src.core.failure_detector import get_recent_failures
+    mock_get.side_effect = requests.exceptions.ConnectionError("Network down")
+
+    result = get_recent_failures()
+    assert result == []
+
+@patch("src.core.failure_detector.requests.get")
+def test_get_recent_failures_generic_exception(mock_get):
+    """Test that a generic Exception from Supabase is caught and returns []"""
+    from src.core.failure_detector import get_recent_failures
+    mock_get.side_effect = Exception("Some weird error")
+
+    result = get_recent_failures()
+    assert result == []
+
+@patch("src.core.failure_detector.requests.get")
+def test_get_recent_failures_not_found(mock_get):
+    """Test that a 404/400 PGRST error gracefully skips to the next table or returns []"""
+    from src.core.failure_detector import get_recent_failures
+
+    class MockResponse:
+        status_code = 404
+        content = b'{"code": "PGRST100"}'
+        def json(self):
+            return {"code": "PGRST100"}
+
+    mock_get.return_value = MockResponse()
+
+    result = get_recent_failures()
+    assert result == []
+
+@patch("src.core.failure_detector.requests.get")
+def test_get_recent_failures_success(mock_get):
+    """Test that a successful fetch normalises and returns the rows"""
+    from src.core.failure_detector import get_recent_failures
+
+    class MockResponse:
+        status_code = 200
+        content = b'[{"role": "user", "message": "Hi", "created_at": "2023-01-01", "user_id": "123"}]'
+        def json(self):
+            return [{"role": "user", "message": "Hi", "created_at": "2023-01-01", "user_id": "123"}]
+
+    mock_get.return_value = MockResponse()
+
+    result = get_recent_failures()
+    assert len(result) == 1
+    assert result[0]["message"] == "Hi"
+
+def test_failure_to_improvement_task_malformed_input():
+    pattern = {"pattern_type": None, "suggested_fix": None}
+    result = failure_to_improvement_task(pattern)
+    assert result == "Add better error handling and logging to src/telegram/bot.py for unknown command inputs."
+
+def test_failure_to_improvement_task_empty_suggested_fix():
+    pattern = {"pattern_type": "api_failure", "suggested_fix": ""}
+    result = failure_to_improvement_task(pattern)
+    assert result == "Add NVIDIA NIM as immediate fallback in src/core/ai_router.py when primary providers return 401/403/429 errors."
+
+def test_failure_to_improvement_task_missing_keys():
+    pattern = {"other_key": "value"}
+    result = failure_to_improvement_task(pattern)
+    assert result == "Add better error handling and logging to src/telegram/bot.py for unknown command inputs."
