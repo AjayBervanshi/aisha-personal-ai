@@ -4,6 +4,6 @@
 ## 2024-04-10 - Semantic buttons in settings menu
 **Learning:** Interactive `<div>` elements with `onclick` handlers in `aisha-web` lack native keyboard accessibility and proper ARIA roles for screen readers. Replacing them with semantic `<button>` tags improves accessibility. However, it's critical to add `font-family: inherit` (along with `color: inherit` and `text-align: left`) to the button's CSS class to prevent the browser's default system button typography from overriding the inherited design.
 **Action:** When converting custom interactive elements to native buttons in vanilla HTML/CSS, always ensure typography and alignment are explicitly reset or inherited to maintain consistent styling.
-## 2024-05-18 - Visual Feedback for Copy Button
-**Learning:** When implementing temporary UI state changes (e.g., swapping a button's text to a '✅' checkmark for feedback), subsequent rapid clicks can capture the temporary '✅' state as the original text, causing the visual feedback to persist permanently when the timeout completes.
-**Action:** Always include a guard condition (e.g., `btn.textContent !== '✅'`) to prevent rapid consecutive clicks from executing the state change logic while the element is already in the feedback state.
+## 2026-04-11 - Temporary UI State Feedback Trap
+**Learning:** When using `setTimeout` to temporarily swap UI content (like changing a "Copy" icon to a "✅"), rapid clicks can cause the function to capture the temporary state ("✅") as the `originalIcon`. When the second timeout resolves, it restores the button to "✅" permanently, breaking the UI.
+**Action:** Always include a state-guard (e.g., `if (btn.textContent !== "✅")`) before initiating temporary visual feedback loops to ensure idempotency during rapid user interactions.
