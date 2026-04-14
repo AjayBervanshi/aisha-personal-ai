@@ -123,8 +123,8 @@ _pending_approvals: dict = {}   # user_id → {user, text, message}
 
 BOT_TOKEN      = os.getenv("TELEGRAM_BOT_TOKEN")
 AUTHORIZED_ID  = int(os.getenv("AJAY_TELEGRAM_ID", "0"))  # Only Ajay can use this bot!
-SUPABASE_URL   = os.getenv("SUPABASE_URL")
-SUPABASE_KEY   = os.getenv("SUPABASE_SERVICE_KEY")
+SUPABASE_URL   = os.getenv("SUPABASE_URL", "http://localhost")
+SUPABASE_KEY   = os.getenv("SUPABASE_SERVICE_KEY", "dummy_key")
 
 # ─── Logging ───────────────────────────────────────────────────────────────────
 

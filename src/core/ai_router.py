@@ -619,6 +619,10 @@ class AIRouter:
                     data = resp.json()
                     log.info(f"[Gemini] Responded via {model}")
                     return data["candidates"][0]["content"]["parts"][0]["text"]
+                elif resp.status_code in [401, 403]:
+                    log.error(f"[Gemini] {model} authentication failed (401/403). Forcing fallback.")
+                    # Break loop so it throws the Exception outside and the Router fails over to NVIDIA
+                    raise Exception(f"invalid_api_key Gemini returned {resp.status_code}: {resp.text[:100]}")
                 elif resp.status_code == 429:
                     log.warning(f"[Gemini] {model} quota exhausted. Trying next model.")
                     continue
@@ -626,11 +630,14 @@ class AIRouter:
                     log.warning(f"[Gemini] {model} not found/deprecated. Skipping.")
                     continue
                 else:
-                    raise Exception(f"Gemini {model} returned {resp.status_code}: {resp.text[:150]}")
-            except requests.exceptions.ConnectionError as e:
-                raise Exception(f"Gemini network error: {e}")
+                    log.warning(f"[Gemini] {model} returned {resp.status_code}. Trying next model.")
+                    continue
+            except requests.exceptions.RequestException as e:
+                log.error(f"[Gemini] HTTP request failed for {model}: {e}")
+                continue
 
-        raise Exception("All Gemini models exhausted quota. retry_after=3600")
+        # If we exit the loop without returning, all models failed. Throw exception to trigger AIRouter fallback.
+        raise Exception("All Gemini models failed or exhausted quota. retry_after=3600")
 
     def _call_anthropic(self, system_prompt, user_message, history, image_bytes: bytes = None) -> str:
         """

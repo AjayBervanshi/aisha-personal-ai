@@ -97,7 +97,7 @@ class MemoryManager:
         import requests as _req
         import time
 
-        nvidia_key = os.getenv("NVIDIA_QWEN_122B", "")
+        nvidia_key = os.getenv("NVIDIA_QWEN_122B") or os.getenv("NVIDIA_LLAMA33_A") or os.getenv("NVIDIA_API_KEY", "")
         if not nvidia_key:
             return None
 

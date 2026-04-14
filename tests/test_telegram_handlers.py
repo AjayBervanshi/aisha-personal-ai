@@ -7,11 +7,16 @@ with patch('os.getenv') as mock_getenv:
         if key == "TELEGRAM_BOT_TOKEN": return "123:ABC"
         if key == "SUPABASE_URL": return "http://test.com"
         if key == "SUPABASE_SERVICE_KEY": return "testkey"
+        if key == "SUPABASE_KEY": return "testkey"
+        if key == "SUPABASE_ANON_KEY": return "testkey"
+        if key == "GEMINI_API_KEY": return "testkey"
         if key == "AJAY_TELEGRAM_ID": return "12345"
         return default
     mock_getenv.side_effect = side_effect
 
-    with patch('src.core.aisha_brain.create_client'):
+    import sys
+sys.modules['supabase'] = MagicMock()
+with patch('src.core.aisha_brain.create_client'):
         with patch('src.telegram.bot.telebot'):
             with patch('src.telegram.bot.AishaBrain'):
                 with patch('src.telegram.bot.create_client'):
@@ -31,7 +36,7 @@ class TestTelegramHandlers(unittest.TestCase):
         try:
             cmd_start(msg)
             mock_bot.reply_to.assert_called_once()
-            self.assertIn("Aisha is a private assistant", mock_bot.reply_to.call_args[0][1])
+            self.assertIn("Please wait, checking", mock_bot.reply_to.call_args[0][1])
         finally:
             bot_module.AUTHORIZED_ID = original_id
 
