@@ -145,11 +145,12 @@ class GoalEngine:
 
             # Update DB for completed actions
             completed_ids = data.get("completed_action_ids", [])
-            if completed_ids:
+            if isinstance(completed_ids, list) and completed_ids:
+                # Deduplicate and filter out empty values to ensure clean batching
+                unique_ids = list(set(str(a_id) for a_id in completed_ids if a_id))
                 now_iso = datetime.now(timezone.utc).isoformat()
-                # Batch update in chunks of 100 to avoid PostgREST URL length limits
-                for i in range(0, len(completed_ids), 100):
-                    batch = completed_ids[i:i+100]
+                for i in range(0, len(unique_ids), 100):
+                    batch = unique_ids[i:i+100]
                     self.supabase.table("aisha_daily_actions")\
                         .update({"last_completed_at": now_iso})\
                         .in_("id", batch)\
