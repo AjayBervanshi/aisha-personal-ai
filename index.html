@@ -1061,8 +1061,11 @@
     // ── Utilities ────────────────────────────────────────────────
     function setStatus(text) { document.getElementById("status-text").textContent = text; }
     function toggleSettings() { document.getElementById("settings-panel").classList.toggle("open"); }
-    function copyText(text, btn) {
-      navigator.clipboard.writeText(text);
+    function copyText(btn) {
+      const text = btn.getAttribute("data-text");
+      if (navigator.clipboard && text) {
+        navigator.clipboard.writeText(text).catch(err => console.error("Copy failed", err));
+      }
       if (btn && btn.textContent !== "✅") {
         const originalText = btn.textContent;
         const originalLabel = btn.getAttribute("aria-label");
