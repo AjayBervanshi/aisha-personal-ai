@@ -27,3 +27,7 @@
 **Vulnerability:** A new webhook endpoint (`/api/callme/transcript`) was added to log phone conversations into semantic memory without checking the `X-Trigger-Secret` header, meaning any attacker could craft arbitrary POST requests to inject false memories directly into Aisha's database.
 **Learning:** All new REST endpoints added to the internal HTTP server MUST enforce the `TRIGGER_SECRET` fail-secure mechanism before processing the payload.
 **Prevention:** Added `X-Trigger-Secret` validation to the new endpoint matching the exact fail-secure logic used by the existing `pg_cron` trigger.
+## 2026-04-12 - Secure Condition Evaluation in Workflow Engine
+**Vulnerability:** Remote Code Execution (RCE) via `eval()` in `src/core/workflow_engine.py`.
+**Learning:** Using `eval()` even with `__builtins__: {}` is unsafe as it allows accessing class hierarchies and potentially escaping the sandbox. A strict AST-based evaluator is a much safer alternative for evaluating domain-specific logic.
+**Prevention:** Always use `ast.parse` and a whitelist of safe nodes (Constants, Comparisons, BoolOps) when you need to evaluate user-provided or LLM-generated logic strings. Avoid `eval()`, `exec()`, and `ast.literal_eval()` if they don't provide enough restriction or functionality.

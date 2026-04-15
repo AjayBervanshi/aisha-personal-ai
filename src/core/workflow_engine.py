@@ -1,3 +1,4 @@
+import ast
 import json
 import logging
 import re
@@ -16,6 +17,61 @@ class WorkflowEngine:
     def __init__(self, supabase_client, ai_router):
         self.supabase = supabase_client
         self.ai = ai_router
+
+    def _safe_eval(self, expr: str) -> Any:
+        """
+        Safely evaluates a pseudo-code condition using AST parsing.
+        Only allows basic comparisons, constants, and boolean logic.
+        """
+        try:
+            tree = ast.parse(expr, mode='eval')
+
+            def _eval_node(node):
+                if isinstance(node, ast.Expression):
+                    return _eval_node(node.body)
+                elif isinstance(node, ast.Constant):
+                    return node.value
+                elif isinstance(node, ast.Compare):
+                    current_left = _eval_node(node.left)
+                    for op, right_node in zip(node.ops, node.comparators):
+                        right = _eval_node(right_node)
+                        if isinstance(op, ast.Eq):
+                            if not (current_left == right): return False
+                        elif isinstance(op, ast.NotEq):
+                            if not (current_left != right): return False
+                        elif isinstance(op, ast.Lt):
+                            if not (current_left < right): return False
+                        elif isinstance(op, ast.LtE):
+                            if not (current_left <= right): return False
+                        elif isinstance(op, ast.Gt):
+                            if not (current_left > right): return False
+                        elif isinstance(op, ast.GtE):
+                            if not (current_left >= right): return False
+                        elif isinstance(op, ast.In):
+                            if not (current_left in right): return False
+                        elif isinstance(op, ast.NotIn):
+                            if not (current_left not in right): return False
+                        else:
+                            raise ValueError(f"Unsupported operator: {type(op)}")
+                        current_left = right
+                    return True
+                elif isinstance(node, ast.BoolOp):
+                    values = [_eval_node(v) for v in node.values]
+                    if isinstance(node.op, ast.And):
+                        return all(values)
+                    elif isinstance(node.op, ast.Or):
+                        return any(values)
+                elif isinstance(node, ast.UnaryOp):
+                    operand = _eval_node(node.operand)
+                    if isinstance(node.op, ast.Not):
+                        return not operand
+
+                raise ValueError(f"Unsupported AST node: {type(node)}")
+
+            return _eval_node(tree)
+        except Exception as e:
+            log.error(f"Safe eval error: {e}")
+            return False
 
     def build_from_nl(self, description: str) -> Optional[str]:
         """
@@ -106,13 +162,11 @@ class WorkflowEngine:
             return res.text
 
         elif node_type == "logic.condition":
-            # Danger: eval is unsafe in production, but we use it for a rapid prototype
             try:
                 # Basic string replacement for pseudo-code
                 cond = config.get("condition", "False")
                 cond = cond.replace("contains", "in")
-                # Very restricted eval for prototype safety
-                return eval(cond, {"__builtins__": {}})
+                return self._safe_eval(cond)
             except Exception:
                 return False
 
