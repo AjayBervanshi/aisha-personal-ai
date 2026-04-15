@@ -161,7 +161,29 @@ class WorkflowEngine:
 
         elif node_type == "action.http_request":
             import urllib.request
-            req = urllib.request.Request(config.get("url", ""), method=config.get("method", "GET"))
+            import urllib.parse
+            import re
+
+            url = config.get("url", "")
+            parsed_url = urllib.parse.urlparse(url)
+
+            if parsed_url.scheme not in ("http", "https"):
+                raise ValueError("Invalid URL scheme. Only HTTP and HTTPS are allowed.")
+
+            hostname = parsed_url.hostname or ""
+
+            # Simple blocklist for SSRF protection
+            blocklist = [
+                "localhost",
+                "127.0.0.1",
+                "169.254.169.254", # Cloud metadata
+                "0.0.0.0"
+            ]
+
+            if hostname in blocklist or hostname.startswith("10.") or hostname.startswith("192.168.") or re.match(r"^172\.(1[6-9]|2[0-9]|3[0-1])\.", hostname):
+                raise ValueError("Access to internal/local hosts is not permitted.")
+
+            req = urllib.request.Request(url, method=config.get("method", "GET"))
             with urllib.request.urlopen(req, timeout=5) as r:
                 return r.read().decode('utf-8')
 
