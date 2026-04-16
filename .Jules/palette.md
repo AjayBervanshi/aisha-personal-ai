@@ -7,3 +7,7 @@
 ## 2026-03-30 - Disable Async Action Buttons
 **Learning:** The send button did not have a visual disabled state during async API calls, allowing double-submission or confusing the user whether the button was clicked.
 **Action:** Always add a disabled state visually (`:disabled` pseudo-class dropping opacity/disabling cursor) and functionally (JS `button.disabled = true;` during async calls) for interactive submit buttons.
+
+## 2024-05-18 - Messaging Input Empty State Feedback
+**Learning:** Users can become confused when a message action button is visually enabled but functionally inactive because the input field is empty. Relying on function-level guards (`if (!text) return;`) prevents errors but fails to communicate system state to the user visually.
+**Action:** Always visually disable message submission buttons using the `disabled` attribute when the corresponding input field is empty or when a network request is currently active. Utilize `oninput` handlers to dynamically toggle the disabled state based on the input text content.
