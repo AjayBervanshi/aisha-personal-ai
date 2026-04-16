@@ -3,6 +3,9 @@ import operator
 import json
 import logging
 import re
+import urllib.parse
+import socket
+import ipaddress
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
@@ -161,9 +164,51 @@ class WorkflowEngine:
 
         elif node_type == "action.http_request":
             import urllib.request
-            req = urllib.request.Request(config.get("url", ""), method=config.get("method", "GET"))
-            with urllib.request.urlopen(req, timeout=5) as r:
-                return r.read().decode('utf-8')
+            url_str = config.get("url", "")
+
+            def validate_url(url_to_check):
+                parsed = urllib.parse.urlparse(url_to_check)
+                if parsed.scheme not in ("http", "https"):
+                    raise ValueError("Invalid URL scheme")
+
+                hostname = parsed.hostname
+                if not hostname:
+                    raise ValueError("Invalid URL hostname")
+
+                try:
+                    ip_str = socket.gethostbyname(hostname)
+                except socket.gaierror:
+                    raise ValueError(f"Could not resolve hostname: {hostname}")
+
+                ip = ipaddress.ip_address(ip_str)
+                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast:
+                    raise ValueError(f"Blocked URL: resolves to private/local IP {ip_str}")
+
+                return True
+
+            class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+                def redirect_request(self, req, fp, code, msg, headers, newurl):
+                    try:
+                        validate_url(newurl)
+                    except Exception as e:
+                        raise urllib.error.URLError(f"SSRF policy blocked redirect: {e}")
+                    return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+            # SSRF Protection Initial Validation
+            try:
+                validate_url(url_str)
+            except Exception as e:
+                log.error(f"[Workflow] SSRF blocked URL {url_str}: {e}")
+                return f"Error: SSRF policy blocked access to URL"
+
+            opener = urllib.request.build_opener(SafeRedirectHandler())
+            req = urllib.request.Request(url_str, method=config.get("method", "GET"))
+            try:
+                with opener.open(req, timeout=5) as r:
+                    return r.read().decode('utf-8')
+            except Exception as e:
+                log.error(f"[Workflow] HTTP Request failed: {e}")
+                return f"Error: {str(e)}"
 
         return None
 
