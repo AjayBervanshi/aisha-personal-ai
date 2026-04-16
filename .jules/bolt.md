@@ -7,3 +7,6 @@
 ## 2024-05-18 - [GoalEngine Evening Review Update Batching]
 **Learning:** `GoalEngine.evening_review` had an N+1 query vulnerability because it iterated through completed daily action IDs and performed a separate `self.supabase.table("aisha_daily_actions").update(...).eq("id", a_id)` call for each ID.
 **Action:** Use `.in_("id", batch)` to batch updates instead of `.eq("id", id)` inside a loop. Make sure to batch the `.in_()` call in chunks of 100 to avoid PostgREST URL length limits if the payload is large.
+## 2025-02-23 - [Telegram Analytics O(N) Query Fix]
+**Learning:** `cmd_earnings` in `telegram/bot.py` was pulling all rows matching `youtube_status=uploaded` into memory just to count them `len(all_uploaded)`. This creates severe O(N) network and memory overhead.
+**Action:** Always append `.limit(1)` and use `count="exact"` in `.select()` statements when getting total records if the row data itself is not needed in Python.
