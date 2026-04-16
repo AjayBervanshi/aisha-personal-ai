@@ -706,10 +706,10 @@
         </select>
         <div class="text-wrap">
           <textarea id="user-input" placeholder="Talk to Aisha..." rows="1" onkeydown="handleKey(event)"
-            oninput="autoResize(this)" aria-label="Type your message"></textarea>
+            oninput="handleInput(this)" aria-label="Type your message"></textarea>
           <button class="mic-btn" id="mic-btn" onclick="toggleMic()" title="Voice input" aria-label="Voice input">🎙️</button>
         </div>
-        <button id="send-btn" class="send-btn" onclick="sendMessage()" title="Send" aria-label="Send message">➤</button>
+        <button id="send-btn" class="send-btn" onclick="sendMessage()" title="Send (Enter)" aria-label="Send message" disabled>➤</button>
       </div>
     </div>
 
@@ -782,6 +782,7 @@
       conversationHistory: [],
       voiceEnabled: true,
       isRecording: false,
+      isSending: false,
       currentMode: "auto",
       currentLang: "auto",
       speechRecognition: null,
@@ -876,12 +877,14 @@
 
     // ── Send Message ─────────────────────────────────────────────
     async function sendMessage(overrideText = null) {
-      const sendBtn = document.getElementById("send-btn");
-      if (sendBtn && sendBtn.disabled) return;
+      if (state.isSending) return;
 
       const input = document.getElementById("user-input");
       const text = (overrideText || input.value).trim();
       if (!text) return;
+
+      state.isSending = true;
+      const sendBtn = document.getElementById("send-btn");
 
       input.value = ""; autoResize(input);
       if (sendBtn) sendBtn.disabled = true;
@@ -915,15 +918,32 @@
         setStatus("Online · Always here for you");
         console.error("Aisha error:", err);
       } finally {
-        if (sendBtn) sendBtn.disabled = false;
+        state.isSending = false;
+        if (sendBtn) {
+          sendBtn.disabled = input.value.trim().length === 0;
+        }
         input.focus();
       }
     }
 
     function sendQuick(text) { sendMessage(text); }
     function handleKey(e) {
-      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        const input = document.getElementById("user-input");
+        if (!state.isSending && input.value.trim().length > 0) {
+          sendMessage();
+        }
+      }
     }
+    function handleInput(el) {
+      autoResize(el);
+      const sendBtn = document.getElementById("send-btn");
+      if (sendBtn) {
+        sendBtn.disabled = el.value.trim().length === 0 || state.isSending;
+      }
+    }
+
     function autoResize(el) {
       el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 120) + "px";
     }
@@ -1014,7 +1034,7 @@
       recognition.onresult = (e) => {
         const transcript = Array.from(e.results).map(r => r[0].transcript).join("");
         document.getElementById("user-input").value = transcript;
-        autoResize(document.getElementById("user-input"));
+        handleInput(document.getElementById("user-input"));
       };
 
       recognition.onend = () => {
