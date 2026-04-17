@@ -5,6 +5,36 @@ import logging
 import re
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
+import urllib.request
+import urllib.parse
+import socket
+import ipaddress
+
+def _is_safe_url(url: str) -> bool:
+    try:
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme not in ('http', 'https'):
+            return False
+
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+
+        ip_str = socket.gethostbyname(hostname)
+        ip = ipaddress.ip_address(ip_str)
+
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast:
+            return False
+
+        return True
+    except Exception:
+        return False
+
+class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not _is_safe_url(newurl):
+            raise ValueError("Blocked redirect to unsafe URL.")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 log = logging.getLogger(__name__)
 
@@ -160,9 +190,13 @@ class WorkflowEngine:
                 return False
 
         elif node_type == "action.http_request":
-            import urllib.request
-            req = urllib.request.Request(config.get("url", ""), method=config.get("method", "GET"))
-            with urllib.request.urlopen(req, timeout=5) as r:
+            url = config.get("url", "")
+            if not _is_safe_url(url):
+                raise ValueError("Unsafe URL blocked.")
+
+            req = urllib.request.Request(url, method=config.get("method", "GET"))
+            opener = urllib.request.build_opener(SafeRedirectHandler())
+            with opener.open(req, timeout=5) as r:
                 return r.read().decode('utf-8')
 
         return None
