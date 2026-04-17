@@ -63,21 +63,52 @@ _HINDI_FONTS = [
 # ── Scene Extraction ─────────────────────────────────────────
 
 def extract_scene_descriptions(script: str, channel: str, num_scenes: int = 7) -> list[str]:
+    """
+    Uses Gemini to extract visual scene descriptions from the script.
+    Returns a list of image generation prompts.
+    """
     try:
-        from src.core.ai_router import AIRouter
-        ai = AIRouter()
-        style = "Cinematic Noir, moody lighting" if "Riya" in channel else "Warm golden hour, natural lighting"
-        prompt = f"Extract exactly {num_scenes} distinct scene descriptions from this script. They should be standalone prompts for an image generator. Format as a pure JSON list of strings. No markdown backticks. Script: {script[:2000]}"
-        result = ai.generate(system_prompt="You are an expert AI image prompt engineer. Return ONLY a valid JSON list.", user_message=prompt, nvidia_task_type="writing")
-        import json
-        import re
-        match = re.search(r'\[.*?\]', result, re.DOTALL)
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            return _fallback_scenes(channel, num_scenes)
+
+        style_map = {
+            "Story With Aisha":            "warm golden hour, soft bokeh, Indian romantic aesthetic, emotional close-ups",
+            "Riya's Dark Whisper":         "dark cinematic noir, dramatic shadows, Mumbai night, moody atmospheric",
+            "Riya's Dark Romance Library": "dark mafia aesthetic, luxury interiors, intense dramatic lighting",
+            "Aisha & Him":                 "bright relatable everyday Indian couple, natural light, candid moments",
+        }
+        style = style_map.get(channel, "cinematic Indian aesthetic, high quality, emotional")
+
+        prompt = f"""You are a visual director for a YouTube channel called '{channel}'.
+
+Script excerpt:
+{script[:2000]}
+
+Extract exactly {num_scenes} distinct visual scenes from this script.
+For each scene, write a detailed image generation prompt (1-2 sentences).
+Style guide: {style}
+
+Return ONLY a valid JSON array of {num_scenes} strings. Example:
+["A woman in a red saree standing by rain-soaked window...", "Two people sharing an umbrella..."]
+
+No explanation, no extra text. Just the JSON array."""
+
+        _url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+        _resp = requests.post(_url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=60)
+        _resp.raise_for_status()
+        text = _resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+        match = re.search(r'\[[\s\S]*\]', text)
         if match:
             scenes = json.loads(match.group(0))
             return [f"{s}. Style: {style}. Ultra HD, cinematic." for s in scenes[:num_scenes]]
+
     except Exception as e:
-        pass
+        log.error(f"Scene extraction failed: {e}")
+
     return _fallback_scenes(channel, num_scenes)
+
 
 def _fallback_scenes(channel: str, num_scenes: int) -> list[str]:
     """Fallback generic scene prompts when AI extraction fails."""
@@ -324,7 +355,7 @@ def render_video(
             log.info(f"[VideoEngine] Scene {i+1}/{len(scenes_to_generate)}: generating...")
             img_bytes = generate_scene_image(desc, width=width, height=height)
             if img_bytes:
-                img_path = os.path.join(VIDEO_DIR, f"scene_{uuid.uuid4().hex[:6]}.png")
+                img_path = os.path.join(ASSETS_DIR, f"scene_{uuid.uuid4().hex[:6]}.png")
                 with open(img_path, "wb") as f:
                     f.write(img_bytes)
                 image_paths.append(img_path)
@@ -344,8 +375,7 @@ def render_video(
             try:
                 clip = _make_ken_burns_clip(img_path, clip_duration, i, width, height)
                 if clip:
-                    # Explicitly set the end time of the clip so MoviePy knows exactly how to concatenate it
-                    clips.append(clip.with_duration(clip_duration))
+                    clips.append(clip)
             except Exception as e:
                 log.warning(f"[VideoEngine] Clip {i} failed: {e}")
                 color = [20, 20, 30] if "Riya" in channel else [30, 15, 40]
@@ -357,8 +387,6 @@ def render_video(
         # Step 4: Concatenate + add audio
         log.info("[VideoEngine] Concatenating clips and adding audio...")
         video = concatenate_videoclips(clips, method="compose")
-        # Ensure video duration matches audio duration exactly
-        video = video.with_duration(total_duration)
         video = video.with_audio(audio)
 
         # Step 5: Export base video

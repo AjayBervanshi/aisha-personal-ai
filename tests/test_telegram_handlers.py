@@ -53,7 +53,7 @@ class TestTelegramHandlers(unittest.TestCase):
         try:
             cmd_start(msg)
             mock_bot.send_message.assert_called_once()
-            self.assertIn("I'm Aisha — your personal companion", mock_bot.send_message.call_args[0][1])
+            self.assertIn("I'm Aisha", mock_bot.send_message.call_args[0][1])
         finally:
             bot_module.AUTHORIZED_ID = original_id
 

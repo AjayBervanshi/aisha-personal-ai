@@ -1,3 +1,6 @@
+## 2026-04-14 - Icon-only buttons lacking ARIA labels
+**Learning:** This app's custom UI heavily relies on icon-only `<button>` elements (e.g., emojis for voice, settings, mic, send) that rely solely on `title` attributes. While `title` provides a tooltip, it is not consistently read by all screen readers, making the interface inaccessible to keyboard and assistive technology users.
+**Action:** Ensure all semantic `<button>` elements that use visual-only content (like emojis or SVGs) include an explicit `aria-label` attribute describing their function.
 ## 2024-04-09 - Semantic Buttons for Interactive Elements
 **Learning:** In vanilla HTML/CSS environments like `aisha-web` that use custom `<div>` tags for interactive elements (e.g., Mode Pills), screen readers fail to recognize them as selectable tabs/buttons.
 **Action:** Convert them to native `<button>` elements, add `font-family: inherit` to prevent system button styling from overriding the app's font, and use appropriate ARIA attributes (`role="tablist"`, `role="tab"`, `aria-selected`).

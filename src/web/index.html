@@ -289,9 +289,9 @@
       <div class="header-status" id="status-text">Online · Always here for you</div>
     </div>
     <div class="header-actions">
-      <button class="icon-btn" id="voice-toggle-btn" onclick="toggleVoiceOutput()" title="Toggle voice">🔊</button>
-      <button class="icon-btn" onclick="clearChat()" title="Clear chat">🗑️</button>
-      <button class="icon-btn" onclick="toggleSettings()" title="Settings">⚙️</button>
+      <button class="icon-btn" id="voice-toggle-btn" onclick="toggleVoiceOutput()" title="Toggle voice" aria-label="Toggle voice">🔊</button>
+      <button class="icon-btn" onclick="clearChat()" title="Clear chat" aria-label="Clear chat">🗑️</button>
+      <button class="icon-btn" onclick="toggleSettings()" title="Settings" aria-label="Settings">⚙️</button>
     </div>
   </div>
 
@@ -333,9 +333,9 @@
       <div class="text-wrap">
         <textarea id="user-input" placeholder="Talk to Aisha..." rows="1"
           onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
-        <button class="mic-btn" id="mic-btn" onclick="toggleMic()" title="Voice input">🎙️</button>
+        <button class="mic-btn" id="mic-btn" onclick="toggleMic()" title="Voice input" aria-label="Voice input">🎙️</button>
       </div>
-      <button class="send-btn" onclick="sendMessage()" title="Send">➤</button>
+      <button class="send-btn" onclick="sendMessage()" title="Send message" aria-label="Send message">➤</button>
     </div>
   </div>
 
@@ -343,7 +343,7 @@
   <div class="panel" id="settings-panel">
     <div class="panel-header">
       <div class="panel-title">⚙️ Settings</div>
-      <button class="panel-close" onclick="toggleSettings()">✕</button>
+      <button class="panel-close" onclick="toggleSettings()" title="Close" aria-label="Close settings">✕</button>
     </div>
     <div class="panel-body">
       <div class="setting-section">
@@ -471,8 +471,8 @@ function renderMessage(role, text, time = null) {
         <div style="display:flex;align-items:center;gap:6px">
           <div class="msg-time">${msgTime}</div>
           <div class="msg-actions">
-            <button class="msg-action-btn" onclick="speakText(this)" data-text="${text.replace(/"/g,'&quot;')}">🔊</button>
-            <button class="msg-action-btn" onclick="copyText('${text.replace(/'/g,"\\'")}')">📋</button>
+            <button class="msg-action-btn" onclick="speakText(this)" data-text="${text.replace(/\"/g,'&quot;')}" title="Read aloud" aria-label="Read message aloud">🔊</button>
+            <button class="msg-action-btn" onclick="copyText('${text.replace(/'/g,"\\\\'")}')" title="Copy" aria-label="Copy message">📋</button>
           </div>
         </div>
       </div>`;

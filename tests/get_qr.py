@@ -1,6 +1,6 @@
 """Quick script: Open Telegram Web, wait for QR code, save screenshot."""
 import sys, io
-#sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 from pathlib import Path
 from playwright.sync_api import sync_playwright

@@ -16,7 +16,7 @@ Requires: Edge --remote-debugging-port=9222 + Telegram chat open
 """
 import sys, io, time, json, os, requests
 from datetime import datetime
-#sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 from playwright.sync_api import sync_playwright, Error as PWError
 
 # ─── Load .env ────────────────────────────────────────────────────────────────

@@ -360,7 +360,7 @@ class AutonomousLoop:
                          f"suggest ONE viral {selected['vibe']} story topic title. "
                          f"Already used: {self._used_topics[-10:] if self._used_topics else 'none'}. "
                          "Return ONLY the topic title, nothing else.")
-                topic = self.brain.ai.generate("You are Aisha.", prompt, nvidia_task_type="writing").strip()
+                topic = self.brain.ai.generate("You are Aisha.", prompt).text.strip()
                 if topic not in self._used_topics:
                     self._used_topics.append(topic)
                     # Cap at 200 entries — old topics can be reused after that

@@ -74,7 +74,7 @@ class MemoryManager:
         Search for relevant memories using pgvector!
         (Requires an embedding of the query first)
         """
-        embedding = self._generate_embedding(query, is_query=True)
+        embedding = self._generate_embedding(query)
         if not embedding:
             return []
 
@@ -92,42 +92,39 @@ class MemoryManager:
             print(f"[Memory] Error fetching semantic memories: {e}")
             return []
 
-    def _generate_embedding(self, text: str, is_query: bool = False) -> Optional[List[float]]:
-        import os
-        import requests as _req
-        import time
-
-        nvidia_key = os.getenv("NVIDIA_QWEN_122B") or os.getenv("NVIDIA_LLAMA33_A") or os.getenv("NVIDIA_API_KEY", "")
-        if not nvidia_key:
+    def _generate_embedding(self, text: str) -> Optional[List[float]]:
+        """
+        Generate embeddings using Gemini text-embedding-004 via REST API.
+        Produces 768-dim vectors matching the DB vector(768) column.
+        """
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key or "your_" in api_key.lower():
             return None
 
-        url = "https://integrate.api.nvidia.com/v1/embeddings"
-        headers = {"Authorization": f"Bearer {nvidia_key}"}
-
-        input_type = "query" if is_query else "passage"
-
+        import time
+        import requests as _req
         max_retries = 3
+        base_delay = 2
+        # gemini-embedding-001 is the available model via v1beta
+        # outputDimensionality=768 uses Matryoshka scaling to match DB vector(768)
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key={api_key}"
+
         for attempt in range(max_retries):
             try:
-                resp = _req.post(url, headers=headers, json={
-                    "model": "nvidia/nv-embedqa-e5-v5",
-                    "input": [text],
-                    "input_type": input_type,
-                    "encoding_format": "float",
-                    "truncate": "NONE"
+                resp = _req.post(url, json={
+                    "content": {"parts": [{"text": text}]},
+                    "taskType": "RETRIEVAL_DOCUMENT",
+                    "outputDimensionality": 768,
                 }, timeout=30)
                 resp.raise_for_status()
-                d = resp.json()
-                if "data" in d and len(d["data"]) > 0:
-                    return d["data"][0]["embedding"]
-                return None
+                return resp.json()["embedding"]["values"]
             except Exception as e:
                 print(f"[Memory] Embedding attempt {attempt+1} failed: {e}")
                 if attempt < max_retries - 1:
-                    time.sleep(2 * (2 ** attempt))
+                    time.sleep(base_delay * (2 ** attempt))
                 else:
-                    print("[Memory] Fatal: Failed after 3 attempts.")
-        return None
+                    print(f"[Memory] Fatal: Failed after {max_retries} attempts.")
+                    return None
 
     def save_memory(self, category: str, title: str, content: str, importance: int = 3, tags: Optional[List[str]] = None):
         """Save a new memory to Supabase. Embedding is best-effort — memory saves even if embedding fails."""

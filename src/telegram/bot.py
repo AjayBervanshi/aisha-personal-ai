@@ -125,8 +125,8 @@ _pending_approvals: dict = {}   # user_id → {user, text, message}
 
 BOT_TOKEN      = os.getenv("TELEGRAM_BOT_TOKEN")
 AUTHORIZED_ID  = int(os.getenv("AJAY_TELEGRAM_ID", "0"))  # Only Ajay can use this bot!
-SUPABASE_URL   = os.getenv("SUPABASE_URL", "http://localhost")
-SUPABASE_KEY   = os.getenv("SUPABASE_SERVICE_KEY", "dummy_key")
+SUPABASE_URL   = os.getenv("SUPABASE_URL")
+SUPABASE_KEY   = os.getenv("SUPABASE_SERVICE_KEY")
 
 # ─── Logging ───────────────────────────────────────────────────────────────────
 
@@ -613,8 +613,6 @@ def cmd_channels(message):
     bot.send_message(message.chat.id, text, parse_mode="Markdown")
 
 
-@bot.message_handler(commands=["produce"])
-
 def cmd_sandbox(message):
     if not is_admin(message): return unauthorized_response(message)
     code = message.text.replace("/sandbox", "").strip()
@@ -625,7 +623,7 @@ def cmd_sandbox(message):
     bot.send_message(message.chat.id, "Running in E2B secure sandbox...")
     from src.core.code_sandbox import execute_python_code
     res = execute_python_code(code)
-    
+
     if res["success"]:
         bot.send_message(message.chat.id, f"✅ *Success*\n```text\n{res['output']}\n```", parse_mode="Markdown")
     else:
@@ -657,6 +655,7 @@ bot.message_handler(commands=['sandbox'])(cmd_sandbox)
 bot.message_handler(commands=['queue'])(cmd_queue_status)
 
 # Replace the dumb terminal produce with background execution + approval
+@bot.message_handler(commands=["produce"])
 def cmd_produce(message):
     if not is_admin(message): return unauthorized_response(message)
     # E.g. /produce Story With Aisha | My Topic
