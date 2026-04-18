@@ -5,8 +5,30 @@ import logging
 import re
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
+import urllib.parse
+import urllib.request
+import socket
+import ipaddress
+import urllib.error
 
 log = logging.getLogger(__name__)
+
+class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        parsed_new = urllib.parse.urlparse(newurl)
+        if parsed_new.scheme not in ("http", "https"):
+            raise urllib.error.URLError(f"Invalid redirect scheme: {parsed_new.scheme}")
+        try:
+            new_host = parsed_new.hostname
+            if not new_host:
+                raise urllib.error.URLError("Missing hostname in redirect")
+            new_ip_addr = socket.gethostbyname(new_host)
+            new_ip = ipaddress.ip_address(new_ip_addr)
+            if new_ip.is_private or new_ip.is_loopback or new_ip.is_link_local or new_ip.is_multicast:
+                raise urllib.error.URLError(f"Blocked IP in redirect: {new_ip_addr}")
+        except Exception as e:
+            raise urllib.error.URLError(f"SSRF redirect blocked: {e}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 class WorkflowEngine:
     """
@@ -161,9 +183,34 @@ class WorkflowEngine:
 
         elif node_type == "action.http_request":
             import urllib.request
-            req = urllib.request.Request(config.get("url", ""), method=config.get("method", "GET"))
-            with urllib.request.urlopen(req, timeout=5) as r:
-                return r.read().decode('utf-8')
+            url_str = config.get("url", "")
+            try:
+                parsed = urllib.parse.urlparse(url_str)
+                if parsed.scheme not in ("http", "https"):
+                    raise ValueError(f"Invalid scheme: {parsed.scheme}")
+
+                hostname = parsed.hostname
+                if not hostname:
+                    raise ValueError("Missing hostname")
+
+                # Resolve IP
+                ip_addr = socket.gethostbyname(hostname)
+                ip = ipaddress.ip_address(ip_addr)
+
+                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast:
+                    raise ValueError(f"Blocked IP: {ip_addr}")
+            except Exception as e:
+                log.error(f"[Workflow] SSRF blocked URL {url_str}: {e}")
+                return False
+
+            req = urllib.request.Request(url_str, method=config.get("method", "GET"))
+            opener = urllib.request.build_opener(SafeRedirectHandler())
+            try:
+                with opener.open(req, timeout=5) as r:
+                    return r.read().decode('utf-8')
+            except urllib.error.URLError as e:
+                log.error(f"[Workflow] HTTP request failed: {e}")
+                return False
 
         return None
 
