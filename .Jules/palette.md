@@ -7,3 +7,7 @@
 ## 2026-03-30 - Disable Async Action Buttons
 **Learning:** The send button did not have a visual disabled state during async API calls, allowing double-submission or confusing the user whether the button was clicked.
 **Action:** Always add a disabled state visually (`:disabled` pseudo-class dropping opacity/disabling cursor) and functionally (JS `button.disabled = true;` during async calls) for interactive submit buttons.
+
+## 2024-05-14 - Temporary UI state feedback pattern
+**Learning:** When implementing temporary UI state changes (like briefly swapping a button text or icon for feedback using setTimeout), rapid subsequent clicks can cause issues. If the guard condition (e.g., `btn.textContent !== '✅'`) is omitted, rapid clicks capture the temporary state (e.g. '✅') as the new "original" state, causing the visual feedback to persist permanently.
+**Action:** Always implement a guard condition `if (btn && btn.textContent !== '✅')` or store the original state in a data attribute when implementing temporary visual feedback loops using `setTimeout`.

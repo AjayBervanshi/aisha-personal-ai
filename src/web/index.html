@@ -472,7 +472,7 @@ function renderMessage(role, text, time = null) {
           <div class="msg-time">${msgTime}</div>
           <div class="msg-actions">
             <button class="msg-action-btn" onclick="speakText(this)" data-text="${text.replace(/\"/g,'&quot;')}" title="Read aloud" aria-label="Read message aloud">🔊</button>
-            <button class="msg-action-btn" onclick="copyText('${text.replace(/'/g,"\\\\'")}')" title="Copy" aria-label="Copy message">📋</button>
+            <button class="msg-action-btn" onclick="copyText('${text.replace(/'/g,"\\\\'")}', this)" title="Copy" aria-label="Copy message">📋</button>
           </div>
         </div>
       </div>`;
@@ -723,7 +723,16 @@ function cycleLang() {
 // ── Utilities ────────────────────────────────────────────────
 function setStatus(text) { document.getElementById("status-text").textContent = text; }
 function toggleSettings() { document.getElementById("settings-panel").classList.toggle("open"); }
-function copyText(text) { navigator.clipboard.writeText(text); }
+function copyText(text, btn) {
+  navigator.clipboard.writeText(text);
+  if (btn && btn.textContent !== "✅") {
+    const originalText = btn.textContent;
+    btn.textContent = "✅";
+    setTimeout(() => {
+      btn.textContent = originalText;
+    }, 2000);
+  }
+}
 
 function clearChat() {
   if (!confirm("Clear this conversation?")) return;
