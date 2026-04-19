@@ -31,3 +31,8 @@
 **Vulnerability:** The workflow engine used Python's built-in `eval()` to execute condition strings in logic nodes.
 **Learning:** Even when passing a restricted global dict (`{"__builtins__": {}}`), `eval()` remains highly unsafe and vulnerable to code injection/RCE, as users can still access system functions through other means or crash the application.
 **Prevention:** Never use `eval()` on untrusted input. Instead, use an Abstract Syntax Tree (AST) evaluator with an explicit whitelist of allowed node types (`ast.parse`) or use a secure alternative like `asteval` library.
+
+## 2024-05-20 - [SSRF in Workflow Engine HTTP Action]
+**Vulnerability:** The `action.http_request` workflow node in `src/core/workflow_engine.py` accepted arbitrary URLs provided by users and fetched them directly via `urllib.request.urlopen`. This allowed Server-Side Request Forgery (SSRF), meaning attackers could use the engine to hit private internal IPs (like `127.0.0.1` or AWS Metadata at `169.254.169.254`).
+**Learning:** We need to explicitly restrict outbound HTTP requests made by the application on behalf of the user to only public IPs. Furthermore, simple URL checks aren't enough because redirects can still point to local IPs.
+**Prevention:** Implement an `is_safe_url` function that resolves hostnames to IPs and ensures they are not private, loopback, link-local, or multicast using the `ipaddress` module. Additionally, subclass `urllib.request.HTTPRedirectHandler` to intercept redirects and run the same `is_safe_url` validation on redirect targets.
