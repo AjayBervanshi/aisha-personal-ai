@@ -167,8 +167,8 @@ class LearningEngine:
     def get_success_rate(self) -> float:
         """Returns 0.0–1.0 success rate across all improvement sessions."""
         try:
-            # .limit(1) avoids downloading O(N) rows when we only need the exact count
-            total_resp = self._sb.table(self.TABLE).select("id", count="exact").limit(1).execute()
+            # .limit(0) avoids downloading O(N) rows when we only need the exact count
+            total_resp = self._sb.table(self.TABLE).select("id", count="exact").limit(0).execute()
             total = total_resp.count or 0
             if total == 0:
                 return 0.0
@@ -176,7 +176,7 @@ class LearningEngine:
                 self._sb.table(self.TABLE)
                 .select("id", count="exact")
                 .in_("status", ["success", "deployed"])
-                .limit(1)
+                .limit(0)
                 .execute()
             )
             successes = success_resp.count or 0

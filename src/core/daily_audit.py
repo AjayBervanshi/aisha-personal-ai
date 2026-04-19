@@ -158,7 +158,7 @@ async def check_supabase_tables() -> dict:
 
     async def _check_table(sb, table):
         try:
-            await sb.table(table).select("id", count="exact").limit(1).execute()
+            await sb.table(table).select("id", count="exact").limit(0).execute()
             return table, "ok"
         except Exception as e:
             return table, f"error: {e}"
