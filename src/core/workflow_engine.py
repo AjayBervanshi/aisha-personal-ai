@@ -3,10 +3,22 @@ import operator
 import json
 import logging
 import re
+import socket
+import ipaddress
+import urllib.request
+from urllib.parse import urlparse
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
 log = logging.getLogger(__name__)
+
+class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """
+    Prevents SSRF attacks during redirects by validating the new URL.
+    """
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        WorkflowEngine._validate_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 class WorkflowEngine:
     """
@@ -130,6 +142,26 @@ class WorkflowEngine:
             log.error(f"Workflow NLP Builder Error: {e}")
             return None
 
+    @staticmethod
+    def _validate_url(url: str):
+        """Validates a URL to prevent Server-Side Request Forgery (SSRF)."""
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            raise ValueError(f"Invalid scheme: {parsed.scheme}")
+
+        hostname = parsed.hostname
+        if not hostname:
+            raise ValueError("Missing hostname")
+
+        try:
+            ip = socket.gethostbyname(hostname)
+            ip_obj = ipaddress.ip_address(ip)
+        except socket.gaierror:
+            raise ValueError("Invalid hostname")
+
+        if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_multicast or ip_obj.is_link_local:
+            raise ValueError(f"Private/internal IP ({ip}) is not allowed")
+
     def _execute_node(self, node: Dict[str, Any], state: Dict[str, Any]) -> Any:
         """Simulates executing a single node's logic."""
         node_type = node.get("type", "")
@@ -160,9 +192,13 @@ class WorkflowEngine:
                 return False
 
         elif node_type == "action.http_request":
-            import urllib.request
-            req = urllib.request.Request(config.get("url", ""), method=config.get("method", "GET"))
-            with urllib.request.urlopen(req, timeout=5) as r:
+            url = config.get("url", "")
+            self._validate_url(url)
+
+            req = urllib.request.Request(url, method=config.get("method", "GET"))
+
+            opener = urllib.request.build_opener(SafeRedirectHandler())
+            with opener.open(req, timeout=5) as r:
                 return r.read().decode('utf-8')
 
         return None
