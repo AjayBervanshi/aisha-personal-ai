@@ -1,3 +1,7 @@
+import urllib.parse
+import urllib.request
+import socket
+import ipaddress
 import ast
 import operator
 import json
@@ -7,6 +11,29 @@ from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
 log = logging.getLogger(__name__)
+
+
+def is_safe_url(url: str) -> bool:
+    try:
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+        ip_str = socket.gethostbyname(hostname)
+        ip = ipaddress.ip_address(ip_str)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast:
+            return False
+        return True
+    except Exception:
+        return False
+
+class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not is_safe_url(newurl):
+            raise urllib.error.URLError("Unsafe redirect URL detected")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 class WorkflowEngine:
     """
@@ -160,10 +187,19 @@ class WorkflowEngine:
                 return False
 
         elif node_type == "action.http_request":
-            import urllib.request
-            req = urllib.request.Request(config.get("url", ""), method=config.get("method", "GET"))
-            with urllib.request.urlopen(req, timeout=5) as r:
-                return r.read().decode('utf-8')
+            url = config.get("url", "")
+            if not is_safe_url(url):
+                log.warning(f"[Workflow] action.http_request blocked unsafe URL: {url}")
+                return "Error: Unsafe URL"
+
+            req = urllib.request.Request(url, method=config.get("method", "GET"))
+            opener = urllib.request.build_opener(SafeRedirectHandler())
+            try:
+                with opener.open(req, timeout=5) as r:
+                    return r.read().decode('utf-8')
+            except Exception as e:
+                log.warning(f"[Workflow] HTTP Request failed: {e}")
+                return f"Error: {e}"
 
         return None
 
