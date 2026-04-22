@@ -7,3 +7,7 @@
 ## 2026-03-30 - Disable Async Action Buttons
 **Learning:** The send button did not have a visual disabled state during async API calls, allowing double-submission or confusing the user whether the button was clicked.
 **Action:** Always add a disabled state visually (`:disabled` pseudo-class dropping opacity/disabling cursor) and functionally (JS `button.disabled = true;` during async calls) for interactive submit buttons.
+
+## 2026-03-31 - Clipboard Visual Feedback and State Guards
+**Learning:** Added visual feedback for the `copyText` function (changing button text to '✅') but realized that rapid subsequent clicks could capture the temporary state ('✅') as the 'original' state. This caused the copy icon to permanently get stuck as '✅' instead of reverting to the clipboard icon.
+**Action:** Always include a guard condition (like `btn.textContent !== '✅'`) when temporarily swapping UI elements/text with `setTimeout`, preventing rapid clicks from capturing and permanently persisting the temporary feedback state.
