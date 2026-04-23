@@ -3,10 +3,43 @@ import operator
 import json
 import logging
 import re
+import urllib.request
+import urllib.parse
+import socket
+import ipaddress
+import urllib.error
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
 log = logging.getLogger(__name__)
+
+def _is_safe_url(url: str) -> bool:
+    """Validates URL scheme and ensures the resolved IP is public."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme not in ["http", "https"]:
+            return False
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+
+        # Resolve to IP
+        ip = socket.gethostbyname(hostname)
+        ip_obj = ipaddress.ip_address(ip)
+
+        # Check against private/internal ranges
+        if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_multicast:
+            return False
+        return True
+    except Exception as e:
+        log.warning(f"URL validation failed: {e}")
+        return False
+
+class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not _is_safe_url(newurl):
+            raise urllib.error.URLError(f"Unsafe redirect URL blocked: {newurl}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 class WorkflowEngine:
     """
@@ -160,10 +193,19 @@ class WorkflowEngine:
                 return False
 
         elif node_type == "action.http_request":
-            import urllib.request
-            req = urllib.request.Request(config.get("url", ""), method=config.get("method", "GET"))
-            with urllib.request.urlopen(req, timeout=5) as r:
-                return r.read().decode('utf-8')
+            url = config.get("url", "")
+            if not _is_safe_url(url):
+                log.error(f"[Workflow] action.http_request URL failed safety checks: {url}")
+                return "Error: URL is unsafe or points to a restricted IP."
+
+            req = urllib.request.Request(url, method=config.get("method", "GET"))
+            opener = urllib.request.build_opener(SafeRedirectHandler())
+            try:
+                with opener.open(req, timeout=5) as r:
+                    return r.read().decode('utf-8')
+            except urllib.error.URLError as e:
+                log.error(f"[Workflow] action.http_request failed: {e}")
+                return f"Error: {e}"
 
         return None
 
