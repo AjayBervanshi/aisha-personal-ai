@@ -31,3 +31,8 @@
 **Vulnerability:** The workflow engine used Python's built-in `eval()` to execute condition strings in logic nodes.
 **Learning:** Even when passing a restricted global dict (`{"__builtins__": {}}`), `eval()` remains highly unsafe and vulnerable to code injection/RCE, as users can still access system functions through other means or crash the application.
 **Prevention:** Never use `eval()` on untrusted input. Instead, use an Abstract Syntax Tree (AST) evaluator with an explicit whitelist of allowed node types (`ast.parse`) or use a secure alternative like `asteval` library.
+
+## 2026-03-27 - [Audit] SSRF & OOM CSRF Risks
+**Vulnerability:** Workflow Engine allows unrestricted HTTP requests via `action.http_request` (SSRF). Instagram OAuth uses an unbounded, in-memory `_oauth_states` dictionary.
+**Learning:** Never trust LLM-generated URLs for internal execution. In-memory state tracking for CSRF fails in scaled environments and introduces memory exhaustion vectors.
+**Prevention:** Implement IP/scheme filtering for all outbound webhook/HTTP nodes. Move OAuth state tracking to the database or sign the state string as a JWT to make it stateless.
