@@ -1,4 +1,42 @@
 import ast
+
+import socket
+import ipaddress
+import urllib.request
+import urllib.error
+from urllib.parse import urlparse
+
+def is_safe_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+
+        # Handle IPv6 properly and avoid gethostbyname limitations
+        try:
+            # Check if it's already an IP address
+            ips = [ipaddress.ip_address(hostname.strip("[]"))]
+        except ValueError:
+            # If not an IP, try resolving it. getaddrinfo handles both v4 and v6
+            addr_info = socket.getaddrinfo(hostname, None)
+            ips = [ipaddress.ip_address(info[4][0]) for info in addr_info]
+
+        for ip in ips:
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified:
+                return False
+        return True
+    except Exception:
+        return False
+
+class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not is_safe_url(newurl):
+            raise urllib.error.URLError(f"Unsafe redirect URL: {newurl}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
 import operator
 import json
 import logging
@@ -160,9 +198,13 @@ class WorkflowEngine:
                 return False
 
         elif node_type == "action.http_request":
-            import urllib.request
-            req = urllib.request.Request(config.get("url", ""), method=config.get("method", "GET"))
-            with urllib.request.urlopen(req, timeout=5) as r:
+            url = config.get("url", "")
+            if not is_safe_url(url):
+                log.warning(f"[Workflow] action.http_request: Blocked unsafe URL: {url}")
+                return "Error: Blocked unsafe URL"
+            opener = urllib.request.build_opener(SafeRedirectHandler())
+            req = urllib.request.Request(url, method=config.get("method", "GET"))
+            with opener.open(req, timeout=5) as r:
                 return r.read().decode('utf-8')
 
         return None
