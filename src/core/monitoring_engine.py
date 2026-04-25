@@ -68,9 +68,10 @@ def _check_stuck_queue() -> list:
     headers = _supabase_headers()
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
     try:
+        # Added &limit=1 to prevent fetching all matching rows into memory when count=exact
         r = requests.get(
             f"{base}/rest/v1/content_jobs"
-            f"?status=eq.queued&created_at=lt.{cutoff}&select=id",
+            f"?status=eq.queued&created_at=lt.{cutoff}&select=id&limit=1",
             headers={**headers, "Prefer": "count=exact"},
             timeout=10,
         )
@@ -115,8 +116,9 @@ def _check_supabase_tables() -> list:
     # plain count tables
     for table in ("aisha_memory", "aisha_conversations", "aisha_mood_tracker"):
         try:
+            # Added &limit=1 to prevent O(N) memory/network overhead
             r = requests.get(
-                f"{base}/rest/v1/{table}?select=id",
+                f"{base}/rest/v1/{table}?select=id&limit=1",
                 headers={**headers, "Prefer": "count=exact"},
                 timeout=10
             )
@@ -176,8 +178,9 @@ def _get_reliability_stats() -> dict:
     since_1h = (now - timedelta(hours=1)).isoformat()
     errors_1h = 0
     try:
+        # Added &limit=1 to prevent O(N) memory/network overhead
         r1 = requests.get(
-            f"{base}/rest/v1/aisha_system_log?level=eq.ERROR&created_at=gte.{since_1h}&select=id",
+            f"{base}/rest/v1/aisha_system_log?level=eq.ERROR&created_at=gte.{since_1h}&select=id&limit=1",
             headers={**headers, "Prefer": "count=exact"},
             timeout=5,
         )
@@ -190,8 +193,9 @@ def _get_reliability_stats() -> dict:
     since_24h = (now - timedelta(hours=24)).isoformat()
     errors_24h = 0
     try:
+        # Added &limit=1 to prevent O(N) memory/network overhead
         r2 = requests.get(
-            f"{base}/rest/v1/aisha_system_log?level=eq.ERROR&created_at=gte.{since_24h}&select=id",
+            f"{base}/rest/v1/aisha_system_log?level=eq.ERROR&created_at=gte.{since_24h}&select=id&limit=1",
             headers={**headers, "Prefer": "count=exact"},
             timeout=5,
         )
@@ -203,8 +207,9 @@ def _get_reliability_stats() -> dict:
     # Content queue depth (queued jobs)
     queue_depth = 0
     try:
+        # Added &limit=1 to prevent O(N) memory/network overhead
         r3 = requests.get(
-            f"{base}/rest/v1/content_jobs?status=eq.queued&select=id",
+            f"{base}/rest/v1/content_jobs?status=eq.queued&select=id&limit=1",
             headers={**headers, "Prefer": "count=exact"},
             timeout=5,
         )
