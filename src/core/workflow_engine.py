@@ -5,8 +5,39 @@ import logging
 import re
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
+import urllib.request
+import urllib.parse
+import socket
+import ipaddress
 
 log = logging.getLogger(__name__)
+
+def _validate_url_ssrf(url: str):
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Invalid URL scheme: {parsed.scheme}")
+
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError("Invalid URL: missing hostname")
+
+    try:
+        # Resolve hostname (this catches 0.0.0.0 and supports IPv6)
+        addrinfo = socket.getaddrinfo(hostname, None)
+    except socket.gaierror:
+        raise ValueError(f"Could not resolve hostname: {hostname}")
+
+    for info in addrinfo:
+        ip_str = info[4][0]
+        ip = ipaddress.ip_address(ip_str)
+        if (ip.is_private or ip.is_loopback or ip.is_link_local or
+            ip.is_multicast or ip.is_unspecified):
+            raise ValueError(f"URL resolves to a restricted IP address: {ip_str}")
+
+class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _validate_url_ssrf(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 class WorkflowEngine:
     """
@@ -160,9 +191,11 @@ class WorkflowEngine:
                 return False
 
         elif node_type == "action.http_request":
-            import urllib.request
-            req = urllib.request.Request(config.get("url", ""), method=config.get("method", "GET"))
-            with urllib.request.urlopen(req, timeout=5) as r:
+            url = config.get("url", "")
+            _validate_url_ssrf(url)
+            req = urllib.request.Request(url, method=config.get("method", "GET"))
+            opener = urllib.request.build_opener(SafeRedirectHandler())
+            with opener.open(req, timeout=5) as r:
                 return r.read().decode('utf-8')
 
         return None
