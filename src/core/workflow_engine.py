@@ -3,10 +3,48 @@ import operator
 import json
 import logging
 import re
+import urllib.request
+import urllib.parse
+import socket
+import ipaddress
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
+
 log = logging.getLogger(__name__)
+
+class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not _validate_url(newurl):
+            raise ValueError(f"Insecure redirect URL: {newurl}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+def _validate_url(url: str) -> bool:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ('http', 'https'):
+        return False
+
+    hostname = parsed.hostname
+    if not hostname:
+        return False
+
+    try:
+        # Resolve all IPs for the hostname using getaddrinfo
+        addr_info = socket.getaddrinfo(hostname, None)
+        for _, _, _, _, sockaddr in addr_info:
+            ip_str = sockaddr[0]
+            ip = ipaddress.ip_address(ip_str)
+            if (ip.is_private or ip.is_loopback or ip.is_link_local or
+                ip.is_multicast or ip.is_unspecified):
+                return False
+    except socket.gaierror:
+        # Domain name not found or invalid
+        return False
+    except ValueError:
+        # Invalid IP address
+        return False
+
+    return True
 
 class WorkflowEngine:
     """
@@ -160,9 +198,14 @@ class WorkflowEngine:
                 return False
 
         elif node_type == "action.http_request":
-            import urllib.request
-            req = urllib.request.Request(config.get("url", ""), method=config.get("method", "GET"))
-            with urllib.request.urlopen(req, timeout=5) as r:
+            url = config.get("url", "")
+            if not _validate_url(url):
+                log.error(f"[Workflow] Invalid or insecure URL requested: {url}")
+                return "Error: Insecure URL"
+
+            req = urllib.request.Request(url, method=config.get("method", "GET"))
+            opener = urllib.request.build_opener(SafeRedirectHandler())
+            with opener.open(req, timeout=5) as r:
                 return r.read().decode('utf-8')
 
         return None
