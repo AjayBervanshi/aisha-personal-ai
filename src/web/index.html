@@ -12,6 +12,7 @@
   <style>
     /* ── Reset & Base ───────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    *:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     :root {
       --bg:        #0d0517;
       --bg2:       #130824;
@@ -208,8 +209,9 @@
       flex-shrink: 0; transition: all 0.2s;
       box-shadow: 0 0 16px rgba(155,89,245,0.4);
     }
-    .send-btn:hover { transform: scale(1.08); box-shadow: 0 0 24px rgba(155,89,245,0.6); }
-    .send-btn:active { transform: scale(0.95); }
+    .send-btn:hover:not(:disabled) { transform: scale(1.08); box-shadow: 0 0 24px rgba(155,89,245,0.6); }
+    .send-btn:active:not(:disabled) { transform: scale(0.95); }
+    .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
     /* ── Settings Panel ─────────────────────────────────────── */
     .panel {
@@ -335,7 +337,7 @@
           onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
         <button class="mic-btn" id="mic-btn" onclick="toggleMic()" title="Voice input" aria-label="Voice input">🎙️</button>
       </div>
-      <button class="send-btn" onclick="sendMessage()" title="Send message" aria-label="Send message">➤</button>
+      <button id="send-btn" class="send-btn" onclick="sendMessage()" title="Send message" aria-label="Send message">➤</button>
     </div>
   </div>
 
@@ -555,6 +557,11 @@ async function sendMessage(overrideText = null) {
   
   input.value = ""; autoResize(input);
   
+  // Disable inputs during async call
+  const sendBtn = document.getElementById("send-btn");
+  input.disabled = true;
+  if (sendBtn) sendBtn.disabled = true;
+
   // Hide quick actions after first message
   document.getElementById("quick-actions").style.display = "none";
   
@@ -583,6 +590,11 @@ async function sendMessage(overrideText = null) {
     renderMessage("ai", errMsg);
     setStatus("Online · Always here for you");
     console.error("Aisha error:", err);
+  } finally {
+    // Re-enable inputs
+    input.disabled = false;
+    if (sendBtn) sendBtn.disabled = false;
+    input.focus();
   }
 }
 
