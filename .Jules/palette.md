@@ -7,3 +7,7 @@
 ## 2026-03-30 - Disable Async Action Buttons
 **Learning:** The send button did not have a visual disabled state during async API calls, allowing double-submission or confusing the user whether the button was clicked.
 **Action:** Always add a disabled state visually (`:disabled` pseudo-class dropping opacity/disabling cursor) and functionally (JS `button.disabled = true;` during async calls) for interactive submit buttons.
+
+## 2026-03-30 - ARIA State Syncing for Toggles
+**Learning:** Adding static `aria-checked="true"` attributes to custom HTML toggles (`role="switch"`) creates a critical accessibility issue where the screen reader state drifts from the visual state when the user interacts with it.
+**Action:** Always implement or update JavaScript event handlers (like `onclick`) on every instance of custom ARIA components to dynamically sync the ARIA attribute (e.g., `setAttribute("aria-checked", isOn ? "true" : "false")`) with the visual state.
