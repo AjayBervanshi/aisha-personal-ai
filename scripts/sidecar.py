@@ -46,9 +46,15 @@ class LocalSidecar:
     def run_command(self, command: str) -> str:
         log.info(f"Executing local command: {command}")
         try:
+            import shlex
+            try:
+                cmd_args = shlex.split(command)
+            except ValueError as e:
+                return f"Error parsing command: {e}"
+
             result = subprocess.run(
-                command,
-                shell=True,
+                cmd_args,
+                shell=False,
                 capture_output=True,
                 text=True,
                 timeout=10
