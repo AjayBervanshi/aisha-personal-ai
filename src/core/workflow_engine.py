@@ -1,4 +1,9 @@
 import ast
+import urllib.request
+import urllib.parse
+import urllib.error
+import socket
+import ipaddress
 import operator
 import json
 import logging
@@ -7,6 +12,31 @@ from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
 log = logging.getLogger(__name__)
+
+
+def is_safe_url(url: str) -> bool:
+    try:
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme not in ('http', 'https'):
+            return False
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+        # getaddrinfo handles IPv4 and IPv6 and returns multiple IPs if available
+        addr_info = socket.getaddrinfo(hostname, None)
+        for res in addr_info:
+            ip = ipaddress.ip_address(res[4][0])
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified:
+                return False
+        return True
+    except Exception:
+        return False
+
+class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not is_safe_url(newurl):
+            raise urllib.error.URLError("Unsafe redirect URL detected")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 class WorkflowEngine:
     """
@@ -160,10 +190,19 @@ class WorkflowEngine:
                 return False
 
         elif node_type == "action.http_request":
-            import urllib.request
-            req = urllib.request.Request(config.get("url", ""), method=config.get("method", "GET"))
-            with urllib.request.urlopen(req, timeout=5) as r:
-                return r.read().decode('utf-8')
+            url = config.get("url", "")
+            if not is_safe_url(url):
+                log.warning(f"Blocked unsafe HTTP request to {url}")
+                return None
+
+            req = urllib.request.Request(url, method=config.get("method", "GET"))
+            opener = urllib.request.build_opener(SafeRedirectHandler())
+            try:
+                with opener.open(req, timeout=5) as r:
+                    return r.read().decode('utf-8')
+            except Exception as e:
+                log.error(f"HTTP Request failed: {e}")
+                return None
 
         return None
 
