@@ -31,3 +31,8 @@
 **Vulnerability:** The workflow engine used Python's built-in `eval()` to execute condition strings in logic nodes.
 **Learning:** Even when passing a restricted global dict (`{"__builtins__": {}}`), `eval()` remains highly unsafe and vulnerable to code injection/RCE, as users can still access system functions through other means or crash the application.
 **Prevention:** Never use `eval()` on untrusted input. Instead, use an Abstract Syntax Tree (AST) evaluator with an explicit whitelist of allowed node types (`ast.parse`) or use a secure alternative like `asteval` library.
+
+## 2026-05-02 - Fix Command Injection Risk via shell=True
+**Vulnerability:** System commands executed via `subprocess.run` or `subprocess.check_output` used `shell=True` to run commands, allowing potential command injection vulnerabilities if user input were inserted into the command strings.
+**Learning:** Using `shell=True` forces commands to be parsed by the shell (`/bin/sh` or `cmd.exe`), which exposes the system to command chaining and injection (e.g. `ls; rm -rf /`).
+**Prevention:** Avoid `shell=True` entirely for system commands. Always provide commands as lists of strings (`shell=False`) or parse complex command strings via `shlex.split()` before executing them.

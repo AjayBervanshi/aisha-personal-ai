@@ -19,8 +19,8 @@ class DesktopController:
         """Returns a list of currently open visible windows."""
         try:
             if self.os_type == 'windows':
-                cmd = 'powershell "Get-Process | Where-Object {$_.MainWindowTitle} | Select-Object MainWindowTitle | Format-List"'
-                return subprocess.check_output(cmd, shell=True, text=True).strip()
+                cmd = ['powershell', '-Command', 'Get-Process | Where-Object {$_.MainWindowTitle} | Select-Object MainWindowTitle | Format-List']
+                return subprocess.check_output(cmd, shell=False, text=True).strip()
 
             elif self.os_type == 'linux':
                 # Requires wmctrl installed on Linux
