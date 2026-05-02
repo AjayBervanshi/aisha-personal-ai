@@ -50,15 +50,15 @@ class AwarenessEngine:
         try:
             if self.os_type == 'windows':
                 # Quick PowerShell to get active window
-                cmd = 'powershell "Get-Process | Where-Object {$_.MainWindowHandle -ne 0 -and $_.MainWindowHandle -eq (Add-Type -MemberDefinition \\"[DllImport(\'\"user32.dll\\\"\')] public static extern IntPtr GetForegroundWindow();\\" -Name \\"Win32\\" -PassThru)::GetForegroundWindow()} | Select-Object -ExpandProperty MainWindowTitle"'
-                return subprocess.check_output(cmd, shell=True, text=True).strip()
+                cmd = ['powershell', '-Command', 'Get-Process | Where-Object {$_.MainWindowHandle -ne 0 -and $_.MainWindowHandle -eq (Add-Type -MemberDefinition \\"[DllImport(\'\\"user32.dll\\\"\')] public static extern IntPtr GetForegroundWindow();\\" -Name \\"Win32\\" -PassThru)::GetForegroundWindow()} | Select-Object -ExpandProperty MainWindowTitle']
+                return subprocess.check_output(cmd, shell=False, text=True).strip()
             elif self.os_type == 'linux':
                 # Requires xdotool
                 window_id = subprocess.check_output(["xdotool", "getactivewindow"], text=True).strip()
                 return subprocess.check_output(["xdotool", "getwindowname", window_id], text=True).strip()
             elif self.os_type == 'darwin':
-                cmd = """osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true'"""
-                app_name = subprocess.check_output(cmd, shell=True, text=True).strip()
+                cmd = ['osascript', '-e', 'tell application "System Events" to get name of first application process whose frontmost is true']
+                app_name = subprocess.check_output(cmd, shell=False, text=True).strip()
                 return f"Active App: {app_name}"
             return "Unknown OS"
         except Exception:
