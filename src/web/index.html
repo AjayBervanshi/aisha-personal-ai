@@ -350,7 +350,7 @@
         <div class="setting-label">Voice</div>
         <div class="setting-row">
           <span class="setting-name">🔊 Voice Output</span>
-          <button class="toggle on" id="voice-toggle" onclick="toggleVoiceOutput()"></button>
+          <button class="toggle on" id="voice-toggle" onclick="toggleVoiceOutput()" role="switch" aria-checked="true" aria-label="Voice Output"></button>
         </div>
         <div class="setting-row" onclick="changeVoice()">
           <span class="setting-name">🎵 Voice Style</span>
@@ -358,7 +358,7 @@
         </div>
         <div class="setting-row">
           <span class="setting-name">🎙️ Voice Input</span>
-          <button class="toggle on" id="mic-toggle"></button>
+          <button class="toggle on" id="mic-toggle" role="switch" aria-checked="true" aria-label="Voice Input" onclick="this.setAttribute('aria-checked', this.classList.toggle('on') ? 'true' : 'false')" ></button>
         </div>
       </div>
       <div class="setting-section">
@@ -372,7 +372,7 @@
         <div class="setting-label">Appearance</div>
         <div class="setting-row">
           <span class="setting-name">🌙 Dark Mode</span>
-          <button class="toggle on"></button>
+          <button class="toggle on" role="switch" aria-checked="true" aria-label="Dark Mode" onclick="this.setAttribute('aria-checked', this.classList.toggle('on') ? 'true' : 'false')" ></button>
         </div>
       </div>
       <div class="setting-section">
@@ -645,6 +645,7 @@ function toggleVoiceOutput() {
   const toggle = document.getElementById("voice-toggle");
   btn.classList.toggle("active", state.voiceEnabled);
   toggle?.classList.toggle("on", state.voiceEnabled);
+  if (toggle) toggle.setAttribute("aria-checked", state.voiceEnabled ? "true" : "false");
   btn.textContent = state.voiceEnabled ? "🔊" : "🔇";
   if (!state.voiceEnabled) speechSynthesis.cancel();
 }
