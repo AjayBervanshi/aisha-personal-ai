@@ -5,6 +5,30 @@ import logging
 import re
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
+import urllib.request
+import urllib.parse
+import socket
+import ipaddress
+
+class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        parsed = urllib.parse.urlparse(newurl)
+        if parsed.scheme not in ["http", "https"]:
+            raise ValueError("Invalid redirect scheme")
+
+        try:
+            addr_info = socket.getaddrinfo(parsed.hostname, parsed.port or (443 if parsed.scheme == 'https' else 80), socket.AF_UNSPEC, socket.SOCK_STREAM)
+        except Exception:
+            raise ValueError("Could not resolve redirect hostname")
+
+        for res in addr_info:
+            ip = res[4][0]
+            ip_obj = ipaddress.ip_address(ip)
+            if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_multicast or ip_obj.is_unspecified:
+                raise ValueError("Redirect to forbidden IP")
+
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
 
 log = logging.getLogger(__name__)
 
@@ -160,10 +184,36 @@ class WorkflowEngine:
                 return False
 
         elif node_type == "action.http_request":
-            import urllib.request
-            req = urllib.request.Request(config.get("url", ""), method=config.get("method", "GET"))
-            with urllib.request.urlopen(req, timeout=5) as r:
-                return r.read().decode('utf-8')
+            url_str = config.get("url", "")
+            parsed = urllib.parse.urlparse(url_str)
+            if parsed.scheme not in ["http", "https"]:
+                return "Error: Invalid URL scheme"
+            try:
+                addr_info = socket.getaddrinfo(parsed.hostname, parsed.port or (443 if parsed.scheme == 'https' else 80), socket.AF_UNSPEC, socket.SOCK_STREAM)
+            except Exception:
+                return "Error: Could not resolve hostname"
+
+            valid_ip = None
+            for res in addr_info:
+                ip = res[4][0]
+                ip_obj = ipaddress.ip_address(ip)
+                if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_multicast or ip_obj.is_unspecified:
+                    return "Error: Forbidden IP"
+                if not valid_ip:
+                    valid_ip = ip
+
+            if not valid_ip:
+                return "Error: No valid IP found"
+
+            # Perform request without custom IP binding to preserve SNI,
+            # and rely purely on domain verification. (If TOCTOU happens here, we accept it as we cannot securely pin without requests lib adapter).
+            req = urllib.request.Request(url_str, method=config.get("method", "GET"))
+            opener = urllib.request.build_opener(SafeRedirectHandler())
+            try:
+                with opener.open(req, timeout=5) as r:
+                    return r.read().decode('utf-8')
+            except Exception as e:
+                return f"Error: {str(e)}"
 
         return None
 
