@@ -161,8 +161,57 @@ class WorkflowEngine:
 
         elif node_type == "action.http_request":
             import urllib.request
-            req = urllib.request.Request(config.get("url", ""), method=config.get("method", "GET"))
-            with urllib.request.urlopen(req, timeout=5) as r:
+            import socket
+            import ipaddress
+            from urllib.parse import urlparse
+
+            url = config.get("url", "")
+            if not url:
+                return None
+
+            parsed_url = urlparse(url)
+            if parsed_url.scheme not in ("http", "https"):
+                raise ValueError("Invalid URL scheme")
+
+            hostname = parsed_url.hostname
+            if not hostname:
+                raise ValueError("Invalid URL hostname")
+
+            # Resolve the hostname to IP address
+            try:
+                # getaddrinfo handles IPv6 and 0.0.0.0 bypasses better than gethostbyname
+                addrinfo = socket.getaddrinfo(hostname, None)
+                for res in addrinfo:
+                    ip = res[4][0]
+                    ip_obj = ipaddress.ip_address(ip)
+                    if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_multicast or ip_obj.is_unspecified:
+                        raise ValueError(f"Blocked IP: {ip}")
+            except socket.gaierror:
+                raise ValueError("Could not resolve hostname")
+
+            class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+                def redirect_request(self, req, fp, code, msg, headers, newurl):
+                    parsed_newurl = urlparse(newurl)
+                    if parsed_newurl.scheme not in ("http", "https"):
+                        raise ValueError("Invalid redirect URL scheme")
+
+                    new_hostname = parsed_newurl.hostname
+                    if new_hostname:
+                        try:
+                            new_addrinfo = socket.getaddrinfo(new_hostname, None)
+                            for res in new_addrinfo:
+                                ip = res[4][0]
+                                ip_obj = ipaddress.ip_address(ip)
+                                if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_multicast or ip_obj.is_unspecified:
+                                    raise ValueError(f"Blocked IP in redirect: {ip}")
+                        except socket.gaierror:
+                            raise ValueError("Could not resolve redirect hostname")
+
+                    return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+            opener = urllib.request.build_opener(SafeRedirectHandler())
+            req = urllib.request.Request(url, method=config.get("method", "GET"))
+            with opener.open(req, timeout=5) as r:
                 return r.read().decode('utf-8')
 
         return None
