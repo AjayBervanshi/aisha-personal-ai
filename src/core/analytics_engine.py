@@ -318,11 +318,12 @@ def pull_and_store_analytics(supabase_client=None):
 
     # YouTube analytics
     videos = get_recent_youtube_videos(max_results=20)
+    yt_upserts = []
     for video in videos:
         try:
             video_analytics = get_youtube_video_analytics(video["video_id"])
             if video_analytics:
-                supabase_client.table("content_performance").upsert({
+                yt_upserts.append({
                     "platform": "youtube",
                     "content_id": video["video_id"],
                     "title": video["title"],
@@ -334,16 +335,24 @@ def pull_and_store_analytics(supabase_client=None):
                     "shares": video_analytics.get("shares", 0),
                     "subscribers_gained": video_analytics.get("subscribers_gained", 0),
                     "pulled_at": datetime.now().isoformat(),
-                }, on_conflict="content_id").execute()
-                stored_count += 1
+                })
         except Exception as e:
-            log.warning(f"Failed to store YouTube analytics for {video['video_id']}: {e}")
+            log.warning(f"Failed to fetch YouTube analytics for {video['video_id']}: {e}")
+
+    if yt_upserts:
+        try:
+            # Batch upsert all YouTube records in a single network request
+            supabase_client.table("content_performance").upsert(yt_upserts, on_conflict="content_id").execute()
+            stored_count += len(yt_upserts)
+        except Exception as e:
+            log.error(f"Failed to batch upsert YouTube analytics: {e}")
 
     # Instagram analytics
     ig_media = get_instagram_media_insights()
+    ig_upserts = []
     for item in ig_media:
         try:
-            supabase_client.table("content_performance").upsert({
+            ig_upserts.append({
                 "platform": "instagram",
                 "content_id": item["media_id"],
                 "title": item.get("caption", "Instagram post")[:100],
@@ -354,10 +363,17 @@ def pull_and_store_analytics(supabase_client=None):
                 "reach": item.get("reach", 0),
                 "saved": item.get("saved", 0),
                 "pulled_at": datetime.now().isoformat(),
-            }, on_conflict="content_id").execute()
-            stored_count += 1
+            })
         except Exception as e:
-            log.warning(f"Failed to store Instagram analytics for {item['media_id']}: {e}")
+            log.warning(f"Failed to process Instagram analytics for {item.get('media_id', 'unknown')}: {e}")
+
+    if ig_upserts:
+        try:
+            # Batch upsert all Instagram records in a single network request
+            supabase_client.table("content_performance").upsert(ig_upserts, on_conflict="content_id").execute()
+            stored_count += len(ig_upserts)
+        except Exception as e:
+            log.error(f"Failed to batch upsert Instagram analytics: {e}")
 
     log.info(f"[Analytics] Stored {stored_count} analytics records")
     return stored_count

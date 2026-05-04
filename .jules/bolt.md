@@ -7,3 +7,6 @@
 ## 2024-05-18 - [GoalEngine Evening Review Update Batching]
 **Learning:** `GoalEngine.evening_review` had an N+1 query vulnerability because it iterated through completed daily action IDs and performed a separate `self.supabase.table("aisha_daily_actions").update(...).eq("id", a_id)` call for each ID.
 **Action:** Use `.in_("id", batch)` to batch updates instead of `.eq("id", id)` inside a loop. Make sure to batch the `.in_()` call in chunks of 100 to avoid PostgREST URL length limits if the payload is large.
+## 2024-05-18 - [Batch Analytics Upserts in Loops]
+**Learning:** Performing `supabase_client.table("...").upsert(...).execute()` synchronously inside an iteration over analytics data creates an N+1 network request anti-pattern, dramatically slowing down performance.
+**Action:** Accumulate dict items in a list inside loops and call `.upsert(list_of_dicts)` once outside the loop to execute all updates in a single network request.
