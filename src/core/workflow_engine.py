@@ -8,6 +8,29 @@ from typing import Dict, Any, List, Optional
 
 log = logging.getLogger(__name__)
 
+
+
+import urllib.request
+import urllib.parse
+import socket
+import ipaddress
+class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        self._validate_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+    def _validate_url(self, url_str):
+        parsed = urllib.parse.urlparse(url_str)
+        if parsed.scheme not in ('http', 'https'):
+            raise ValueError(f"Invalid scheme: {parsed.scheme}")
+        if not parsed.hostname:
+            raise ValueError("Invalid hostname")
+        info = socket.getaddrinfo(parsed.hostname, parsed.port or 80, 0, socket.SOCK_STREAM)
+        for res in info:
+            ip = ipaddress.ip_address(res[4][0])
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified:
+                raise ValueError(f"Blocked IP: {ip}")
+
 class WorkflowEngine:
     """
     JARVIS Phase 4 (Feature 4.2 & 4.3): NLP Workflow Engine.
@@ -160,9 +183,24 @@ class WorkflowEngine:
                 return False
 
         elif node_type == "action.http_request":
-            import urllib.request
-            req = urllib.request.Request(config.get("url", ""), method=config.get("method", "GET"))
-            with urllib.request.urlopen(req, timeout=5) as r:
+            url_str = config.get("url", "")
+
+            # Validate initial URL
+            parsed = urllib.parse.urlparse(url_str)
+            if parsed.scheme not in ('http', 'https'):
+                raise ValueError(f"Invalid scheme: {parsed.scheme}")
+            if not parsed.hostname:
+                raise ValueError("Invalid hostname")
+
+            info = socket.getaddrinfo(parsed.hostname, parsed.port or 80, 0, socket.SOCK_STREAM)
+            for res in info:
+                ip = ipaddress.ip_address(res[4][0])
+                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified:
+                    raise ValueError(f"Blocked IP: {ip}")
+
+            req = urllib.request.Request(url_str, method=config.get("method", "GET"))
+            opener = urllib.request.build_opener(SafeRedirectHandler())
+            with opener.open(req, timeout=5) as r:
                 return r.read().decode('utf-8')
 
         return None

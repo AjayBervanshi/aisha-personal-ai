@@ -31,3 +31,8 @@
 **Vulnerability:** The workflow engine used Python's built-in `eval()` to execute condition strings in logic nodes.
 **Learning:** Even when passing a restricted global dict (`{"__builtins__": {}}`), `eval()` remains highly unsafe and vulnerable to code injection/RCE, as users can still access system functions through other means or crash the application.
 **Prevention:** Never use `eval()` on untrusted input. Instead, use an Abstract Syntax Tree (AST) evaluator with an explicit whitelist of allowed node types (`ast.parse`) or use a secure alternative like `asteval` library.
+
+## 2026-04-14 - SSRF via urllib.request and DNS Rebinding
+**Vulnerability:** The workflow engine used `urllib.request.urlopen` in `action.http_request` nodes to fetch arbitrary URLs provided by users or the LLM. This allowed for Server-Side Request Forgery (SSRF), enabling access to internal infrastructure (e.g., `http://127.0.0.1` or `http://169.254.169.254`).
+**Learning:** Directly passing unvalidated URLs to HTTP clients is dangerous. Using `urllib.request` makes it especially difficult to prevent DNS rebinding compared to `requests` + `requests.adapters.HTTPAdapter`. It requires careful URL scheme and hostname validation, resolving the host with `socket.getaddrinfo`, enforcing IP rules with `ipaddress`, and notably, intercepting redirects using a custom `urllib.request.HTTPRedirectHandler` to prevent bypassing initial checks by returning an internal IP in a 3xx redirect response.
+**Prevention:** Always validate schemes and parse hostnames before fetching. Resolve the hostname to an IP and verify that it's not private, loopback, link-local, multicast, or unspecified. Intercept all redirects to apply the exact same validations before following them.
