@@ -318,11 +318,12 @@ def pull_and_store_analytics(supabase_client=None):
 
     # YouTube analytics
     videos = get_recent_youtube_videos(max_results=20)
+    yt_updates = []
     for video in videos:
         try:
             video_analytics = get_youtube_video_analytics(video["video_id"])
             if video_analytics:
-                supabase_client.table("content_performance").upsert({
+                yt_updates.append({
                     "platform": "youtube",
                     "content_id": video["video_id"],
                     "title": video["title"],
@@ -334,16 +335,23 @@ def pull_and_store_analytics(supabase_client=None):
                     "shares": video_analytics.get("shares", 0),
                     "subscribers_gained": video_analytics.get("subscribers_gained", 0),
                     "pulled_at": datetime.now().isoformat(),
-                }, on_conflict="content_id").execute()
-                stored_count += 1
+                })
         except Exception as e:
-            log.warning(f"Failed to store YouTube analytics for {video['video_id']}: {e}")
+            log.warning(f"Failed to process YouTube analytics for {video.get('video_id')}: {e}")
+
+    if yt_updates:
+        try:
+            supabase_client.table("content_performance").upsert(yt_updates, on_conflict="content_id").execute()
+            stored_count += len(yt_updates)
+        except Exception as e:
+            log.error(f"Failed to bulk insert YouTube analytics: {e}")
 
     # Instagram analytics
     ig_media = get_instagram_media_insights()
+    ig_updates = []
     for item in ig_media:
         try:
-            supabase_client.table("content_performance").upsert({
+            ig_updates.append({
                 "platform": "instagram",
                 "content_id": item["media_id"],
                 "title": item.get("caption", "Instagram post")[:100],
@@ -354,10 +362,16 @@ def pull_and_store_analytics(supabase_client=None):
                 "reach": item.get("reach", 0),
                 "saved": item.get("saved", 0),
                 "pulled_at": datetime.now().isoformat(),
-            }, on_conflict="content_id").execute()
-            stored_count += 1
+            })
         except Exception as e:
-            log.warning(f"Failed to store Instagram analytics for {item['media_id']}: {e}")
+            log.warning(f"Failed to process Instagram analytics for {item.get('media_id')}: {e}")
+
+    if ig_updates:
+        try:
+            supabase_client.table("content_performance").upsert(ig_updates, on_conflict="content_id").execute()
+            stored_count += len(ig_updates)
+        except Exception as e:
+            log.error(f"Failed to bulk insert Instagram analytics: {e}")
 
     log.info(f"[Analytics] Stored {stored_count} analytics records")
     return stored_count
