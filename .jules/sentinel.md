@@ -31,3 +31,8 @@
 **Vulnerability:** The workflow engine used Python's built-in `eval()` to execute condition strings in logic nodes.
 **Learning:** Even when passing a restricted global dict (`{"__builtins__": {}}`), `eval()` remains highly unsafe and vulnerable to code injection/RCE, as users can still access system functions through other means or crash the application.
 **Prevention:** Never use `eval()` on untrusted input. Instead, use an Abstract Syntax Tree (AST) evaluator with an explicit whitelist of allowed node types (`ast.parse`) or use a secure alternative like `asteval` library.
+
+## 2026-05-08 - Fixed Timing Attack in Webhooks
+**Vulnerability:** Insecure string comparisons (`!=`) for `TRIGGER_SECRET` in multiple webhook endpoints allowed potential timing attacks.
+**Learning:** Python's standard equality operators do early returns on character mismatch, making it possible for attackers to guess tokens byte-by-byte by analyzing response times.
+**Prevention:** Always use `secrets.compare_digest()` for comparing sensitive tokens and secrets instead of standard equality operators.

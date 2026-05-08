@@ -10,6 +10,7 @@ Run: python src/telegram/bot.py
 import os
 import sys
 import asyncio
+import secrets
 import logging
 import tempfile
 from datetime import datetime
@@ -2907,7 +2908,7 @@ class _AishaHTTPHandler(BaseHTTPRequestHandler):
         # ── Telegram webhook endpoint ──────────────────────────────────────────
         if self.path == f"/{BOT_TOKEN}":
             tg_secret = self.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
-            if TRIGGER_SECRET and tg_secret != TRIGGER_SECRET:
+            if TRIGGER_SECRET and not secrets.compare_digest(tg_secret, TRIGGER_SECRET):
                 self.send_response(403)
                 self.end_headers()
                 return
@@ -2925,7 +2926,7 @@ class _AishaHTTPHandler(BaseHTTPRequestHandler):
         # ── CallMe Transcription Endpoint ──────────────────────────────────────
         if self.path.startswith("/api/callme/transcript"):
             secret = self.headers.get("X-Trigger-Secret", "")
-            if not TRIGGER_SECRET or secret != TRIGGER_SECRET:
+            if not TRIGGER_SECRET or not secrets.compare_digest(secret, TRIGGER_SECRET):
                 self.send_response(403)
                 self.end_headers()
                 self.wfile.write(b'{"error":"forbidden"}')
@@ -2955,7 +2956,7 @@ class _AishaHTTPHandler(BaseHTTPRequestHandler):
 
         # ── pg_cron trigger endpoint ───────────────────────────────────────────
         secret = self.headers.get("X-Trigger-Secret", "")
-        if not TRIGGER_SECRET or secret != TRIGGER_SECRET:
+        if not TRIGGER_SECRET or not secrets.compare_digest(secret, TRIGGER_SECRET):
             self.send_response(403)
             self.end_headers()
             self.wfile.write(b'{"error":"forbidden"}')
