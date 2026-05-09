@@ -255,6 +255,7 @@
       transition: transform 0.2s;
     }
     .toggle.on::after { transform: translateX(20px); }
+    .toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
     /* ── Date Divider ───────────────────────────────────────── */
     .date-divider {
@@ -350,7 +351,7 @@
         <div class="setting-label">Voice</div>
         <div class="setting-row">
           <span class="setting-name">🔊 Voice Output</span>
-          <button class="toggle on" id="voice-toggle" onclick="toggleVoiceOutput()"></button>
+          <button class="toggle on" id="voice-toggle" onclick="toggleVoiceOutput()" role="switch" aria-checked="true" aria-label="Voice Output"></button>
         </div>
         <div class="setting-row" onclick="changeVoice()">
           <span class="setting-name">🎵 Voice Style</span>
@@ -358,7 +359,7 @@
         </div>
         <div class="setting-row">
           <span class="setting-name">🎙️ Voice Input</span>
-          <button class="toggle on" id="mic-toggle"></button>
+          <button class="toggle on" id="mic-toggle" onclick="this.classList.toggle('on'); this.setAttribute('aria-checked', this.classList.contains('on') ? 'true' : 'false')" role="switch" aria-checked="true" aria-label="Voice Input"></button>
         </div>
       </div>
       <div class="setting-section">
@@ -372,7 +373,7 @@
         <div class="setting-label">Appearance</div>
         <div class="setting-row">
           <span class="setting-name">🌙 Dark Mode</span>
-          <button class="toggle on"></button>
+          <button class="toggle on" onclick="this.classList.toggle('on'); this.setAttribute('aria-checked', this.classList.contains('on') ? 'true' : 'false')" role="switch" aria-checked="true" aria-label="Dark Mode"></button>
         </div>
       </div>
       <div class="setting-section">
@@ -645,6 +646,7 @@ function toggleVoiceOutput() {
   const toggle = document.getElementById("voice-toggle");
   btn.classList.toggle("active", state.voiceEnabled);
   toggle?.classList.toggle("on", state.voiceEnabled);
+  toggle?.setAttribute("aria-checked", state.voiceEnabled ? "true" : "false");
   btn.textContent = state.voiceEnabled ? "🔊" : "🔇";
   if (!state.voiceEnabled) speechSynthesis.cancel();
 }
