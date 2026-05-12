@@ -7,3 +7,7 @@
 ## 2026-03-30 - Disable Async Action Buttons
 **Learning:** The send button did not have a visual disabled state during async API calls, allowing double-submission or confusing the user whether the button was clicked.
 **Action:** Always add a disabled state visually (`:disabled` pseudo-class dropping opacity/disabling cursor) and functionally (JS `button.disabled = true;` during async calls) for interactive submit buttons.
+
+## 2026-05-12 - Disabled State Bug
+**Learning:** Adding a disabled state to the submit button before checking for empty text early-return (`if (!text) return;`) results in a critical bug where the button gets permanently disabled without making an API call.
+**Action:** Always place `sendBtn.disabled = true;` after all early-return validation checks to prevent breaking the UI logic.
