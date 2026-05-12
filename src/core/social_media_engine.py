@@ -371,9 +371,9 @@ class SocialMediaEngine:
                 # Assuming this is called once per rendered short chunk:
                 
                 # Fetch how many items are already queued to determine staggered timing
-                # We want to post 1 short every 24 hours.
-                existing_queue = sb.table("content_queue").select("id").eq("status", "ready").eq("channel", channel).execute()
-                queue_count = len(existing_queue.data) if existing_queue.data else 0
+                # We want to post 1 short every 24 hours. (optimized count)
+                existing_queue_resp = sb.table("content_queue").select("id", count="exact").eq("status", "ready").eq("channel", channel).limit(1).execute()
+                queue_count = existing_queue_resp.count if existing_queue_resp and hasattr(existing_queue_resp, "count") else 0
                 
                 # Publish time = NOW + (queue_count * 24 hours)
                 publish_at = (datetime.now(timezone.utc) + timedelta(hours=24 * queue_count)).isoformat()
