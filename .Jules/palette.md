@@ -7,3 +7,6 @@
 ## 2026-03-30 - Disable Async Action Buttons
 **Learning:** The send button did not have a visual disabled state during async API calls, allowing double-submission or confusing the user whether the button was clicked.
 **Action:** Always add a disabled state visually (`:disabled` pseudo-class dropping opacity/disabling cursor) and functionally (JS `button.disabled = true;` during async calls) for interactive submit buttons.
+## 2026-05-13 - Syncing ARIA states inline for purely visual toggles
+**Learning:** For purely visual toggles lacking application state management (e.g. in `index.html`), nesting `setAttribute()` inside `classList.toggle()` is an anti-pattern.
+**Action:** Use safely sequenced inline statements: `this.classList.toggle('on'); this.setAttribute('aria-checked', this.classList.contains('on') ? 'true' : 'false')` to reliably sync ARIA state with visuals.
