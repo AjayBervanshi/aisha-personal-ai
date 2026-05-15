@@ -45,10 +45,13 @@ class LocalSidecar:
 
     def run_command(self, command: str) -> str:
         log.info(f"Executing local command: {command}")
+        import shlex
         try:
+            # SECURITY: split into args list and do NOT use shell=True
+            cmd_args = shlex.split(command)
             result = subprocess.run(
-                command,
-                shell=True,
+                cmd_args,
+                shell=False,
                 capture_output=True,
                 text=True,
                 timeout=10

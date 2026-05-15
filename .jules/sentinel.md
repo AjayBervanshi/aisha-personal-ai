@@ -31,3 +31,7 @@
 **Vulnerability:** The workflow engine used Python's built-in `eval()` to execute condition strings in logic nodes.
 **Learning:** Even when passing a restricted global dict (`{"__builtins__": {}}`), `eval()` remains highly unsafe and vulnerable to code injection/RCE, as users can still access system functions through other means or crash the application.
 **Prevention:** Never use `eval()` on untrusted input. Instead, use an Abstract Syntax Tree (AST) evaluator with an explicit whitelist of allowed node types (`ast.parse`) or use a secure alternative like `asteval` library.
+## 2026-05-15 - Command Injection in Sidecar Python Agent
+**Vulnerability:** A Remote Code Execution (RCE) vulnerability was identified in `scripts/sidecar.py` where a user-provided shell command was executed directly with `subprocess.run(command, shell=True)`.
+**Learning:** This existed because the `command` field coming from the database table (`sidecar_commands`) was passed directly to the shell, and although this tool is meant to execute shell commands, the direct usage of `shell=True` on raw string input opens up trivial shell injection vectors (e.g. `cmd; rm -rf /`).
+**Prevention:** To safely execute shell commands originating from possibly untrusted input, use `shlex.split()` to tokenise the command string securely and pass the resulting list to `subprocess.run` with `shell=False`. This ensures that metacharacters are treated as literal arguments rather than shell operators.
