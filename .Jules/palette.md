@@ -7,3 +7,6 @@
 ## 2026-03-30 - Disable Async Action Buttons
 **Learning:** The send button did not have a visual disabled state during async API calls, allowing double-submission or confusing the user whether the button was clicked.
 **Action:** Always add a disabled state visually (`:disabled` pseudo-class dropping opacity/disabling cursor) and functionally (JS `button.disabled = true;` during async calls) for interactive submit buttons.
+## 2026-05-18 - Added ARIA attributes to settings panel toggles
+**Learning:** The settings panel toggles in `src/web/index.html` were completely inaccessible to screen readers because they were implemented as generic `<button>` elements with no `role`, `aria-checked` states, or descriptive text labels for what they actually control. Also, visual-only UI components in a simple app need localized state management to remain accessible without complex event dispatchers.
+**Action:** When implementing new custom UI controls (especially switches or checkboxes) in simple HTML setups without state frameworks, I will always explicitly define the `role="switch"` or `role="checkbox"`, provide clear `aria-label` or `title` tags, and inject simple inline JS specifically to keep the `aria-checked` state synced alongside the visual `.on` classes.
