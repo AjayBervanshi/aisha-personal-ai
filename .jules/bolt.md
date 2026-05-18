@@ -7,3 +7,6 @@
 ## 2024-05-18 - [GoalEngine Evening Review Update Batching]
 **Learning:** `GoalEngine.evening_review` had an N+1 query vulnerability because it iterated through completed daily action IDs and performed a separate `self.supabase.table("aisha_daily_actions").update(...).eq("id", a_id)` call for each ID.
 **Action:** Use `.in_("id", batch)` to batch updates instead of `.eq("id", id)` inside a loop. Make sure to batch the `.in_()` call in chunks of 100 to avoid PostgREST URL length limits if the payload is large.
+## 2024-05-18 - [PostgREST Exact Count URL Optimization]
+**Learning:** When making raw REST queries to Supabase with `Prefer: count=exact`, PostgREST defaults to returning all matching rows over the network, leading to massive O(N) memory and bandwidth overhead even though only the `Content-Range` header is needed.
+**Action:** Always manually append `&limit=1` to the PostgREST URL query parameters when using `Prefer: count=exact` with `requests.get` to only transfer at most 1 row over the network while still getting the exact count metadata.
