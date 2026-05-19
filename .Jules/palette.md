@@ -7,3 +7,7 @@
 ## 2026-03-30 - Disable Async Action Buttons
 **Learning:** The send button did not have a visual disabled state during async API calls, allowing double-submission or confusing the user whether the button was clicked.
 **Action:** Always add a disabled state visually (`:disabled` pseudo-class dropping opacity/disabling cursor) and functionally (JS `button.disabled = true;` during async calls) for interactive submit buttons.
+
+## 2026-05-19 - ARIA Switch Toggles
+**Learning:** Found pure visual UI toggles (`<button class="toggle">`) that lacked semantics and keyboard support, making them invisible and unusable to screen readers. Relying solely on `class="on"` to indicate state is an accessibility anti-pattern. Inline toggling of class and ARIA state must be carefully sequenced to avoid nesting `.toggle()` inside `.setAttribute()`.
+**Action:** Always add `role="switch"` and `aria-checked` to custom visual toggles. Sync the ARIA state accurately inline using safely sequenced statements (`onclick="this.classList.toggle('on'); this.setAttribute('aria-checked', this.classList.contains('on') ? 'true' : 'false')"`). Include global `*:focus-visible` to support keyboard navigation.
