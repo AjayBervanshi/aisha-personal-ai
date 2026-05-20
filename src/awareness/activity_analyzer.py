@@ -29,13 +29,14 @@ class ActivityAnalyzer:
 
             # Fetch recent logs
             logs_res = self.supabase.table("aisha_awareness_logs")\
-                .select("active_window, screen_text, created_at")\
+                .select("active_window, screen_text, created_at", count="exact")\
                 .eq("sidecar_id", "local-laptop")\
                 .gte("created_at", five_mins_ago.isoformat())\
                 .order("created_at", desc=False)\
                 .execute()
 
-            if not logs_res.data or len(logs_res.data) < 2:
+            total_count = logs_res.count if hasattr(logs_res, "count") and logs_res.count is not None else (len(logs_res.data) if logs_res.data else 0)
+            if not logs_res.data or total_count < 2:
                 # Not enough data to determine a struggle
                 return None
 

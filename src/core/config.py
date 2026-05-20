@@ -38,7 +38,7 @@ def _fetch_from_supabase(key: str) -> str:
     try:
         from supabase import create_client
         sb = create_client(sb_url, sb_key)
-        res = sb.table("api_keys").select("secret").eq("name", key).eq("active", True).execute()
+        res = sb.table("api_keys").select("secret").eq("name", key).eq("active", True).limit(1).execute()
         if res.data and len(res.data) > 0:
             val = res.data[0].get("secret")
             if val:

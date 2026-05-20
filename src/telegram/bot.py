@@ -637,17 +637,19 @@ def cmd_queue_status(message):
         import os
         from supabase import create_client
         sb = create_client(os.getenv("SUPABASE_URL", ""), os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""))
-        queue = sb.table("content_queue").select("id, channel, youtube_title, status, scheduled_time").eq("status", "ready").execute()
+        # We still need the data for the first 10 items, but we can use count to know total length
+        queue = sb.table("content_queue").select("id, channel, youtube_title, status, scheduled_time", count="exact").eq("status", "ready").limit(10).execute()
         if not queue.data:
             bot.send_message(message.chat.id, "Queue is empty. No videos scheduled.")
             return
             
         msg = "*🎥 Upcoming Drip-Feed Queue:*\n\n"
-        for i, item in enumerate(queue.data[:10]):
+        for i, item in enumerate(queue.data):
             msg += f"{i+1}. *{item['youtube_title']}* ({item['channel']})\n   Scheduled: {item['scheduled_time'][:16]}\n\n"
             
-        if len(queue.data) > 10:
-            msg += f"...and {len(queue.data) - 10} more."
+        total_count = queue.count if hasattr(queue, "count") and queue.count is not None else len(queue.data)
+        if total_count > 10:
+            msg += f"...and {total_count - 10} more."
             
         bot.send_message(message.chat.id, msg, parse_mode="Markdown")
     except Exception as e:
