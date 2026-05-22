@@ -31,3 +31,13 @@
 **Vulnerability:** The workflow engine used Python's built-in `eval()` to execute condition strings in logic nodes.
 **Learning:** Even when passing a restricted global dict (`{"__builtins__": {}}`), `eval()` remains highly unsafe and vulnerable to code injection/RCE, as users can still access system functions through other means or crash the application.
 **Prevention:** Never use `eval()` on untrusted input. Instead, use an Abstract Syntax Tree (AST) evaluator with an explicit whitelist of allowed node types (`ast.parse`) or use a secure alternative like `asteval` library.
+
+## 2026-05-22 - Fix Insecure Deserialization Vulnerability
+**Vulnerability:** Insecure deserialization via pickle module in state management and temporary file handling.
+**Learning:** Using `pickle` for state storage or inter-process communication exposes the application to Remote Code Execution (RCE) vulnerabilities if the files are tampered with.
+**Prevention:** Always use secure, text-based serialization formats like `json` with `.json` extensions and text modes (`w`/`r`) instead of binary modes for generic data structures.
+
+## 2026-05-22 - Graceful Format Migration when Replacing Pickle with JSON
+**Vulnerability:** Replacing `pickle` with `json` without providing migration logic can lead to blocking critical failures when reading existing `pickle` serialized data. Furthermore, JSON does not natively support serializing sets.
+**Learning:** Simply replacing the string `pickle` with `json` in code solves the RCE vulnerability but introduces application-breaking regressions. Uncaught `UnicodeDecodeError` or `JSONDecodeError` during initial deserialization crash the app, and standard JSON dumps fail on Python sets.
+**Prevention:** Always implement a fallback migration when reading from file (e.g. catch `FileNotFoundError`, `UnicodeDecodeError`, `JSONDecodeError` and read old format to resave in new format). Also, cast non-JSON-serializable types like sets to lists on write and back to sets on read.
