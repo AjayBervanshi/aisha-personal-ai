@@ -3153,10 +3153,14 @@ def handle_job_approval(call):
         
     action, _, job_id = call.data.partition("_job_")
     
-    import pickle
+    import json
     import os
+    import pickle
     assets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "temp_assets")
-    job_file = os.path.join(assets_dir, f"job_{job_id}.pkl")
+    job_file_json = os.path.join(assets_dir, f"job_{job_id}.json")
+    job_file_pkl = os.path.join(assets_dir, f"job_{job_id}.pkl")
+
+    job_file = job_file_json if os.path.exists(job_file_json) else job_file_pkl
     
     if not os.path.exists(job_file):
         bot.edit_message_text("❌ This job has expired or cannot be found.", chat_id=call.message.chat.id, message_id=call.message.message_id)
@@ -3164,7 +3168,7 @@ def handle_job_approval(call):
         
     if action == "rewrite":
         bot.edit_message_text("🔄 Script rejected. You can trigger a new generation.", chat_id=call.message.chat.id, message_id=call.message.message_id)
-        os.remove(job_file)
+        os.remove(job_file_json if os.path.exists(job_file_json) else job_file_pkl)
         return
         
     # User approved!
@@ -3172,8 +3176,19 @@ def handle_job_approval(call):
     
     def background_render():
         try:
-            with open(job_file, "rb") as pf:
-                job_data = pickle.load(pf)
+            job_data = None
+            if job_file.endswith('.json'):
+                with open(job_file, "r") as pf:
+                    job_data = json.load(pf)
+            else:
+                with open(job_file, "rb") as pf:
+                    job_data = pickle.load(pf)
+                # Migrate to json
+                with open(job_file_json, "w") as pf:
+                    json.dump(job_data, pf)
+                # Ensure os.remove uses correct file
+                if os.path.exists(job_file_pkl):
+                    os.remove(job_file_pkl)
                 
             from src.agents.youtube_crew import YouTubeCrew
             crew = YouTubeCrew()
@@ -3199,7 +3214,7 @@ def handle_job_approval(call):
                 marketing=job_data["marketing"]
             )
             bot.send_message(call.message.chat.id, f"🎬 Render complete for {job_data['channel']}! Check Supabase Queue or server logs.")
-            os.remove(job_file)
+            os.remove(job_file_json if os.path.exists(job_file_json) else job_file_pkl)
         except Exception as e:
             bot.send_message(call.message.chat.id, f"❌ Render failed: {e}")
             
