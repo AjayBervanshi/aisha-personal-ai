@@ -7,3 +7,6 @@
 ## 2024-05-18 - [GoalEngine Evening Review Update Batching]
 **Learning:** `GoalEngine.evening_review` had an N+1 query vulnerability because it iterated through completed daily action IDs and performed a separate `self.supabase.table("aisha_daily_actions").update(...).eq("id", a_id)` call for each ID.
 **Action:** Use `.in_("id", batch)` to batch updates instead of `.eq("id", id)` inside a loop. Make sure to batch the `.in_()` call in chunks of 100 to avoid PostgREST URL length limits if the payload is large.
+## 2024-05-14 - Fix N+1 Supabase Query Bottleneck
+**Learning:** Performing single `.insert().execute()` calls in a nested loop for hierarchical data creates an N+1 query bottleneck, slowing down execution and causing excessive network requests to Supabase.
+**Action:** When inserting hierarchical data (e.g. Objectives -> Key Results -> Daily Actions), accumulate row payloads into lists and perform a single batched `.insert(payload_list).execute()` for each table. Then, iterate over the returned results (`res.data`) to get the generated IDs required for inserting the child elements.
