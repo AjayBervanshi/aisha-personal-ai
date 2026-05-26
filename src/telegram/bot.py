@@ -3153,12 +3153,14 @@ def handle_job_approval(call):
         
     action, _, job_id = call.data.partition("_job_")
     
+    import json
     import pickle
     import os
     assets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "temp_assets")
-    job_file = os.path.join(assets_dir, f"job_{job_id}.pkl")
+    job_file = os.path.join(assets_dir, f"job_{job_id}.json")
+    old_job_file = os.path.join(assets_dir, f"job_{job_id}.pkl")
     
-    if not os.path.exists(job_file):
+    if not os.path.exists(job_file) and not os.path.exists(old_job_file):
         bot.edit_message_text("❌ This job has expired or cannot be found.", chat_id=call.message.chat.id, message_id=call.message.message_id)
         return
         
@@ -3172,8 +3174,21 @@ def handle_job_approval(call):
     
     def background_render():
         try:
-            with open(job_file, "rb") as pf:
-                job_data = pickle.load(pf)
+            job_data = {}
+            if os.path.exists(job_file):
+                try:
+                    with open(job_file, "r", encoding="utf-8") as pf:
+                        job_data = json.load(pf)
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    pass
+            old_job_file = job_file.replace(".json", ".pkl")
+            if not job_data and os.path.exists(old_job_file):
+                with open(old_job_file, "rb") as pf:
+                    job_data = pickle.load(pf)
+                with open(job_file, "w", encoding="utf-8") as pf:
+                    json.dump(job_data, pf)
+                os.remove(old_job_file)
+
                 
             from src.agents.youtube_crew import YouTubeCrew
             crew = YouTubeCrew()
