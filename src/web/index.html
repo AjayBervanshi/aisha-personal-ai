@@ -335,7 +335,7 @@
           onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
         <button class="mic-btn" id="mic-btn" onclick="toggleMic()" title="Voice input" aria-label="Voice input">🎙️</button>
       </div>
-      <button class="send-btn" onclick="sendMessage()" title="Send message" aria-label="Send message">➤</button>
+      <button id="send-btn" class="send-btn" onclick="sendMessage()" title="Send message" aria-label="Send message">➤</button>
     </div>
   </div>
 
@@ -566,6 +566,13 @@ async function sendMessage(overrideText = null) {
   showTyping();
   setStatus("Aisha is thinking...");
   
+  const btn = document.getElementById("send-btn");
+  if (btn) {
+    btn.disabled = true;
+    btn.style.opacity = "0.5";
+    btn.style.cursor = "not-allowed";
+  }
+
   try {
     const reply = await callGemini(text);
     hideTyping();
@@ -583,6 +590,12 @@ async function sendMessage(overrideText = null) {
     renderMessage("ai", errMsg);
     setStatus("Online · Always here for you");
     console.error("Aisha error:", err);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.style.opacity = "";
+      btn.style.cursor = "";
+    }
   }
 }
 
