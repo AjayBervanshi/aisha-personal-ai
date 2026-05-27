@@ -7,3 +7,7 @@
 ## 2026-03-30 - Disable Async Action Buttons
 **Learning:** The send button did not have a visual disabled state during async API calls, allowing double-submission or confusing the user whether the button was clicked.
 **Action:** Always add a disabled state visually (`:disabled` pseudo-class dropping opacity/disabling cursor) and functionally (JS `button.disabled = true;` during async calls) for interactive submit buttons.
+
+## 2026-05-27 - Accessible Interactive Elements
+**Learning:** Added global focus ring, disabled state for send button, and ARIA labels. Users rely heavily on keyboard navigation. Missing disabled states on async buttons lead to confusing UX.
+**Action:** Always use focus rings and accessible button structures, ensure ARIA labels are added to form components, and properly handle disabled states during async operations.

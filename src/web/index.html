@@ -35,6 +35,13 @@
       font-family: var(--font); overflow: hidden;
     }
 
+
+    /* Global focus outline for accessibility */
+    *:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    /* Disabled state for send button */
+    .send-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+
     /* ── Layout ─────────────────────────────────────────────── */
     .app {
       display: flex; flex-direction: column; height: 100dvh;
@@ -324,14 +331,14 @@
   <!-- Input -->
   <div class="input-area">
     <div class="input-row">
-      <select class="lang-select" id="lang-select">
+      <select class="lang-select" id="lang-select" aria-label="Select language">
         <option value="auto">🌐</option>
         <option value="English">EN</option>
         <option value="Hindi">HI</option>
         <option value="Marathi">MR</option>
       </select>
       <div class="text-wrap">
-        <textarea id="user-input" placeholder="Talk to Aisha..." rows="1"
+        <textarea id="user-input" placeholder="Talk to Aisha..." rows="1" aria-label="Message text area"
           onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
         <button class="mic-btn" id="mic-btn" onclick="toggleMic()" title="Voice input" aria-label="Voice input">🎙️</button>
       </div>
@@ -350,20 +357,20 @@
         <div class="setting-label">Voice</div>
         <div class="setting-row">
           <span class="setting-name">🔊 Voice Output</span>
-          <button class="toggle on" id="voice-toggle" onclick="toggleVoiceOutput()"></button>
+          <button class="toggle on" id="voice-toggle" aria-label="Toggle voice output" onclick="toggleVoiceOutput()"></button>
         </div>
-        <div class="setting-row" onclick="changeVoice()">
+        <div class="setting-row" role="button" tabindex="0" onclick="changeVoice()" onkeydown="if(event.key==='Enter' || event.key===' ') { event.preventDefault(); changeVoice(); }">
           <span class="setting-name">🎵 Voice Style</span>
           <span class="setting-val" id="voice-style-val">Indian English</span>
         </div>
         <div class="setting-row">
           <span class="setting-name">🎙️ Voice Input</span>
-          <button class="toggle on" id="mic-toggle"></button>
+          <button class="toggle on" id="mic-toggle" aria-label="Toggle voice input"></button>
         </div>
       </div>
       <div class="setting-section">
         <div class="setting-label">Language</div>
-        <div class="setting-row" onclick="cycleLang()">
+        <div class="setting-row" role="button" tabindex="0" onclick="cycleLang()" onkeydown="if(event.key==='Enter' || event.key===' ') { event.preventDefault(); cycleLang(); }">
           <span class="setting-name">🌐 Default Language</span>
           <span class="setting-val" id="lang-val">Auto-detect</span>
         </div>
@@ -372,7 +379,7 @@
         <div class="setting-label">Appearance</div>
         <div class="setting-row">
           <span class="setting-name">🌙 Dark Mode</span>
-          <button class="toggle on"></button>
+          <button class="toggle on" aria-label="Toggle dark mode"></button>
         </div>
       </div>
       <div class="setting-section">
@@ -385,7 +392,7 @@
           <span class="setting-name">🧠 AI Model</span>
           <span class="setting-val">Gemini 1.5 Flash</span>
         </div>
-        <div class="setting-row" onclick="clearMemory()">
+        <div class="setting-row" role="button" tabindex="0" onclick="clearMemory()" onkeydown="if(event.key==='Enter' || event.key===' ') { event.preventDefault(); clearMemory(); }">
           <span class="setting-name">🗑️ Clear Memory</span>
           <span class="setting-val">Tap to reset</span>
         </div>
@@ -550,10 +557,12 @@ async function callGemini(userMessage) {
 // ── Send Message ─────────────────────────────────────────────
 async function sendMessage(overrideText = null) {
   const input = document.getElementById("user-input");
+  const sendBtn = document.querySelector(".send-btn");
   const text = (overrideText || input.value).trim();
   if (!text) return;
   
   input.value = ""; autoResize(input);
+  if (sendBtn) sendBtn.disabled = true;
   
   // Hide quick actions after first message
   document.getElementById("quick-actions").style.display = "none";
@@ -577,12 +586,14 @@ async function sendMessage(overrideText = null) {
       speakResponse(reply);
     }
     setStatus("Online · Always here for you");
+  if (sendBtn) sendBtn.disabled = false;
   } catch (err) {
     hideTyping();
     const errMsg = "Arre yaar, kuch technical issue ho gaya 😅 Check your internet and try again?";
     renderMessage("ai", errMsg);
     setStatus("Online · Always here for you");
     console.error("Aisha error:", err);
+  if (sendBtn) sendBtn.disabled = false;
   }
 }
 
