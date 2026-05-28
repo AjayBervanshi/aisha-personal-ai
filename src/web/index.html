@@ -34,6 +34,9 @@
       height: 100%; background: var(--bg); color: var(--text);
       font-family: var(--font); overflow: hidden;
     }
+    *:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    :disabled { opacity: 0.6; cursor: not-allowed; }
+
 
     /* ── Layout ─────────────────────────────────────────────── */
     .app {
@@ -283,7 +286,7 @@
 
   <!-- Header -->
   <div class="header">
-    <div class="avatar" onclick="toggleSettings()">💜</div>
+    <button class="avatar" onclick="toggleSettings()" aria-label="Open settings">💜</button>
     <div class="header-info">
       <div class="header-name">Aisha</div>
       <div class="header-status" id="status-text">Online · Always here for you</div>
@@ -324,14 +327,14 @@
   <!-- Input -->
   <div class="input-area">
     <div class="input-row">
-      <select class="lang-select" id="lang-select">
+      <select class="lang-select" id="lang-select" aria-label="Language">
         <option value="auto">🌐</option>
         <option value="English">EN</option>
         <option value="Hindi">HI</option>
         <option value="Marathi">MR</option>
       </select>
       <div class="text-wrap">
-        <textarea id="user-input" placeholder="Talk to Aisha..." rows="1"
+        <textarea id="user-input" aria-label="Message" placeholder="Talk to Aisha..." rows="1"
           onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
         <button class="mic-btn" id="mic-btn" onclick="toggleMic()" title="Voice input" aria-label="Voice input">🎙️</button>
       </div>
@@ -549,6 +552,7 @@ async function callGemini(userMessage) {
 
 // ── Send Message ─────────────────────────────────────────────
 async function sendMessage(overrideText = null) {
+  const sendBtn = document.querySelector(".send-btn");
   const input = document.getElementById("user-input");
   const text = (overrideText || input.value).trim();
   if (!text) return;
@@ -566,6 +570,12 @@ async function sendMessage(overrideText = null) {
   showTyping();
   setStatus("Aisha is thinking...");
   
+
+  // Disable inputs during API call
+
+  if (sendBtn) sendBtn.disabled = true;
+  input.disabled = true;
+
   try {
     const reply = await callGemini(text);
     hideTyping();
@@ -583,6 +593,10 @@ async function sendMessage(overrideText = null) {
     renderMessage("ai", errMsg);
     setStatus("Online · Always here for you");
     console.error("Aisha error:", err);
+  } finally {
+    if (sendBtn) sendBtn.disabled = false;
+    input.disabled = false;
+    input.focus();
   }
 }
 
