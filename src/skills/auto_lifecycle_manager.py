@@ -1,6 +1,8 @@
 import signal
 import logging
+import json
 import pickle
+import os
 import sys
 from contextlib import contextmanager
 from functools import wraps
@@ -28,7 +30,7 @@ class AutoLifecycleManager:
         safe_termination: Ensures active processing tasks reach a safe termination point before exiting.
     """
 
-    def __init__(self, state_file='state.pkl'):
+    def __init__(self, state_file='state.json'):
         self._used_topics = {}
         self._state_file = state_file
         self.trap_signals()
@@ -40,16 +42,30 @@ class AutoLifecycleManager:
 
     def dump_state(self):
         try:
-            with open(self._state_file, 'wb') as f:
-                pickle.dump(self._used_topics, f)
+            with open(self._state_file, 'w') as f:
+                json.dump(list(self._used_topics) if isinstance(self._used_topics, set) else self._used_topics, f)
             logger.info('State dumped to disk')
         except Exception as e:
             logger.error(f'Failed to dump state: {e}')
 
     def load_state(self):
         try:
-            with open(self._state_file, 'rb') as f:
-                self._used_topics = pickle.load(f)
+            try:
+                with open(self._state_file, 'r') as f:
+                    data = json.load(f)
+                    # If we expect it to be a set but JSON makes it a list, it can be cast here if needed.
+                    # Since the default in __init__ is a dict, we just assign it.
+                    self._used_topics = data
+            except (json.JSONDecodeError, UnicodeDecodeError, FileNotFoundError):
+                # Fallback to pickle migration
+                old_file = self._state_file.replace('.json', '.pkl')
+                if os.path.exists(old_file):
+                    with open(old_file, 'rb') as f:
+                        self._used_topics = pickle.load(f)
+                    # Migrate to json immediately
+                    self.dump_state()
+                else:
+                    raise FileNotFoundError
             logger.info('State loaded from disk')
         except FileNotFoundError:
             logger.info('No state file found')
