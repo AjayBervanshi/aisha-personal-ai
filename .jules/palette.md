@@ -10,3 +10,6 @@
 ## 2026-04-11 - Temporary UI State Feedback Trap
 **Learning:** When using `setTimeout` to temporarily swap UI content (like changing a "Copy" icon to a "✅"), rapid clicks can cause the function to capture the temporary state ("✅") as the `originalIcon`. When the second timeout resolves, it restores the button to "✅" permanently, breaking the UI.
 **Action:** Always include a state-guard (e.g., `if (btn.textContent !== "✅")`) before initiating temporary visual feedback loops to ensure idempotency during rapid user interactions.
+## 2026-05-29 - Mode pills lacked semantic accessibility
+**Learning:** In the `aisha-web` frontend, interactive mode selection pills were implemented as `<div>` elements relying on `onclick` handlers, without keyboard focus (`tabindex`) or ARIA roles, making them inaccessible to keyboard and screen-reader users.
+**Action:** Replaced the `<div>` pills with native `<button>` tags, added `role="tablist"` to the parent container and `role="tab"` to the buttons. Ensured custom styling was preserved by adding `font-family: inherit; outline: none;` and improved keyboard accessibility by adding a `:focus-visible` outline.
