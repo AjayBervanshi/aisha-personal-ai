@@ -35,6 +35,14 @@
       font-family: var(--font); overflow: hidden;
     }
 
+
+    /* ── Accessibility ──────────────────────────────────────── */
+    *:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
+
     /* ── Layout ─────────────────────────────────────────────── */
     .app {
       display: flex; flex-direction: column; height: 100dvh;
@@ -283,7 +291,7 @@
 
   <!-- Header -->
   <div class="header">
-    <div class="avatar" onclick="toggleSettings()">💜</div>
+    <div class="avatar" role="button" tabindex="0" onclick="toggleSettings()" onkeydown="if(event.key === 'Enter' || event.key === ' ') toggleSettings()" aria-label="Open settings">💜</div>
     <div class="header-info">
       <div class="header-name">Aisha</div>
       <div class="header-status" id="status-text">Online · Always here for you</div>
@@ -350,7 +358,7 @@
         <div class="setting-label">Voice</div>
         <div class="setting-row">
           <span class="setting-name">🔊 Voice Output</span>
-          <button class="toggle on" id="voice-toggle" onclick="toggleVoiceOutput()"></button>
+          <button class="toggle on" id="voice-toggle" onclick="toggleVoiceOutput()" aria-label="Toggle voice output"></button>
         </div>
         <div class="setting-row" onclick="changeVoice()">
           <span class="setting-name">🎵 Voice Style</span>
@@ -358,7 +366,7 @@
         </div>
         <div class="setting-row">
           <span class="setting-name">🎙️ Voice Input</span>
-          <button class="toggle on" id="mic-toggle"></button>
+          <button class="toggle on" id="mic-toggle" aria-label="Toggle voice input"></button>
         </div>
       </div>
       <div class="setting-section">
@@ -372,7 +380,7 @@
         <div class="setting-label">Appearance</div>
         <div class="setting-row">
           <span class="setting-name">🌙 Dark Mode</span>
-          <button class="toggle on"></button>
+          <button class="toggle on" aria-label="Toggle dark mode"></button>
         </div>
       </div>
       <div class="setting-section">
