@@ -207,7 +207,7 @@ class AutonomousLoop:
             sb = create_client(os.getenv("SUPABASE_URL", ""), os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""))
             from datetime import datetime as dt_class, timezone, timedelta
             cutoff = (dt_class.now(timezone.utc) - timedelta(hours=4)).isoformat()
-            recent_logs = sb.table("system_logs").select("id").eq("component", "autonomous_loop").eq("event", "job_completed: morning_checkin").gte("created_at", cutoff).execute()
+            recent_logs = sb.table("system_logs").select("id").eq("component", "autonomous_loop").eq("event", "job_completed: morning_checkin").gte("created_at", cutoff).limit(1).execute()
             if recent_logs.data and len(recent_logs.data) > 0:
                 log.info("Skipping morning check-in: Already ran recently to prevent spam.")
                 return
@@ -256,7 +256,7 @@ class AutonomousLoop:
             sb = create_client(os.getenv("SUPABASE_URL", ""), os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""))
             from datetime import datetime as dt_class, timezone, timedelta
             cutoff = (dt_class.now(timezone.utc) - timedelta(hours=12)).isoformat()
-            recent_logs = sb.table("system_logs").select("id").eq("component", "autonomous_loop").eq("event", "job_completed: memory_consolidation").gte("created_at", cutoff).execute()
+            recent_logs = sb.table("system_logs").select("id").eq("component", "autonomous_loop").eq("event", "job_completed: memory_consolidation").gte("created_at", cutoff).limit(1).execute()
             if recent_logs.data and len(recent_logs.data) > 0:
                 log.info("Skipping memory consolidation: Already ran recently.")
                 return

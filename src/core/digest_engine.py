@@ -151,13 +151,14 @@ class DigestEngine:
             stats["total_spending"] = sum(float(e.get("amount", 0)) for e in expenses)
 
             # Tasks done
-            done = (db.table("aisha_schedule")
-                    .select("id")
+            done_res = (db.table("aisha_schedule")
+                    .select("id", count="exact")
                     .eq("status", "done")
                     .gte("due_date", week_start.isoformat())
                     .lte("due_date", week_end.isoformat())
-                    .execute()).data or []
-            stats["tasks_done"] = len(done)
+                    .limit(1)
+                    .execute())
+            stats["tasks_done"] = done_res.count or 0
 
             # Mood
             moods = (db.table("aisha_mood_tracker")

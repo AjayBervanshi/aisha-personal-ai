@@ -63,7 +63,7 @@ def _load_db_secret(name: str) -> Optional[str]:
             os.getenv("SUPABASE_URL", ""),
             os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""),
         )
-        row = sb.table("api_keys").select("secret").eq("name", name).eq("active", True).single().execute()
+        row = sb.table("api_keys").select("secret").eq("name", name).eq("active", True).limit(1).single().execute()
         return row.data["secret"] if row.data else None
     except Exception as e:
         log.warning(f"[api_keys] Could not load '{name}' from DB: {e}")
