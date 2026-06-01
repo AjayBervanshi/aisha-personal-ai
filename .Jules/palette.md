@@ -7,3 +7,6 @@
 ## 2026-03-30 - Disable Async Action Buttons
 **Learning:** The send button did not have a visual disabled state during async API calls, allowing double-submission or confusing the user whether the button was clicked.
 **Action:** Always add a disabled state visually (`:disabled` pseudo-class dropping opacity/disabling cursor) and functionally (JS `button.disabled = true;` during async calls) for interactive submit buttons.
+## 2026-06-01 - Asynchronous Feedback UX
+**Learning:** Re-evaluating UI state inside the `finally` block of an async operation is crucial. If the UI disabled a button while loading, but the user typed input *during* the loading phase, restoring the button to a hardcoded enabled/disabled state creates a race condition.
+**Action:** Always calculate the correct final disabled state based on the current context (e.g., `button.disabled = input.value.trim() === ""`) within the `finally` block, rather than reverting to a naive default.

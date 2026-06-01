@@ -449,6 +449,19 @@
       }
     }
 
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 1s linear infinite;
+    }
+
     .send-btn {
       width: 44px;
       height: 44px;
@@ -709,7 +722,7 @@
             oninput="autoResize(this)" aria-label="Type your message"></textarea>
           <button class="mic-btn" id="mic-btn" onclick="toggleMic()" title="Voice input" aria-label="Voice input">🎙️</button>
         </div>
-        <button id="send-btn" class="send-btn" onclick="sendMessage()" title="Send" aria-label="Send message">➤</button>
+        <button id="send-btn" class="send-btn" onclick="sendMessage()" title="Send" aria-label="Send message" disabled>➤</button>
       </div>
     </div>
 
@@ -884,7 +897,10 @@
       if (!text) return;
 
       input.value = ""; autoResize(input);
-      if (sendBtn) sendBtn.disabled = true;
+      if (sendBtn) {
+        sendBtn.disabled = true;
+        sendBtn.innerHTML = '<div class="spinner"></div>';
+      }
 
       // Hide quick actions after first message
       document.getElementById("quick-actions").style.display = "none";
@@ -915,7 +931,10 @@
         setStatus("Online · Always here for you");
         console.error("Aisha error:", err);
       } finally {
-        if (sendBtn) sendBtn.disabled = false;
+        if (sendBtn) {
+          sendBtn.innerHTML = "➤";
+          sendBtn.disabled = input.value.trim() === "";
+        }
         input.focus();
       }
     }
@@ -926,6 +945,10 @@
     }
     function autoResize(el) {
       el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 120) + "px";
+      const sendBtn = document.getElementById("send-btn");
+      if (sendBtn && sendBtn.innerHTML.indexOf("spinner") === -1) {
+        sendBtn.disabled = el.value.trim() === "";
+      }
     }
 
     // ── Voice Output ─────────────────────────────────────────────
