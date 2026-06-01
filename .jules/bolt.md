@@ -7,3 +7,6 @@
 ## 2024-05-18 - [GoalEngine Evening Review Update Batching]
 **Learning:** `GoalEngine.evening_review` had an N+1 query vulnerability because it iterated through completed daily action IDs and performed a separate `self.supabase.table("aisha_daily_actions").update(...).eq("id", a_id)` call for each ID.
 **Action:** Use `.in_("id", batch)` to batch updates instead of `.eq("id", id)` inside a loop. Make sure to batch the `.in_()` call in chunks of 100 to avoid PostgREST URL length limits if the payload is large.
+## 2026-06-01 - [Avoid O(N) Supabase list size and existence checks]
+**Learning:** Fetching `len(res.data)` on an unbounded query or fetching `res.data` just to check `if len(res.data) > 0` triggers an O(N) database-to-application overhead. All records matching the condition are fetched into memory, causing bottlenecks for large tables.
+**Action:** When you just need to know the count, always use `select("...", count="exact").limit(1)` and check `res.count`. For existence checks (`len(res.data) > 0`), always append `.limit(1)` to the query to avoid loading more than 1 row into memory.
