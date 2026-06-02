@@ -210,6 +210,12 @@
     }
     .send-btn:hover { transform: scale(1.08); box-shadow: 0 0 24px rgba(155,89,245,0.6); }
     .send-btn:active { transform: scale(0.95); }
+    .send-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
 
     /* ── Settings Panel ─────────────────────────────────────── */
     .panel {
@@ -551,7 +557,11 @@ async function callGemini(userMessage) {
 async function sendMessage(overrideText = null) {
   const input = document.getElementById("user-input");
   const text = (overrideText || input.value).trim();
-  if (!text) return;
+  const sendBtn = document.querySelector(".send-btn");
+
+  if (!text || (sendBtn && sendBtn.disabled)) return;
+
+  if (sendBtn) sendBtn.disabled = true;
   
   input.value = ""; autoResize(input);
   
@@ -583,6 +593,9 @@ async function sendMessage(overrideText = null) {
     renderMessage("ai", errMsg);
     setStatus("Online · Always here for you");
     console.error("Aisha error:", err);
+  } finally {
+    const sendBtn = document.querySelector(".send-btn");
+    if (sendBtn) sendBtn.disabled = false;
   }
 }
 
