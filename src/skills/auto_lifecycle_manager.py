@@ -1,6 +1,7 @@
 import signal
 import logging
-import pickle
+import json
+import os
 import sys
 from contextlib import contextmanager
 from functools import wraps
@@ -28,7 +29,7 @@ class AutoLifecycleManager:
         safe_termination: Ensures active processing tasks reach a safe termination point before exiting.
     """
 
-    def __init__(self, state_file='state.pkl'):
+    def __init__(self, state_file='state.json'):
         self._used_topics = {}
         self._state_file = state_file
         self.trap_signals()
@@ -40,19 +41,34 @@ class AutoLifecycleManager:
 
     def dump_state(self):
         try:
-            with open(self._state_file, 'wb') as f:
-                pickle.dump(self._used_topics, f)
+            with open(self._state_file, 'w') as f:
+                json.dump(self._used_topics, f)
             logger.info('State dumped to disk')
         except Exception as e:
             logger.error(f'Failed to dump state: {e}')
 
     def load_state(self):
         try:
-            with open(self._state_file, 'rb') as f:
-                self._used_topics = pickle.load(f)
+            with open(self._state_file, 'r') as f:
+                self._used_topics = json.load(f)
             logger.info('State loaded from disk')
         except FileNotFoundError:
-            logger.info('No state file found')
+            legacy_file = self._state_file.replace('.json', '.pkl')
+            if os.path.exists(legacy_file):
+                try:
+                    import pickle
+                    with open(legacy_file, 'rb') as f:
+                        self._used_topics = pickle.load(f)
+                    self.dump_state()
+                    if legacy_file != self._state_file and os.path.exists(legacy_file):
+                        os.remove(legacy_file)
+                    logger.info('Legacy state migrated to json')
+                except Exception as e:
+                    logger.error(f'Failed to migrate legacy state: {e}')
+            else:
+                logger.info('No state file found')
+        except json.JSONDecodeError:
+             logger.info('Failed to parse json state')
         except Exception as e:
             logger.error(f'Failed to load state: {e}')
 
