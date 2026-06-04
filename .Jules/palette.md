@@ -7,3 +7,7 @@
 ## 2026-03-30 - Disable Async Action Buttons
 **Learning:** The send button did not have a visual disabled state during async API calls, allowing double-submission or confusing the user whether the button was clicked.
 **Action:** Always add a disabled state visually (`:disabled` pseudo-class dropping opacity/disabling cursor) and functionally (JS `button.disabled = true;` during async calls) for interactive submit buttons.
+
+## 2026-06-04 - Global Focus Visible
+**Learning:** The UI lacked keyboard accessibility because custom buttons (like `.icon-btn`, `.quick-btn`) stripped native outlines or only relied on `:hover`. Adding a global `*:focus-visible` rule provides a robust, low-effort safety net for keyboard navigation across the entire monolithic app.
+**Action:** Implement global `*:focus-visible` using design system tokens (`--accent`) to ensure baseline accessibility for all interactive elements, especially icon-only buttons.
