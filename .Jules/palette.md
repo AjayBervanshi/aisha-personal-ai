@@ -7,3 +7,6 @@
 ## 2026-03-30 - Disable Async Action Buttons
 **Learning:** The send button did not have a visual disabled state during async API calls, allowing double-submission or confusing the user whether the button was clicked.
 **Action:** Always add a disabled state visually (`:disabled` pseudo-class dropping opacity/disabling cursor) and functionally (JS `button.disabled = true;` during async calls) for interactive submit buttons.
+## 2026-06-05 - Added aria-live to status updates
+**Learning:** Dynamic text elements indicating app state changes (like "Aisha is thinking..." or "Listening...") are visually clear but completely silent to screen readers unless specifically marked. This creates a confusing disconnect for visually impaired users who submit a form/message and receive no immediate feedback.
+**Action:** Always use `aria-live="polite"` on dynamically updating status or notification text containers so screen readers announce changes without aggressively interrupting the user.
