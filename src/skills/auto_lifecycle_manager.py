@@ -1,6 +1,7 @@
 import signal
 import logging
-import pickle
+import json
+import os
 import sys
 from contextlib import contextmanager
 from functools import wraps
@@ -28,7 +29,7 @@ class AutoLifecycleManager:
         safe_termination: Ensures active processing tasks reach a safe termination point before exiting.
     """
 
-    def __init__(self, state_file='state.pkl'):
+    def __init__(self, state_file='state.json'):
         self._used_topics = {}
         self._state_file = state_file
         self.trap_signals()
@@ -40,19 +41,45 @@ class AutoLifecycleManager:
 
     def dump_state(self):
         try:
-            with open(self._state_file, 'wb') as f:
-                pickle.dump(self._used_topics, f)
+            with open(self._state_file, 'w') as f:
+                # Convert any sets to lists before serializing
+                serializable_topics = {
+                    k: (list(v) if isinstance(v, set) else v)
+                    for k, v in self._used_topics.items()
+                }
+                json.dump(serializable_topics, f)
             logger.info('State dumped to disk')
         except Exception as e:
             logger.error(f'Failed to dump state: {e}')
 
     def load_state(self):
         try:
-            with open(self._state_file, 'rb') as f:
-                self._used_topics = pickle.load(f)
+            with open(self._state_file, 'r') as f:
+                raw_topics = json.load(f)
+                self._used_topics = {
+                    k: (set(v) if isinstance(v, list) else v)
+                    for k, v in raw_topics.items()
+                }
             logger.info('State loaded from disk')
-        except FileNotFoundError:
-            logger.info('No state file found')
+        except (FileNotFoundError, UnicodeDecodeError, json.JSONDecodeError):
+            logger.info('No valid JSON state file found, attempting to migrate from legacy .pkl file.')
+            legacy_file = self._state_file.replace('.json', '.pkl') if self._state_file.endswith('.json') else 'state.pkl'
+            try:
+                import pickle
+                with open(legacy_file, 'rb') as f:
+                    self._used_topics = pickle.load(f)
+                logger.info('Successfully loaded state from legacy .pkl file.')
+
+                # Write to the new format
+                self.dump_state()
+
+                # Remove the old file if it is distinct
+                if legacy_file != self._state_file and os.path.exists(legacy_file):
+                    os.remove(legacy_file)
+                    logger.info(f'Deleted legacy state file: {legacy_file}')
+
+            except Exception as e:
+                logger.info(f'No valid legacy state file found or migration failed: {e}')
         except Exception as e:
             logger.error(f'Failed to load state: {e}')
 
