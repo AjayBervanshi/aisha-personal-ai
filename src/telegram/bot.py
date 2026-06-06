@@ -3153,18 +3153,21 @@ def handle_job_approval(call):
         
     action, _, job_id = call.data.partition("_job_")
     
-    import pickle
+    import json
     import os
     assets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "temp_assets")
-    job_file = os.path.join(assets_dir, f"job_{job_id}.pkl")
+    job_file = os.path.join(assets_dir, f"job_{job_id}.json")
     
-    if not os.path.exists(job_file):
+    if not os.path.exists(job_file) and not os.path.exists(job_file.replace(".json", ".pkl")):
         bot.edit_message_text("❌ This job has expired or cannot be found.", chat_id=call.message.chat.id, message_id=call.message.message_id)
         return
         
     if action == "rewrite":
         bot.edit_message_text("🔄 Script rejected. You can trigger a new generation.", chat_id=call.message.chat.id, message_id=call.message.message_id)
-        os.remove(job_file)
+        if os.path.exists(job_file):
+            os.remove(job_file)
+        elif os.path.exists(job_file.replace(".json", ".pkl")):
+            os.remove(job_file.replace(".json", ".pkl"))
         return
         
     # User approved!
@@ -3172,8 +3175,34 @@ def handle_job_approval(call):
     
     def background_render():
         try:
-            with open(job_file, "rb") as pf:
-                job_data = pickle.load(pf)
+            try:
+                with open(job_file, "r", encoding="utf-8") as pf:
+                    # Parse integer keys just in case, though usually str keys here
+                    def parse_int_keys(d):
+                        return {int(k) if k.isdigit() else k: v for k, v in d.items()}
+                    job_data = json.load(pf, object_hook=parse_int_keys)
+            except (json.JSONDecodeError, UnicodeDecodeError, FileNotFoundError):
+                # Fallback to read legacy .pkl files
+                import pickle
+                legacy_file = job_file.replace(".json", ".pkl")
+                if os.path.exists(legacy_file):
+                    with open(legacy_file, "rb") as pf:
+                        job_data = pickle.load(pf)
+
+                    # Custom encoder to cast sets to lists
+                    class SetEncoder(json.JSONEncoder):
+                        def default(self, obj):
+                            if isinstance(obj, set):
+                                return list(obj)
+                            return super().default(obj)
+
+                    # Rewrite as .json immediately
+                    with open(job_file, "w", encoding="utf-8") as pf:
+                        json.dump(job_data, pf, cls=SetEncoder, ensure_ascii=False)
+                    if legacy_file != job_file and os.path.exists(legacy_file):
+                        os.remove(legacy_file)
+                else:
+                    raise FileNotFoundError(f"Neither json nor pkl found for {job_file}")
                 
             from src.agents.youtube_crew import YouTubeCrew
             crew = YouTubeCrew()
@@ -3199,7 +3228,10 @@ def handle_job_approval(call):
                 marketing=job_data["marketing"]
             )
             bot.send_message(call.message.chat.id, f"🎬 Render complete for {job_data['channel']}! Check Supabase Queue or server logs.")
-            os.remove(job_file)
+            if os.path.exists(job_file):
+                os.remove(job_file)
+            elif os.path.exists(job_file.replace(".json", ".pkl")):
+                os.remove(job_file.replace(".json", ".pkl"))
         except Exception as e:
             bot.send_message(call.message.chat.id, f"❌ Render failed: {e}")
             
