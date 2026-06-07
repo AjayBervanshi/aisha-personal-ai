@@ -1,6 +1,7 @@
 import signal
 import logging
-import pickle
+import json
+import os
 import sys
 from contextlib import contextmanager
 from functools import wraps
@@ -28,7 +29,7 @@ class AutoLifecycleManager:
         safe_termination: Ensures active processing tasks reach a safe termination point before exiting.
     """
 
-    def __init__(self, state_file='state.pkl'):
+    def __init__(self, state_file='state.json'):
         self._used_topics = {}
         self._state_file = state_file
         self.trap_signals()
@@ -40,19 +41,52 @@ class AutoLifecycleManager:
 
     def dump_state(self):
         try:
-            with open(self._state_file, 'wb') as f:
-                pickle.dump(self._used_topics, f)
+            # Convert non-serializable types like sets to lists
+            serializable_topics = {}
+            for k, v in self._used_topics.items():
+                if isinstance(v, set):
+                    serializable_topics[k] = list(v)
+                else:
+                    serializable_topics[k] = v
+            with open(self._state_file, 'w') as f:
+                json.dump(serializable_topics, f)
             logger.info('State dumped to disk')
+
+            # Remove legacy .pkl file
+            legacy_file = self._state_file.replace('.json', '.pkl')
+            if legacy_file != self._state_file and os.path.exists(legacy_file):
+                os.remove(legacy_file)
         except Exception as e:
             logger.error(f'Failed to dump state: {e}')
 
     def load_state(self):
         try:
-            with open(self._state_file, 'rb') as f:
-                self._used_topics = pickle.load(f)
+            with open(self._state_file, 'r') as f:
+                loaded = json.load(f)
+            # Reconstitute sets and parse integer keys if needed
+            self._used_topics = {}
+            for k, v in loaded.items():
+                try:
+                    k = int(k)
+                except ValueError:
+                    pass
+                if isinstance(v, list):
+                    self._used_topics[k] = set(v)
+                else:
+                    self._used_topics[k] = v
             logger.info('State loaded from disk')
-        except FileNotFoundError:
-            logger.info('No state file found')
+        except (FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError):
+            legacy_file = self._state_file.replace('.json', '.pkl')
+            if legacy_file != self._state_file and os.path.exists(legacy_file):
+                try:
+                    import pickle
+                    with open(legacy_file, 'rb') as f:
+                        self._used_topics = pickle.load(f)
+                    logger.info('State loaded from legacy disk file')
+                except Exception as e:
+                    logger.error(f'Failed to load legacy state: {e}')
+            else:
+                logger.info('No state file found')
         except Exception as e:
             logger.error(f'Failed to load state: {e}')
 
