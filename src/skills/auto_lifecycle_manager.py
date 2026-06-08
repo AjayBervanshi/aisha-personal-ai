@@ -1,6 +1,7 @@
 import signal
 import logging
-import pickle
+import json
+import os
 import sys
 from contextlib import contextmanager
 from functools import wraps
@@ -28,7 +29,7 @@ class AutoLifecycleManager:
         safe_termination: Ensures active processing tasks reach a safe termination point before exiting.
     """
 
-    def __init__(self, state_file='state.pkl'):
+    def __init__(self, state_file='state.json'):
         self._used_topics = {}
         self._state_file = state_file
         self.trap_signals()
@@ -38,23 +39,49 @@ class AutoLifecycleManager:
         self.dump_state()
         sys.exit(0)
 
-    def dump_state(self):
+    def dump_state(self, raise_errors=False):
         try:
-            with open(self._state_file, 'wb') as f:
-                pickle.dump(self._used_topics, f)
+            with open(self._state_file, 'w', encoding='utf-8') as f:
+                # Convert sets to lists if any exist in the values to allow JSON serialization
+                serializable_topics = {
+                    k: (list(v) if isinstance(v, set) else v)
+                    for k, v in self._used_topics.items()
+                }
+                json.dump(serializable_topics, f)
             logger.info('State dumped to disk')
         except Exception as e:
             logger.error(f'Failed to dump state: {e}')
+            if raise_errors:
+                raise e
 
     def load_state(self):
         try:
-            with open(self._state_file, 'rb') as f:
-                self._used_topics = pickle.load(f)
+            with open(self._state_file, 'r', encoding='utf-8') as f:
+                loaded = json.load(f)
+                # Reconstitute sets and try parsing integer keys
+                self._used_topics = {}
+                for k, v in loaded.items():
+                    key = int(k) if k.isdigit() else k
+                    self._used_topics[key] = set(v) if isinstance(v, list) else v
             logger.info('State loaded from disk')
-        except FileNotFoundError:
-            logger.info('No state file found')
         except Exception as e:
-            logger.error(f'Failed to load state: {e}')
+            # Fallback migration logic: read legacy .pkl if it exists
+            legacy_file = self._state_file.replace('.json', '.pkl')
+            if legacy_file != self._state_file and os.path.exists(legacy_file):
+                import pickle
+                try:
+                    with open(legacy_file, 'rb') as f:
+                        self._used_topics = pickle.load(f)
+                    logger.info('Legacy state loaded from .pkl, migrating to .json')
+                    self.dump_state(raise_errors=True) # Write .json first and raise error on failure
+                    os.remove(legacy_file) # Delete .pkl after successful write
+                except Exception as migration_e:
+                    logger.error(f'Failed to migrate legacy state: {migration_e}')
+            else:
+                if isinstance(e, FileNotFoundError):
+                    logger.info('No state file found')
+                else:
+                    logger.error(f'Failed to load state: {e}')
 
     def trap_signals(self):
         signal.signal(signal.SIGINT, self._signal_handler)
