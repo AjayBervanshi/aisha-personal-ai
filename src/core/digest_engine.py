@@ -152,12 +152,13 @@ class DigestEngine:
 
             # Tasks done
             done = (db.table("aisha_schedule")
-                    .select("id")
+                    .select("id", count="exact")
                     .eq("status", "done")
                     .gte("due_date", week_start.isoformat())
                     .lte("due_date", week_end.isoformat())
-                    .execute()).data or []
-            stats["tasks_done"] = len(done)
+                    .limit(1)
+                    .execute())
+            stats["tasks_done"] = done.count or 0
 
             # Mood
             moods = (db.table("aisha_mood_tracker")
