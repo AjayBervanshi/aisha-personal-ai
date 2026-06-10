@@ -849,13 +849,9 @@ def cmd_earnings(message):
                 channel_counts[ch] = channel_counts.get(ch, 0) + 1
 
             # All-time uploads
-            all_uploaded = db.table("content_jobs") \
-                             .select("id") \
-                             .eq("youtube_status", "uploaded") \
-                             .execute().data or []
-
+            # (Replaced O(N) select with O(1) count="exact" optimization)
             # Monetization progress (need 1000 subs + 4000 watch hours)
-            total_videos = len(all_uploaded)
+            total_videos = db.table("content_jobs").select("id", count="exact").eq("youtube_status", "uploaded").limit(1).execute().count or 0
             # Rough estimate: each Short = ~0.5 watch-hour average
             est_watch_hours = total_videos * 0.5
             watch_pct = min(100, (est_watch_hours / 4000) * 100)
