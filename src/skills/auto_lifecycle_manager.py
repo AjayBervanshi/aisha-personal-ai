@@ -1,5 +1,8 @@
 import signal
 import logging
+import json
+import os
+import io
 import pickle
 import sys
 from contextlib import contextmanager
@@ -7,6 +10,27 @@ from functools import wraps
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+class SafeUnpickler(pickle.Unpickler):
+    def find_class(self, module, name):
+        # Only allow safe built-ins for migration
+        safe_builtins = {
+            'builtins': {'set', 'dict', 'list', 'tuple', 'int', 'float', 'str', 'bool', 'bytes'}
+        }
+        if module in safe_builtins and name in safe_builtins[module]:
+            return getattr(sys.modules[module], name)
+        raise pickle.UnpicklingError(f"Global '{module}.{name}' is forbidden")
+
+class CustomJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, set):
+            return {'__set__': list(obj)}
+        return super().default(obj)
+
+def custom_object_hook(dct):
+    if '__set__' in dct:
+        return set(dct['__set__'])
+    return dct
 
 class AutoLifecycleManager:
     """
@@ -28,8 +52,10 @@ class AutoLifecycleManager:
         safe_termination: Ensures active processing tasks reach a safe termination point before exiting.
     """
 
-    def __init__(self, state_file='state.pkl'):
+    def __init__(self, state_file='state.json'):
         self._used_topics = {}
+        if state_file.endswith('.pkl'):
+            state_file = state_file.replace('.pkl', '.json')
         self._state_file = state_file
         self.trap_signals()
 
@@ -40,19 +66,37 @@ class AutoLifecycleManager:
 
     def dump_state(self):
         try:
-            with open(self._state_file, 'wb') as f:
-                pickle.dump(self._used_topics, f)
+            with open(self._state_file, 'w') as f:
+                json.dump(self._used_topics, f, cls=CustomJSONEncoder)
             logger.info('State dumped to disk')
         except Exception as e:
             logger.error(f'Failed to dump state: {e}')
 
     def load_state(self):
         try:
-            with open(self._state_file, 'rb') as f:
-                self._used_topics = pickle.load(f)
+            with open(self._state_file, 'r') as f:
+                self._used_topics = json.load(f, object_hook=custom_object_hook)
             logger.info('State loaded from disk')
         except FileNotFoundError:
-            logger.info('No state file found')
+            # Fallback for migration from .pkl to .json
+            legacy_file = self._state_file.replace('.json', '.pkl')
+            if legacy_file != self._state_file and os.path.exists(legacy_file):
+                logger.info(f'Found legacy file {legacy_file}. Migrating to JSON.')
+                try:
+                    with open(legacy_file, 'rb') as f:
+                        # Use restricted unpickler
+                        self._used_topics = SafeUnpickler(f).load()
+
+                    # Write the new JSON file
+                    self.dump_state()
+
+                    # Safely delete the legacy file
+                    os.remove(legacy_file)
+                    logger.info(f'Migrated state and deleted legacy file {legacy_file}')
+                except Exception as e:
+                    logger.error(f'Failed to migrate legacy state: {e}')
+            else:
+                logger.info('No state file found')
         except Exception as e:
             logger.error(f'Failed to load state: {e}')
 
