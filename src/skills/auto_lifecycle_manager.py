@@ -1,12 +1,32 @@
 import signal
 import logging
 import pickle
+import json
+import os
 import sys
 from contextlib import contextmanager
 from functools import wraps
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+class SetEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, set):
+            return {'__set__': list(obj)}
+        return super().default(obj)
+
+def set_decoder(dct):
+    if '__set__' in dct:
+        return set(dct['__set__'])
+    return dct
+
+class RestrictedUnpickler(pickle.Unpickler):
+    def find_class(self, module, name):
+        if module == "builtins" and name in {"set", "dict", "list", "str", "int", "float", "bool"}:
+            return getattr(__import__(module), name)
+        raise pickle.UnpicklingError(f"Global '{module}.{name}' is forbidden")
 
 class AutoLifecycleManager:
     """
@@ -28,7 +48,7 @@ class AutoLifecycleManager:
         safe_termination: Ensures active processing tasks reach a safe termination point before exiting.
     """
 
-    def __init__(self, state_file='state.pkl'):
+    def __init__(self, state_file='state.json'):
         self._used_topics = {}
         self._state_file = state_file
         self.trap_signals()
@@ -40,19 +60,33 @@ class AutoLifecycleManager:
 
     def dump_state(self):
         try:
-            with open(self._state_file, 'wb') as f:
-                pickle.dump(self._used_topics, f)
+            with open(self._state_file, 'w') as f:
+                json.dump(self._used_topics, f, cls=SetEncoder)
             logger.info('State dumped to disk')
         except Exception as e:
             logger.error(f'Failed to dump state: {e}')
 
     def load_state(self):
         try:
-            with open(self._state_file, 'rb') as f:
-                self._used_topics = pickle.load(f)
+            with open(self._state_file, 'r') as f:
+                self._used_topics = json.load(f, object_hook=set_decoder)
             logger.info('State loaded from disk')
         except FileNotFoundError:
-            logger.info('No state file found')
+            logger.info('No state file found. Checking for legacy state file...')
+            legacy_file = self._state_file.replace('.json', '.pkl')
+            if os.path.exists(legacy_file):
+                try:
+                    with open(legacy_file, 'rb') as f:
+                        self._used_topics = RestrictedUnpickler(f).load()
+                    logger.info('Legacy state loaded from disk. Migrating to JSON...')
+                    self.dump_state()
+                    if legacy_file != self._state_file:
+                        os.remove(legacy_file)
+                        logger.info('Legacy state file deleted.')
+                except Exception as e:
+                    logger.error(f'Failed to load legacy state: {e}')
+            else:
+                logger.info('No legacy state file found')
         except Exception as e:
             logger.error(f'Failed to load state: {e}')
 
