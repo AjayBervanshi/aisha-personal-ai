@@ -272,17 +272,27 @@ def get_top_performing_topics(channel: str, limit: int = 5) -> list:
         series_ids = [row["id"] for row in series_resp.data]
 
         # Fetch episodes with views, ordered by views desc
-        ep_resp = (
-            sb.table("aisha_episodes")
-            .select("title,views")
-            .in_("series_id", series_ids)
-            .not_.is_("views", "null")
-            .order("views", desc=True)
-            .limit(limit)
-            .execute()
-        )
+        # Batch the queries to avoid PostgREST URL length limits
+        batch_size = 100
+        topics_with_views = []
+        for i in range(0, len(series_ids), batch_size):
+            batch_ids = series_ids[i:i + batch_size]
+            ep_resp = (
+                sb.table("aisha_episodes")
+                .select("title,views")
+                .in_("series_id", batch_ids)
+                .not_.is_("views", "null")
+                .order("views", desc=True)
+                .limit(limit)
+                .execute()
+            )
+            for row in (ep_resp.data or []):
+                if row.get("title"):
+                    topics_with_views.append((row["title"], row.get("views", 0) or 0))
 
-        topics = [row["title"] for row in (ep_resp.data or []) if row.get("title")]
+        # Sort combined results by views desc and limit
+        topics_with_views.sort(key=lambda x: x[1], reverse=True)
+        topics = [t[0] for t in topics_with_views[:limit]]
         return topics
 
     except Exception as e:
@@ -326,19 +336,26 @@ def generate_performance_report() -> str:
         episodes_by_channel = {ch: [] for ch in channels}
 
         if all_series_ids:
-            ep_resp = (
-                sb.table("aisha_episodes")
-                .select("series_id,title,views,likes,youtube_url")
-                .in_("series_id", all_series_ids)
-                .not_.is_("views", "null")
-                .order("views", desc=True)
-                .execute()
-            )
+            batch_size = 100
+            for i in range(0, len(all_series_ids), batch_size):
+                batch_ids = all_series_ids[i:i + batch_size]
+                ep_resp = (
+                    sb.table("aisha_episodes")
+                    .select("series_id,title,views,likes,youtube_url")
+                    .in_("series_id", batch_ids)
+                    .not_.is_("views", "null")
+                    .order("views", desc=True)
+                    .execute()
+                )
 
-            for ep in (ep_resp.data or []):
-                channel = series_to_channel.get(ep["series_id"])
-                if channel:
-                    episodes_by_channel[channel].append(ep)
+                for ep in (ep_resp.data or []):
+                    channel = series_to_channel.get(ep["series_id"])
+                    if channel:
+                        episodes_by_channel[channel].append(ep)
+
+            # Sort episodes by views descending since we batched the queries
+            for channel in channels:
+                episodes_by_channel[channel].sort(key=lambda x: x.get("views", 0) or 0, reverse=True)
 
         # 3. Generate report from in-memory data
         for channel in channels:
