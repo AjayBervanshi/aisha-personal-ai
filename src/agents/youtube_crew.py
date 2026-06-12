@@ -353,18 +353,25 @@ OUTPUT SCHEMA:
                     bot.send_message(ajay_id, preview_text, reply_markup=markup, parse_mode="Markdown")
                     
                     # Store job state temporarily so the callback can pick it up
-                    import pickle, os
+                    import json, os
                     assets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "temp_assets")
                     os.makedirs(assets_dir, exist_ok=True)
-                    with open(os.path.join(assets_dir, f"job_{job_id}.pkl"), "wb") as pf:
-                        pickle.dump({
+
+                    class SetEncoder(json.JSONEncoder):
+                        def default(self, obj):
+                            if isinstance(obj, set):
+                                return {'__set__': list(obj)}
+                            return super().default(obj)
+
+                    with open(os.path.join(assets_dir, f"job_{job_id}.json"), "w") as pf:
+                        json.dump({
                             "channel": channel,
                             "topic": topic,
                             "fmt": fmt,
                             "script_chunks": script_chunks,
                             "render_mp4": render_mp4,
                             "marketing": self.results.get("marketing", "")
-                        }, pf)
+                        }, pf, cls=SetEncoder)
                     
                     _status(f"⏸️ [Approval Gate] Sent to Telegram. Pausing pipeline for job {job_id}.")
                     return f"Script generated and sent for approval. Job ID: {job_id}"

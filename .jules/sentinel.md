@@ -31,3 +31,7 @@
 **Vulnerability:** The workflow engine used Python's built-in `eval()` to execute condition strings in logic nodes.
 **Learning:** Even when passing a restricted global dict (`{"__builtins__": {}}`), `eval()` remains highly unsafe and vulnerable to code injection/RCE, as users can still access system functions through other means or crash the application.
 **Prevention:** Never use `eval()` on untrusted input. Instead, use an Abstract Syntax Tree (AST) evaluator with an explicit whitelist of allowed node types (`ast.parse`) or use a secure alternative like `asteval` library.
+## 2025-06-12 - Fix insecure deserialization in YouTube pipeline job payloads
+**Vulnerability:** Job payloads created by `youtube_crew.py` and handled by `bot.py` were serialized using `pickle` on disk, allowing for insecure deserialization and possible RCE.
+**Learning:** `pickle` creates arbitrary execution environments when loading serialized objects, and relying on it for file-based communication between pipeline processes introduces significant risk.
+**Prevention:** Replaced `pickle` usage with `json` with explicit typed serialization (such as custom encoding for `set` structures if any) and incorporated a restricted unpickler fallback for processing any legacy `.pkl` state payloads securely.
