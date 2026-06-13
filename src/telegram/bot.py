@@ -3153,18 +3153,22 @@ def handle_job_approval(call):
         
     action, _, job_id = call.data.partition("_job_")
     
-    import pickle
+    import json
     import os
     assets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "temp_assets")
-    job_file = os.path.join(assets_dir, f"job_{job_id}.pkl")
+    job_file = os.path.join(assets_dir, f"job_{job_id}.json")
+    legacy_job_file = os.path.join(assets_dir, f"job_{job_id}.pkl")
     
-    if not os.path.exists(job_file):
+    if not os.path.exists(job_file) and not os.path.exists(legacy_job_file):
         bot.edit_message_text("❌ This job has expired or cannot be found.", chat_id=call.message.chat.id, message_id=call.message.message_id)
         return
         
     if action == "rewrite":
         bot.edit_message_text("🔄 Script rejected. You can trigger a new generation.", chat_id=call.message.chat.id, message_id=call.message.message_id)
-        os.remove(job_file)
+        if os.path.exists(job_file):
+            os.remove(job_file)
+        if legacy_job_file != job_file and os.path.exists(legacy_job_file):
+            os.remove(legacy_job_file)
         return
         
     # User approved!
@@ -3172,8 +3176,50 @@ def handle_job_approval(call):
     
     def background_render():
         try:
-            with open(job_file, "rb") as pf:
-                job_data = pickle.load(pf)
+            def custom_decoder(dct):
+                if '__set__' in dct:
+                    return set(dct['__set__'])
+                return dct
+
+            class CustomEncoder(json.JSONEncoder):
+                def default(self, obj):
+                    if isinstance(obj, set):
+                        return {'__set__': list(obj)}
+                    return super().default(obj)
+
+            if os.path.exists(job_file):
+                with open(job_file, "r") as pf:
+                    job_data = json.load(pf, object_hook=custom_decoder)
+                    # Restore int keys
+                    restored = {}
+                    for k, v in job_data.items():
+                        try:
+                            restored[int(k)] = v
+                        except ValueError:
+                            restored[k] = v
+                    job_data = restored
+            elif os.path.exists(legacy_job_file):
+                import pickle
+                import builtins
+                class RestrictedUnpickler(pickle.Unpickler):
+                    def find_class(self, module, name):
+                        if module == "builtins" and name in ["dict", "list", "str", "int", "float", "bool", "tuple", "set", "frozenset"]:
+                            return getattr(builtins, name)
+                        raise pickle.UnpicklingError(f"Global '{module}.{name}' is forbidden")
+
+                with open(legacy_job_file, "rb") as pf:
+                    job_data = RestrictedUnpickler(pf).load()
+
+                # Write to json file
+                with open(job_file, "w") as f:
+                    safe_data = {str(k): v for k, v in job_data.items()}
+                    json.dump(safe_data, f, cls=CustomEncoder)
+
+                # Delete legacy file if json was written
+                if legacy_job_file != job_file and os.path.exists(job_file):
+                    os.remove(legacy_job_file)
+            else:
+                raise FileNotFoundError("Job file not found")
                 
             from src.agents.youtube_crew import YouTubeCrew
             crew = YouTubeCrew()
