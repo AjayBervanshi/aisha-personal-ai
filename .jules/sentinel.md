@@ -31,3 +31,8 @@
 **Vulnerability:** The workflow engine used Python's built-in `eval()` to execute condition strings in logic nodes.
 **Learning:** Even when passing a restricted global dict (`{"__builtins__": {}}`), `eval()` remains highly unsafe and vulnerable to code injection/RCE, as users can still access system functions through other means or crash the application.
 **Prevention:** Never use `eval()` on untrusted input. Instead, use an Abstract Syntax Tree (AST) evaluator with an explicit whitelist of allowed node types (`ast.parse`) or use a secure alternative like `asteval` library.
+
+## 2026-06-17 - Fix Insecure Deserialization (pickle)
+**Vulnerability:** The codebase was using Python's `pickle` module in `AutoLifecycleManager` (dumping to `state.pkl`) and `YouTubeCrew`/Telegram bot (dumping to `job_<id>.pkl`) for state persistence. `pickle` is inherently unsafe for deserializing data from untrusted or easily modifiable sources because it can execute arbitrary code during unpickling, leading to Remote Code Execution (RCE).
+**Learning:** For application state and caching, `pickle` was likely chosen for convenience (handling sets, complex objects natively). However, files stored locally (like `state.pkl` or temporary job files) can be vectors for injection if modified externally, and `pickle` provides no bounds on what can be executed when read back into the process.
+**Prevention:** Always use `json` for serialization. For custom types like `set`s, use custom `JSONEncoder` and `object_hook` functions instead of relying on `pickle`. When migrating existing `.pkl` files, fallback logic must use a custom `RestrictedUnpickler` that overrides `find_class` to strictly allow only built-in safe types to prevent exploitation during the migration phase.

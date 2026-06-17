@@ -3154,17 +3154,38 @@ def handle_job_approval(call):
     action, _, job_id = call.data.partition("_job_")
     
     import pickle
+    import json
+    import builtins
     import os
+
+    class RestrictedUnpickler(pickle.Unpickler):
+        def find_class(self, module, name):
+            if module == "builtins" and name in {"set", "dict", "list", "str", "int", "float", "bool", "tuple"}:
+                return getattr(builtins, name)
+            raise pickle.UnpicklingError(f"Global '{module}.{name}' is forbidden")
+
+    def as_set(dct):
+        if '__set__' in dct:
+            return set(dct['__set__'])
+        return dct
+
     assets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "temp_assets")
-    job_file = os.path.join(assets_dir, f"job_{job_id}.pkl")
+    job_file_json = os.path.join(assets_dir, f"job_{job_id}.json")
+    job_file_pkl = os.path.join(assets_dir, f"job_{job_id}.pkl")
     
-    if not os.path.exists(job_file):
+    target_file = None
+    if os.path.exists(job_file_json):
+        target_file = job_file_json
+    elif os.path.exists(job_file_pkl):
+        target_file = job_file_pkl
+
+    if not target_file:
         bot.edit_message_text("❌ This job has expired or cannot be found.", chat_id=call.message.chat.id, message_id=call.message.message_id)
         return
         
     if action == "rewrite":
         bot.edit_message_text("🔄 Script rejected. You can trigger a new generation.", chat_id=call.message.chat.id, message_id=call.message.message_id)
-        os.remove(job_file)
+        os.remove(target_file)
         return
         
     # User approved!
@@ -3172,8 +3193,18 @@ def handle_job_approval(call):
     
     def background_render():
         try:
-            with open(job_file, "rb") as pf:
-                job_data = pickle.load(pf)
+            if target_file.endswith(".json"):
+                with open(target_file, "r", encoding="utf-8") as pf:
+                    raw_data = json.load(pf, object_hook=as_set)
+                job_data = {}
+                for k, v in raw_data.items():
+                    try:
+                        job_data[int(k)] = v
+                    except ValueError:
+                        job_data[k] = v
+            else:
+                with open(target_file, "rb") as pf:
+                    job_data = RestrictedUnpickler(pf).load()
                 
             from src.agents.youtube_crew import YouTubeCrew
             crew = YouTubeCrew()
@@ -3199,7 +3230,7 @@ def handle_job_approval(call):
                 marketing=job_data["marketing"]
             )
             bot.send_message(call.message.chat.id, f"🎬 Render complete for {job_data['channel']}! Check Supabase Queue or server logs.")
-            os.remove(job_file)
+            os.remove(target_file)
         except Exception as e:
             bot.send_message(call.message.chat.id, f"❌ Render failed: {e}")
             
