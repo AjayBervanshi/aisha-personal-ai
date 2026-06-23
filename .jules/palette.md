@@ -10,3 +10,6 @@
 ## 2026-04-11 - Temporary UI State Feedback Trap
 **Learning:** When using `setTimeout` to temporarily swap UI content (like changing a "Copy" icon to a "✅"), rapid clicks can cause the function to capture the temporary state ("✅") as the `originalIcon`. When the second timeout resolves, it restores the button to "✅" permanently, breaking the UI.
 **Action:** Always include a state-guard (e.g., `if (btn.textContent !== "✅")`) before initiating temporary visual feedback loops to ensure idempotency during rapid user interactions.
+## 2024-06-23 - Dynamic Status Text Accessibility
+**Learning:** In the `aisha-web` frontend, dynamically updating text containers (such as `#status-text`) lack native screen reader announcements for asynchronous state changes (e.g., "Aisha is thinking...").
+**Action:** Always add the `aria-live="polite"` attribute to dynamically updated status or notification text containers so screen readers announce changes without aggressively interrupting the user.
