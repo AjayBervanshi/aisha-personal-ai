@@ -3153,18 +3153,23 @@ def handle_job_approval(call):
         
     action, _, job_id = call.data.partition("_job_")
     
-    import pickle
+    import json
     import os
     assets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "temp_assets")
-    job_file = os.path.join(assets_dir, f"job_{job_id}.pkl")
+    job_file = os.path.join(assets_dir, f"job_{job_id}.json")
     
-    if not os.path.exists(job_file):
+    # Fallback to .pkl for backwards compatibility
+    legacy_job_file = os.path.join(assets_dir, f"job_{job_id}.pkl")
+    if not os.path.exists(job_file) and not os.path.exists(legacy_job_file):
         bot.edit_message_text("❌ This job has expired or cannot be found.", chat_id=call.message.chat.id, message_id=call.message.message_id)
         return
         
     if action == "rewrite":
         bot.edit_message_text("🔄 Script rejected. You can trigger a new generation.", chat_id=call.message.chat.id, message_id=call.message.message_id)
-        os.remove(job_file)
+        if os.path.exists(job_file):
+            os.remove(job_file)
+        elif os.path.exists(legacy_job_file):
+            os.remove(legacy_job_file)
         return
         
     # User approved!
@@ -3172,8 +3177,23 @@ def handle_job_approval(call):
     
     def background_render():
         try:
-            with open(job_file, "rb") as pf:
-                job_data = pickle.load(pf)
+            if os.path.exists(job_file):
+                with open(job_file, "r", encoding="utf-8") as pf:
+                    job_data = json.load(pf)
+            else:
+                import pickle, builtins
+                class RestrictedUnpickler(pickle.Unpickler):
+                    def find_class(self, module, name):
+                        if module == "builtins" and name in {"set", "dict", "list", "tuple", "int", "str", "float", "bool"}:
+                            return getattr(builtins, name)
+                        raise pickle.UnpicklingError(f"Global '{module}.{name}' is forbidden")
+                with open(legacy_job_file, "rb") as pf:
+                    job_data = RestrictedUnpickler(pf).load()
+                # Migrate to JSON
+                with open(job_file, "w", encoding="utf-8") as pf:
+                    json.dump(job_data, pf, indent=2)
+                if legacy_job_file != job_file:
+                    os.remove(legacy_job_file)
                 
             from src.agents.youtube_crew import YouTubeCrew
             crew = YouTubeCrew()

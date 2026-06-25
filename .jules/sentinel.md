@@ -31,3 +31,8 @@
 **Vulnerability:** The workflow engine used Python's built-in `eval()` to execute condition strings in logic nodes.
 **Learning:** Even when passing a restricted global dict (`{"__builtins__": {}}`), `eval()` remains highly unsafe and vulnerable to code injection/RCE, as users can still access system functions through other means or crash the application.
 **Prevention:** Never use `eval()` on untrusted input. Instead, use an Abstract Syntax Tree (AST) evaluator with an explicit whitelist of allowed node types (`ast.parse`) or use a secure alternative like `asteval` library.
+
+## 2026-06-25 - Fix Insecure Deserialization Vulnerability
+**Vulnerability:** Found `pickle.load` and `pickle.dump` used for storing state in `src/skills/auto_lifecycle_manager.py` and job caching in `src/telegram/bot.py`.
+**Learning:** `pickle` is highly vulnerable to arbitrary code execution when loading untrusted files. Deserialization of `.pkl` files shouldn't be used.
+**Prevention:** Use `json` for serialization. For backward compatibility during migration, read legacy files with a `RestrictedUnpickler` that only whitelists safe built-in types, immediately rewrite them in `.json` format, and delete the legacy `.pkl` file. Ensure integer keys are parsed correctly after `json.load()`.
