@@ -3153,18 +3153,52 @@ def handle_job_approval(call):
         
     action, _, job_id = call.data.partition("_job_")
     
-    import pickle
+    import json
     import os
+
+    def set_decoder(dct):
+        if '__set__' in dct:
+            return set(dct['__set__'])
+        return dct
+
     assets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "temp_assets")
-    job_file = os.path.join(assets_dir, f"job_{job_id}.pkl")
+    job_file = os.path.join(assets_dir, f"job_{job_id}.json")
     
     if not os.path.exists(job_file):
-        bot.edit_message_text("❌ This job has expired or cannot be found.", chat_id=call.message.chat.id, message_id=call.message.message_id)
-        return
+        # Fallback for older pkl files to prevent breaking existing jobs during migration
+        job_file_pkl = os.path.join(assets_dir, f"job_{job_id}.pkl")
+        if os.path.exists(job_file_pkl):
+            import pickle
+            class SafeUnpickler(pickle.Unpickler):
+                def find_class(self, module, name):
+                    if module == "builtins" and name in {"dict", "list", "str", "int", "float", "bool", "tuple", "set"}:
+                        return getattr(__import__(module), name)
+                    raise pickle.UnpicklingError(f"Global '{module}.{name}' is forbidden")
+
+            # Load old format, migrate to new format
+            with open(job_file_pkl, "rb") as pf:
+                job_data = SafeUnpickler(pf).load()
+
+            class SetEncoder(json.JSONEncoder):
+                def default(self, obj):
+                    if isinstance(obj, set):
+                        return {'__set__': list(obj)}
+                    return super().default(obj)
+
+            # Write new json file and remove old pkl file
+            with open(job_file, "w", encoding="utf-8") as pf_new:
+                json.dump(job_data, pf_new, cls=SetEncoder)
+
+            if job_file_pkl != job_file:
+                os.remove(job_file_pkl)
+        else:
+            bot.edit_message_text("❌ This job has expired or cannot be found.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+            return
         
     if action == "rewrite":
         bot.edit_message_text("🔄 Script rejected. You can trigger a new generation.", chat_id=call.message.chat.id, message_id=call.message.message_id)
-        os.remove(job_file)
+        if os.path.exists(job_file):
+            os.remove(job_file)
         return
         
     # User approved!
@@ -3172,8 +3206,15 @@ def handle_job_approval(call):
     
     def background_render():
         try:
-            with open(job_file, "rb") as pf:
-                job_data = pickle.load(pf)
+            with open(job_file, "r", encoding="utf-8") as pf:
+                data = json.load(pf, object_hook=set_decoder)
+                restored = {}
+                for k, v in data.items():
+                    try:
+                        restored[int(k)] = v
+                    except ValueError:
+                        restored[k] = v
+                job_data = restored
                 
             from src.agents.youtube_crew import YouTubeCrew
             crew = YouTubeCrew()
