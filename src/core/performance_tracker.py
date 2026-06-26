@@ -569,11 +569,15 @@ def _sync_content_jobs() -> int:
             )
 
         if bulk_updates:
-            try:
-                sb.table("content_jobs").upsert(bulk_updates).execute()
-                updated = len(bulk_updates)
-            except Exception as exc:
-                log.error("[PerformanceTracker] Bulk update failed: %s", exc)
+            # Batch upserts by 100 items at a time to avoid URL length issues with Supabase PostgREST limit
+            batch_size = 100
+            for i in range(0, len(bulk_updates), batch_size):
+                batch = bulk_updates[i:i + batch_size]
+                try:
+                    sb.table("content_jobs").upsert(batch).execute()
+                    updated += len(batch)
+                except Exception as exc:
+                    log.error("[PerformanceTracker] Bulk update batch failed: %s", exc)
 
         log.info(
             "[PerformanceTracker] content_jobs sync done: %d/%d updated", updated, len(rows)
