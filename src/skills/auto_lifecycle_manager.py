@@ -2,11 +2,30 @@ import signal
 import logging
 import pickle
 import sys
+import json
+import os
 from contextlib import contextmanager
 from functools import wraps
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+class SafeUnpickler(pickle.Unpickler):
+    def find_class(self, module, name):
+        if module == "builtins" and name in {"set", "dict", "list", "str", "int", "float", "bool", "tuple"}:
+            return getattr(__import__(module), name)
+        raise pickle.UnpicklingError(f"Global '{module}.{name}' is forbidden")
+
+class SetEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, set):
+            return {'__set__': list(obj)}
+        return super().default(obj)
+
+def set_decoder(dct):
+    if '__set__' in dct:
+        return set(dct['__set__'])
+    return dct
 
 class AutoLifecycleManager:
     """
@@ -28,9 +47,10 @@ class AutoLifecycleManager:
         safe_termination: Ensures active processing tasks reach a safe termination point before exiting.
     """
 
-    def __init__(self, state_file='state.pkl'):
+    def __init__(self, state_file='state.json'):
         self._used_topics = {}
         self._state_file = state_file
+        self._legacy_file = state_file.replace('.json', '.pkl') if state_file.endswith('.json') else 'state.pkl'
         self.trap_signals()
 
     def _signal_handler(self, signum, frame):
@@ -40,19 +60,36 @@ class AutoLifecycleManager:
 
     def dump_state(self):
         try:
-            with open(self._state_file, 'wb') as f:
-                pickle.dump(self._used_topics, f)
+            with open(self._state_file, 'w', encoding="utf-8") as f:
+                json.dump(self._used_topics, f, cls=SetEncoder)
             logger.info('State dumped to disk')
+            if hasattr(self, '_legacy_file') and self._legacy_file != self._state_file and os.path.exists(self._legacy_file):
+                os.remove(self._legacy_file)
         except Exception as e:
             logger.error(f'Failed to dump state: {e}')
 
     def load_state(self):
         try:
-            with open(self._state_file, 'rb') as f:
-                self._used_topics = pickle.load(f)
+            with open(self._state_file, 'r', encoding="utf-8") as f:
+                restored = json.load(f, object_hook=set_decoder)
+                for k, v in list(restored.items()):
+                    try:
+                        restored[int(k)] = v
+                    except ValueError:
+                        restored[k] = v
+                self._used_topics = restored
             logger.info('State loaded from disk')
         except FileNotFoundError:
-            logger.info('No state file found')
+            if hasattr(self, '_legacy_file') and os.path.exists(self._legacy_file):
+                try:
+                    with open(self._legacy_file, 'rb') as f:
+                        self._used_topics = SafeUnpickler(f).load()
+                    logger.info('Legacy state loaded from disk')
+                    self.dump_state()
+                except Exception as e:
+                    logger.error(f'Failed to load legacy state: {e}')
+            else:
+                logger.info('No state file found')
         except Exception as e:
             logger.error(f'Failed to load state: {e}')
 
