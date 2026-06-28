@@ -7,3 +7,6 @@
 ## 2024-05-18 - [GoalEngine Evening Review Update Batching]
 **Learning:** `GoalEngine.evening_review` had an N+1 query vulnerability because it iterated through completed daily action IDs and performed a separate `self.supabase.table("aisha_daily_actions").update(...).eq("id", a_id)` call for each ID.
 **Action:** Use `.in_("id", batch)` to batch updates instead of `.eq("id", id)` inside a loop. Make sure to batch the `.in_()` call in chunks of 100 to avoid PostgREST URL length limits if the payload is large.
+## 2025-03-27 - Supabase N+1 Query Bottleneck
+**Learning:** Sequential Supabase queries for config initialization cause severe N+1 bottlenecks at startup.
+**Action:** Use bulk `.select()` queries to populate local caches upfront instead of individual row lookups.
