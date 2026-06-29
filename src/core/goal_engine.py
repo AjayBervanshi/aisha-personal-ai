@@ -61,6 +61,7 @@ class GoalEngine:
 
             obj_id = obj_res.data[0]["id"]
 
+            daily_actions_to_insert = []
             for kr in data.get("key_results", []):
                 kr_res = self.supabase.table("aisha_key_results").insert({
                     "objective_id": obj_id,
@@ -71,10 +72,15 @@ class GoalEngine:
                 kr_id = kr_res.data[0]["id"]
 
                 for act in kr.get("daily_actions", []):
-                    self.supabase.table("aisha_daily_actions").insert({
+                    daily_actions_to_insert.append({
                         "key_result_id": kr_id,
                         "title": act
-                    }).execute()
+                    })
+
+            if daily_actions_to_insert:
+                for i in range(0, len(daily_actions_to_insert), 100):
+                    batch = daily_actions_to_insert[i:i+100]
+                    self.supabase.table("aisha_daily_actions").insert(batch).execute()
 
             # Return a natural language summary to the user
             summary = f"🎯 *Objective Set:* {data['objective']}\n"
