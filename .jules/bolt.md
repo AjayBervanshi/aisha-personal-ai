@@ -7,3 +7,6 @@
 ## 2024-05-18 - [GoalEngine Evening Review Update Batching]
 **Learning:** `GoalEngine.evening_review` had an N+1 query vulnerability because it iterated through completed daily action IDs and performed a separate `self.supabase.table("aisha_daily_actions").update(...).eq("id", a_id)` call for each ID.
 **Action:** Use `.in_("id", batch)` to batch updates instead of `.eq("id", id)` inside a loop. Make sure to batch the `.in_()` call in chunks of 100 to avoid PostgREST URL length limits if the payload is large.
+## 2024-07-01 - [Bulk Fetch API Keys on Startup]
+**Learning:** The application initialized configuration keys using individual Supabase queries per key inside `_fetch_from_supabase`. This caused 35+ sequential, synchronous database calls on application startup, creating a major N+1 query performance bottleneck. Uncached missing keys also resulted in repeated network calls.
+**Action:** Implement a module-level initialization flag to perform a single bulk fetch (`.select("name, secret").eq("active", True)`) on the first config request to populate the cache up front. This turns an O(N) startup sequence into an O(1) bulk fetch and safely avoids duplicate queries for missing keys.
