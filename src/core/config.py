@@ -23,30 +23,40 @@ load_dotenv(_root / ".env")
 import time
 _sb_cache = {}
 
-def _fetch_from_supabase(key: str) -> str:
-    if key in ["SUPABASE_URL", "SUPABASE_SERVICE_KEY", "SUPABASE_SERVICE_ROLE_KEY"]:
-        return None
-        
+_cache_populated = False
+
+def _populate_sb_cache():
+    global _cache_populated
+    if _cache_populated:
+        return
+
     sb_url = os.getenv("SUPABASE_URL")
     sb_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
     if not sb_url or not sb_key:
-        return None
-        
-    if key in _sb_cache:
-        return _sb_cache[key]
-        
+        return
+
     try:
         from supabase import create_client
         sb = create_client(sb_url, sb_key)
-        res = sb.table("api_keys").select("secret").eq("name", key).eq("active", True).execute()
-        if res.data and len(res.data) > 0:
-            val = res.data[0].get("secret")
-            if val:
-                _sb_cache[key] = val
-                return val
+        res = sb.table("api_keys").select("name, secret").eq("active", True).execute()
+        if res.data:
+            for row in res.data:
+                name = row.get("name")
+                secret = row.get("secret")
+                if name and secret:
+                    _sb_cache[name] = secret
     except Exception as e:
-        print(f"[Config] Supabase fetch failed for {key}: {e}")
-    return None
+        print(f"[Config] Bulk Supabase fetch failed: {e}")
+    finally:
+        _cache_populated = True
+
+def _fetch_from_supabase(key: str) -> str:
+    if key in ["SUPABASE_URL", "SUPABASE_SERVICE_KEY", "SUPABASE_SERVICE_ROLE_KEY"]:
+        return None
+
+    _populate_sb_cache()
+
+    return _sb_cache.get(key)
 
 def _get(key: str, default: str = None, required: bool = False) -> str:
     # 1. Check Supabase first
