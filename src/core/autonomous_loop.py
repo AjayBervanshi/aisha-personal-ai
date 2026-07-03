@@ -446,7 +446,7 @@ class AutonomousLoop:
         except Exception as e:
             log.warning(f"[GarbageCollection] Failed to fetch protected queue items: {e}")
 
-        # 2. Iterate through folders and delete stale files (.pkl, .png, .mp3, .mp4, .ass)
+        # 2. Iterate through folders and delete stale files (.json, .png, .mp3, .mp4, .ass)
         for folder in ["temp_voice", "temp_videos", "temp_assets"]:
             folder_path = PROJECT_ROOT / folder
             if not folder_path.exists():
