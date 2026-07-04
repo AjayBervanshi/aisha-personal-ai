@@ -22,8 +22,10 @@ load_dotenv(_root / ".env")
 # ── Helper ─────────────────────────────────────────────────────
 import time
 _sb_cache = {}
+_sb_cache_populated = False
 
 def _fetch_from_supabase(key: str) -> str:
+    global _sb_cache_populated
     if key in ["SUPABASE_URL", "SUPABASE_SERVICE_KEY", "SUPABASE_SERVICE_ROLE_KEY"]:
         return None
         
@@ -32,18 +34,22 @@ def _fetch_from_supabase(key: str) -> str:
     if not sb_url or not sb_key:
         return None
         
-    if key in _sb_cache:
-        return _sb_cache[key]
+    if _sb_cache_populated:
+        return _sb_cache.get(key)
         
     try:
         from supabase import create_client
         sb = create_client(sb_url, sb_key)
-        res = sb.table("api_keys").select("secret").eq("name", key).eq("active", True).execute()
-        if res.data and len(res.data) > 0:
-            val = res.data[0].get("secret")
-            if val:
-                _sb_cache[key] = val
-                return val
+        # ⚡ Bolt: Performance Optimization
+        # Changed sequential row lookups to a single bulk cache-warming query.
+        # Reduces API calls from ~10 on startup down to 1, preventing N+1 query bottleneck.
+        res = sb.table("api_keys").select("name, secret").eq("active", True).execute()
+        if res.data:
+            for row in res.data:
+                if row.get("name") and row.get("secret"):
+                    _sb_cache[row["name"]] = row["secret"]
+        _sb_cache_populated = True
+        return _sb_cache.get(key)
     except Exception as e:
         print(f"[Config] Supabase fetch failed for {key}: {e}")
     return None
