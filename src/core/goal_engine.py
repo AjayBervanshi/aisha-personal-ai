@@ -61,20 +61,32 @@ class GoalEngine:
 
             obj_id = obj_res.data[0]["id"]
 
-            for kr in data.get("key_results", []):
-                kr_res = self.supabase.table("aisha_key_results").insert({
+            # ⚡ Bolt Optimization: Batch insert key results to prevent N+1 queries
+            kr_payloads = []
+            kr_list = data.get("key_results", [])
+            for kr in kr_list:
+                kr_payloads.append({
                     "objective_id": obj_id,
                     "title": kr["title"],
                     "target_value": kr.get("target_value", 1.0),
                     "unit": kr.get("unit", "completion")
-                }).execute()
-                kr_id = kr_res.data[0]["id"]
+                })
 
-                for act in kr.get("daily_actions", []):
-                    self.supabase.table("aisha_daily_actions").insert({
-                        "key_result_id": kr_id,
-                        "title": act
-                    }).execute()
+            if kr_payloads:
+                kr_res = self.supabase.table("aisha_key_results").insert(kr_payloads).execute()
+
+                # ⚡ Bolt Optimization: Batch insert daily actions to prevent N*M queries
+                act_payloads = []
+                for idx, kr in enumerate(kr_list):
+                    kr_id = kr_res.data[idx]["id"]
+                    for act in kr.get("daily_actions", []):
+                        act_payloads.append({
+                            "key_result_id": kr_id,
+                            "title": act
+                        })
+
+                if act_payloads:
+                    self.supabase.table("aisha_daily_actions").insert(act_payloads).execute()
 
             # Return a natural language summary to the user
             summary = f"🎯 *Objective Set:* {data['objective']}\n"
