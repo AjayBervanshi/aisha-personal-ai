@@ -161,7 +161,11 @@ class WorkflowEngine:
 
         elif node_type == "action.http_request":
             import urllib.request
-            req = urllib.request.Request(config.get("url", ""), method=config.get("method", "GET"))
+            url = config.get("url", "")
+            if not url.lower().startswith(("http://", "https://")):
+                log.warning(f"Blocked unsafe SSRF request to non-HTTP URL: {url}")
+                return None
+            req = urllib.request.Request(url, method=config.get("method", "GET"))
             with urllib.request.urlopen(req, timeout=5) as r:
                 return r.read().decode('utf-8')
 

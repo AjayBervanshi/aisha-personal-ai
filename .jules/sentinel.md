@@ -31,3 +31,8 @@
 **Vulnerability:** The workflow engine used Python's built-in `eval()` to execute condition strings in logic nodes.
 **Learning:** Even when passing a restricted global dict (`{"__builtins__": {}}`), `eval()` remains highly unsafe and vulnerable to code injection/RCE, as users can still access system functions through other means or crash the application.
 **Prevention:** Never use `eval()` on untrusted input. Instead, use an Abstract Syntax Tree (AST) evaluator with an explicit whitelist of allowed node types (`ast.parse`) or use a secure alternative like `asteval` library.
+
+## 2026-07-08 - Incomplete SSRF Protection in Webhook
+**Vulnerability:** The workflow engine HTTP request node (action.http_request) relied on `urllib.request.urlopen` with user-provided URLs without validating the URI scheme. This allowed attackers to use alternative schemes like `file://` (reading local files such as `/etc/passwd`) or `ftp://`, or scan internal services (like `http://169.254.169.254`).
+**Learning:** Functions like `urllib.request.urlopen` natively support multiple schemes (HTTP, HTTPS, FTP, FILE, etc.). When accepting arbitrary URLs, failing to restrict the scheme allows severe Local File Inclusion (LFI) and Server-Side Request Forgery (SSRF) vulnerabilities. Also, string validation checks (like `startswith()`) on user input (like URLs) can easily be bypassed or cause functional bugs if case sensitivity isn't handled.
+**Prevention:** Always explicitly validate the URL scheme against an allowlist (e.g., `["http", "https"]`). Use case-insensitive checks (e.g., `.lower().startswith()`). For complete SSRF protection, resolving and validating the IP address is also recommended to prevent targeting internal network IP ranges.
