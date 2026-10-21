@@ -198,3 +198,24 @@ python scripts/test_aisha.py
 
 *Aisha is yours. She remembers you, grows with you, and is always there.*
 
+
+## 🚀 Technical Highlights & Capabilities
+
+Aisha isn't just an API wrapper; she's a carefully engineered autonomous system built with **resilience, memory, and scalability** in mind.
+
+### 🧠 Intelligent Routing & Provider Fallback
+- `src/core/ai_router.py` implements a cascading fallback sequence (Gemini → NVIDIA → Groq → Anthropic → xAI → OpenAI → Mistral → Ollama). If one provider experiences a timeout or hits rate limits, the request seamlessly transitions to the next available provider, ensuring **zero downtime** in conversations.
+
+### 💾 Persistent Long-Term Memory
+- Powered by **Supabase**, Aisha remembers user context over time. It intelligently logs expenses, tracks goals, and captures episodic memories asynchronously (so it doesn't block the user's chat interface).
+
+### 🛡️ Security & Access Boundaries
+- Multi-tenant aware: The `aisha_brain.py` strictly verifies incoming User IDs. Unauthorized users get a generic greeting, while only "Ajay" (the owner) gains access to personal logs, private commands, and the ability to trigger long-running sidecar jobs.
+- API tokens are properly isolated inside an `.env` file and managed by `config.py`. They are fully scrubbed from stdout and system logs.
+
+### ⏳ Autonomous Processing & Cron Engine
+- An independent background scheduler (`autonomous_loop.py`) operates continuously. It triggers scheduled system checks, processes delayed video-generation jobs via YouTube agents, and organizes episodic memory asynchronously, freeing the main webhook/polling thread to handle instant chat responsiveness.
+
+### 🧪 Comprehensive Testing
+- The architecture is backed by an extensive `pytest` suite.
+- Uses `unittest.mock` (Mock/Patch) extensively to mock API endpoints, network states, and database interactions, ensuring predictable execution without requiring paid, live keys.

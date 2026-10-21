@@ -28,7 +28,7 @@
       --border:    rgba(155, 89, 245, 0.25);
       --glow:      rgba(155, 89, 245, 0.15);
       --radius:    18px;
-      --font:      'Segoe UI', system-ui, -apple-system, sans-serif;
+      --font:      system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', -apple-system, sans-serif;
     }
     html, body {
       height: 100%; background: var(--bg); color: var(--text);
@@ -103,6 +103,39 @@
     .chat-area::-webkit-scrollbar { width: 3px; }
     .chat-area::-webkit-scrollbar-thumb { background: var(--surface2); border-radius: 3px; }
 
+
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--text2);
+      text-align: center;
+      padding: 0 20px;
+      animation: fadeUp 0.6s ease;
+    }
+    .empty-state-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+      background: linear-gradient(135deg, var(--accent), var(--rose));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      opacity: 0.8;
+    }
+    .empty-state-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+    .empty-state-text {
+      font-size: 14px;
+      line-height: 1.5;
+      max-width: 280px;
+      opacity: 0.8;
+    }
+
     /* ── Messages ───────────────────────────────────────────── */
     .msg { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 14px; }
     .msg.user { flex-direction: row-reverse; }
@@ -113,7 +146,7 @@
       font-size: 15px;
     }
     .msg-bubble {
-      max-width: 78%; padding: 11px 15px; border-radius: var(--radius);
+      max-width: 78%; padding: 12px 16px; border-radius: var(--radius);
       font-size: 14.5px; line-height: 1.6; position: relative;
     }
     .msg.ai .msg-bubble {
@@ -168,8 +201,12 @@
 
     /* ── Input Area ─────────────────────────────────────────── */
     .input-area {
-      padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
-      background: var(--bg); border-top: 1px solid var(--border);
+      padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+      background: var(--bg2);
+      border-top: 1px solid var(--border);
+      position: sticky;
+      bottom: 0;
+      z-index: 20;
     }
     .input-row {
       display: flex; align-items: flex-end; gap: 8px;
@@ -335,7 +372,7 @@
           onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
         <button class="mic-btn" id="mic-btn" onclick="toggleMic()" title="Voice input" aria-label="Voice input">🎙️</button>
       </div>
-      <button class="send-btn" onclick="sendMessage()" title="Send message" aria-label="Send message">➤</button>
+      <button id="send-btn" class="send-btn" onclick="sendMessage()" title="Send message" aria-label="Send message">➤</button>
     </div>
   </div>
 
@@ -453,6 +490,8 @@ Be the one he always comes to — for anything, at any time. 💜`;
 // ── Message Rendering ────────────────────────────────────────
 function renderMessage(role, text, time = null) {
   const chat = document.getElementById("chat-area");
+      const emptyState = document.getElementById("empty-state");
+      if (emptyState) emptyState.remove();
   const msgTime = time || new Date().toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit'});
   
   const div = document.createElement("div");
@@ -492,6 +531,8 @@ function renderMessage(role, text, time = null) {
 
 function showTyping() {
   const chat = document.getElementById("chat-area");
+      const emptyState = document.getElementById("empty-state");
+      if (emptyState) emptyState.remove();
   const div = document.createElement("div");
   div.className = "msg ai"; div.id = "typing-indicator";
   div.innerHTML = `
@@ -728,6 +769,8 @@ function copyText(text) { navigator.clipboard.writeText(text); }
 function clearChat() {
   if (!confirm("Clear this conversation?")) return;
   const chat = document.getElementById("chat-area");
+      const emptyState = document.getElementById("empty-state");
+      if (emptyState) emptyState.remove();
   chat.innerHTML = '<div class="date-divider"><span>Today</span></div>';
   state.conversationHistory = [];
   document.getElementById("quick-actions").style.display = "flex";
@@ -743,16 +786,21 @@ function clearMemory() {
 }
 
 function addWelcomeMessage() {
+  const chat = document.getElementById("chat-area");
+  const emptyState = document.getElementById("empty-state");
+  if (emptyState) emptyState.remove();
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : hour < 22 ? "Good evening" : "Hey";
-  const msgs = [
-    `${greeting}, Ajay! 💜 I'm here and ready. What's on your mind today?`,
-    `${greeting}, Aju! 💜 Missed you. What do you need today?`,
-    `${greeting}! 💜 I'm all yours, Ajay. Let's make today great!`,
-  ];
-  const msg = msgs[Math.floor(Math.random() * msgs.length)];
-  setTimeout(() => renderMessage("ai", msg), 400);
-  state.conversationHistory.push({ role: "ai", text: msg });
+
+  if (state.conversationHistory.length === 0) {
+    chat.insertAdjacentHTML('beforeend', `
+      <div class="empty-state" id="empty-state">
+        <div class="empty-state-icon">💜</div>
+        <div class="empty-state-title">${greeting}, Ajay.</div>
+        <div class="empty-state-text">I'm here and ready. What's on your mind today?</div>
+      </div>
+    `);
+  }
 }
 
 function changeVoice() {
