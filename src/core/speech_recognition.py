@@ -1,7 +1,5 @@
 import logging
 import speech_recognition as sr
-import pytest
-pytest.skip("skipping speech_recognition pydub", allow_module_level=True)
 from pydub import AudioSegment
 from src.core.ai_router import execute_ai_command
 from src.core.config import Config
