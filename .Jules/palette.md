@@ -7,3 +7,6 @@
 ## 2026-03-30 - Disable Async Action Buttons
 **Learning:** The send button did not have a visual disabled state during async API calls, allowing double-submission or confusing the user whether the button was clicked.
 **Action:** Always add a disabled state visually (`:disabled` pseudo-class dropping opacity/disabling cursor) and functionally (JS `button.disabled = true;` during async calls) for interactive submit buttons.
+## 2026-10-25 - Improve screen reader accessibility for settings and status
+**Learning:** For dynamic chat applications, it is crucial to use `aria-live="polite"` or `role="status"` on the typing indicator or status text ("Aisha is thinking...", "Listening...") so screen readers announce these state changes automatically without shifting focus. Additionally, implementing the `role="dialog"` pattern with proper `aria-expanded` toggles on trigger buttons and keyboard navigation (like closing on Escape and focusing the panel) ensures modal accessibility.
+**Action:** Consistently apply `aria-live` attributes to dynamic text elements indicating app status. Ensure all custom modal/panel components implement the `role="dialog"` pattern with necessary keyboard event handling and `aria-expanded` on their trigger buttons.

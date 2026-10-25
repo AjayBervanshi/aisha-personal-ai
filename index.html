@@ -658,15 +658,15 @@
 
     <!-- Header -->
     <div class="header">
-      <button class="avatar" onclick="toggleSettings()" aria-label="Open settings">💜</button>
+      <button class="avatar" id="avatar-btn" onclick="toggleSettings()" aria-label="Open settings" aria-haspopup="dialog" aria-expanded="false">💜</button>
       <div class="header-info">
         <div class="header-name">Aisha</div>
-        <div class="header-status" id="status-text">Online · Always here for you</div>
+        <div class="header-status" id="status-text" role="status" aria-live="polite">Online · Always here for you</div>
       </div>
       <div class="header-actions">
         <button class="icon-btn" id="voice-toggle-btn" onclick="toggleVoiceOutput()" title="Toggle voice" aria-label="Toggle voice">🔊</button>
         <button class="icon-btn" onclick="clearChat()" title="Clear chat" aria-label="Clear chat">🗑️</button>
-        <button class="icon-btn" onclick="toggleSettings()" title="Settings" aria-label="Settings">⚙️</button>
+        <button class="icon-btn" id="settings-btn" onclick="toggleSettings()" title="Settings" aria-label="Settings" aria-haspopup="dialog" aria-expanded="false">⚙️</button>
       </div>
     </div>
 
@@ -714,7 +714,7 @@
     </div>
 
     <!-- Settings Panel -->
-    <div class="panel" id="settings-panel">
+    <div class="panel" id="settings-panel" role="dialog" aria-label="Settings" aria-modal="true" tabindex="-1">
       <div class="panel-header">
         <div class="panel-title">⚙️ Settings</div>
         <button class="panel-close" onclick="toggleSettings()" aria-label="Close settings">✕</button>
@@ -1060,7 +1060,29 @@
 
     // ── Utilities ────────────────────────────────────────────────
     function setStatus(text) { document.getElementById("status-text").textContent = text; }
-    function toggleSettings() { document.getElementById("settings-panel").classList.toggle("open"); }
+    function toggleSettings() {
+      const panel = document.getElementById("settings-panel");
+      const isOpen = panel.classList.toggle("open");
+
+      // Update aria-expanded on trigger buttons
+      const avatarBtn = document.getElementById("avatar-btn");
+      const settingsBtn = document.getElementById("settings-btn");
+      if (avatarBtn) avatarBtn.setAttribute("aria-expanded", isOpen);
+      if (settingsBtn) settingsBtn.setAttribute("aria-expanded", isOpen);
+
+      if (isOpen) {
+        panel.focus();
+      }
+    }
+
+    // Close settings panel on Escape key
+    document.addEventListener("keydown", (e) => {
+      const panel = document.getElementById("settings-panel");
+      if (e.key === "Escape" && panel && panel.classList.contains("open")) {
+        toggleSettings();
+      }
+    });
+
     function copyText(text, btn) {
       navigator.clipboard.writeText(text);
       if (btn && btn.textContent !== "✅") {
