@@ -31,3 +31,8 @@
 **Vulnerability:** The workflow engine used Python's built-in `eval()` to execute condition strings in logic nodes.
 **Learning:** Even when passing a restricted global dict (`{"__builtins__": {}}`), `eval()` remains highly unsafe and vulnerable to code injection/RCE, as users can still access system functions through other means or crash the application.
 **Prevention:** Never use `eval()` on untrusted input. Instead, use an Abstract Syntax Tree (AST) evaluator with an explicit whitelist of allowed node types (`ast.parse`) or use a secure alternative like `asteval` library.
+
+## 2026-10-25 - Preserve Boolean Logic in Security Patches
+**Vulnerability:** When fixing timing attacks by replacing standard string comparisons (`!=`) with `secrets.compare_digest()`, altering the surrounding boolean logic (e.g., changing `if TRIGGER_SECRET and ...` to `if not TRIGGER_SECRET or ...`) introduces critical functional regressions.
+**Learning:** Security patches must be surgically precise. While fixing a specific vulnerability (like a timing attack), you must not unintentionally alter the existing application state or intentional fail-open configurations unless explicitly authorized. Breaking a fail-open configuration causes immediate denial of service for unconfigured users.
+**Prevention:** When proposing string replacements in a patch script, explicitly preserve the exact surrounding logic structure. Do not arbitrarily change `and` to `or` or negate variables unless the specific vulnerability requires that exact logical shift.
