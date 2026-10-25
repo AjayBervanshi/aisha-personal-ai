@@ -31,3 +31,7 @@
 **Vulnerability:** The workflow engine used Python's built-in `eval()` to execute condition strings in logic nodes.
 **Learning:** Even when passing a restricted global dict (`{"__builtins__": {}}`), `eval()` remains highly unsafe and vulnerable to code injection/RCE, as users can still access system functions through other means or crash the application.
 **Prevention:** Never use `eval()` on untrusted input. Instead, use an Abstract Syntax Tree (AST) evaluator with an explicit whitelist of allowed node types (`ast.parse`) or use a secure alternative like `asteval` library.
+## 2026-10-25 - Fix Timing Attacks in Token Validation
+**Vulnerability:** Token comparisons in `src/telegram/bot.py` used plain string equality check (`!=`) which is vulnerable to timing attacks.
+**Learning:** Simple string equality checks (`==` or `!=`) exit early on the first mismatched character, which allows an attacker to measure response time differences to guess secrets character by character.
+**Prevention:** Always use `secrets.compare_digest()` for comparing sensitive tokens and secrets to ensure constant-time comparison.
