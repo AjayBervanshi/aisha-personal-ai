@@ -7,3 +7,7 @@
 ## 2026-03-30 - Disable Async Action Buttons
 **Learning:** The send button did not have a visual disabled state during async API calls, allowing double-submission or confusing the user whether the button was clicked.
 **Action:** Always add a disabled state visually (`:disabled` pseudo-class dropping opacity/disabling cursor) and functionally (JS `button.disabled = true;` during async calls) for interactive submit buttons.
+
+## 2024-05-24 - Screen Reader Announcements
+**Learning:** Chat interfaces rely heavily on visual cues for new messages and status updates (like typing indicators). Screen reader users miss these unless explicitly announced.
+**Action:** Added `aria-live="polite"` to the chat area and status text to automatically read new messages and status updates, and `aria-hidden="true"` to visual-only typing dots to prevent confusion.
