@@ -68,7 +68,8 @@ def _check_stuck_queue() -> list:
     headers = _supabase_headers()
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
     try:
-        r = requests.get(
+        # ⚡ Bolt Optimization: Use HEAD instead of GET to count rows without payload
+        r = requests.head(
             f"{base}/rest/v1/content_jobs"
             f"?status=eq.queued&created_at=lt.{cutoff}&select=id",
             headers={**headers, "Prefer": "count=exact"},
@@ -115,7 +116,8 @@ def _check_supabase_tables() -> list:
     # plain count tables
     for table in ("aisha_memory", "aisha_conversations", "aisha_mood_tracker"):
         try:
-            r = requests.get(
+            # ⚡ Bolt Optimization: Use HEAD instead of GET to count rows without payload
+            r = requests.head(
                 f"{base}/rest/v1/{table}?select=id",
                 headers={**headers, "Prefer": "count=exact"},
                 timeout=10
@@ -176,7 +178,8 @@ def _get_reliability_stats() -> dict:
     since_1h = (now - timedelta(hours=1)).isoformat()
     errors_1h = 0
     try:
-        r1 = requests.get(
+        # ⚡ Bolt Optimization: Use HEAD instead of GET to count rows without payload
+        r1 = requests.head(
             f"{base}/rest/v1/aisha_system_log?level=eq.ERROR&created_at=gte.{since_1h}&select=id",
             headers={**headers, "Prefer": "count=exact"},
             timeout=5,
@@ -190,7 +193,8 @@ def _get_reliability_stats() -> dict:
     since_24h = (now - timedelta(hours=24)).isoformat()
     errors_24h = 0
     try:
-        r2 = requests.get(
+        # ⚡ Bolt Optimization: Use HEAD instead of GET to count rows without payload
+        r2 = requests.head(
             f"{base}/rest/v1/aisha_system_log?level=eq.ERROR&created_at=gte.{since_24h}&select=id",
             headers={**headers, "Prefer": "count=exact"},
             timeout=5,
@@ -203,7 +207,8 @@ def _get_reliability_stats() -> dict:
     # Content queue depth (queued jobs)
     queue_depth = 0
     try:
-        r3 = requests.get(
+        # ⚡ Bolt Optimization: Use HEAD instead of GET to count rows without payload
+        r3 = requests.head(
             f"{base}/rest/v1/content_jobs?status=eq.queued&select=id",
             headers={**headers, "Prefer": "count=exact"},
             timeout=5,
