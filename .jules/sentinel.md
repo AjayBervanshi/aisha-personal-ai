@@ -31,3 +31,8 @@
 **Vulnerability:** The workflow engine used Python's built-in `eval()` to execute condition strings in logic nodes.
 **Learning:** Even when passing a restricted global dict (`{"__builtins__": {}}`), `eval()` remains highly unsafe and vulnerable to code injection/RCE, as users can still access system functions through other means or crash the application.
 **Prevention:** Never use `eval()` on untrusted input. Instead, use an Abstract Syntax Tree (AST) evaluator with an explicit whitelist of allowed node types (`ast.parse`) or use a secure alternative like `asteval` library.
+
+## 2023-10-28 - Client-Side API Key Exposure
+**Vulnerability:** The web frontend (`src/web/index.html`) directly embedded the Google Gemini API key to make requests to the LLM. This exposes the API key to anyone who views the source or inspects network traffic, allowing them to abuse the key for their own requests.
+**Learning:** Never embed sensitive API keys in client-side code (HTML, JS). Even if a project is "private", any static file served to a client inherently trusts that client with its contents.
+**Prevention:** Implement a Backend-For-Frontend (BFF) pattern. Move the direct LLM API calls to a backend server (`src/api/server.py`), and have the client communicate with the backend endpoint (`/chat`) using an authentication mechanism (like a user-provided secret token via `prompt()` or session cookies) instead of raw LLM provider keys.
