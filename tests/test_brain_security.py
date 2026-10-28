@@ -6,18 +6,15 @@ import sys
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# Mocking all modules that require external dependencies
-sys.modules['dotenv'] = MagicMock()
-sys.modules['supabase'] = MagicMock()
-sys.modules['src.memory.memory_manager'] = MagicMock()
-sys.modules['src.core.ai_router'] = MagicMock()
-sys.modules['src.core.language_detector'] = MagicMock()
-sys.modules['src.core.mood_detector'] = MagicMock()
-sys.modules['src.core.prompts.builder'] = MagicMock()
+# Mock external network libraries if not installed
+for mod in ['dotenv', 'supabase', 'src.memory.memory_manager', 'src.core.ai_router']:
+    if mod not in sys.modules:
+        sys.modules[mod] = MagicMock()
 
 from src.core.aisha_brain import AishaBrain
 
 class TestBrainSecurity(unittest.TestCase):
+
 
     def setUp(self):
         # We need to mock the dependencies again for the actual instantiation
