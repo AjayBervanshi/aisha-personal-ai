@@ -161,7 +161,28 @@ class WorkflowEngine:
 
         elif node_type == "action.http_request":
             import urllib.request
-            req = urllib.request.Request(config.get("url", ""), method=config.get("method", "GET"))
+            from urllib.parse import urlparse
+            import socket
+            import ipaddress
+
+            url = config.get("url", "")
+            parsed = urlparse(url)
+
+            if parsed.scheme not in ("http", "https"):
+                log.warning(f"[Workflow] Denied non-HTTP(S) request: {url}")
+                return None
+
+            try:
+                ip = socket.gethostbyname(parsed.hostname)
+                addr = ipaddress.ip_address(ip)
+                if addr.is_private or addr.is_loopback or addr.is_link_local:
+                    log.warning(f"[Workflow] Denied internal/private/link-local request: {url}")
+                    return None
+            except Exception as e:
+                log.warning(f"[Workflow] Failed to resolve hostname for SSRF protection: {e}")
+                return None
+
+            req = urllib.request.Request(url, method=config.get("method", "GET"))
             with urllib.request.urlopen(req, timeout=5) as r:
                 return r.read().decode('utf-8')
 

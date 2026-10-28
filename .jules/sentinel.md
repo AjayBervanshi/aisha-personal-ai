@@ -31,3 +31,8 @@
 **Vulnerability:** The workflow engine used Python's built-in `eval()` to execute condition strings in logic nodes.
 **Learning:** Even when passing a restricted global dict (`{"__builtins__": {}}`), `eval()` remains highly unsafe and vulnerable to code injection/RCE, as users can still access system functions through other means or crash the application.
 **Prevention:** Never use `eval()` on untrusted input. Instead, use an Abstract Syntax Tree (AST) evaluator with an explicit whitelist of allowed node types (`ast.parse`) or use a secure alternative like `asteval` library.
+
+## 2026-04-14 - SSRF and LFI in HTTP Action Node
+**Vulnerability:** The workflow engine (`src/core/workflow_engine.py`) allowed users to configure `action.http_request` nodes with any URL (including `file:///` protocols and internal metadata addresses like `169.254.169.254` or `127.0.0.1`), leading to Server-Side Request Forgery and Local File Inclusion.
+**Learning:** Raw use of `urllib.request.urlopen` or `requests.get` on user-supplied URLs must be aggressively validated. Relying solely on `is_private` or `is_loopback` checks leaves link-local IPs exposed, which can be leveraged to access cloud metadata endpoints.
+**Prevention:** Hardened `action.http_request` by enforcing HTTP/HTTPS schemes via URL parsing, and verifying that the resolved hostname IP address is not private, loopback, or link-local.
