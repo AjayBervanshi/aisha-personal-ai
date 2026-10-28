@@ -185,6 +185,7 @@
       padding: 8px 14px; gap: 8px; transition: border-color 0.2s;
     }
     .text-wrap:focus-within { border-color: var(--accent); }
+    .text-wrap:has(#user-input:disabled) { opacity: 0.7; }
     #user-input {
       flex: 1; background: none; border: none; outline: none;
       color: var(--text); font-size: 15px; font-family: var(--font);
@@ -210,6 +211,8 @@
     }
     .send-btn:hover { transform: scale(1.08); box-shadow: 0 0 24px rgba(155,89,245,0.6); }
     .send-btn:active { transform: scale(0.95); }
+    .send-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+    #user-input:disabled { cursor: not-allowed; opacity: 0.7; }
 
     /* ── Settings Panel ─────────────────────────────────────── */
     .panel {
@@ -566,6 +569,10 @@ async function sendMessage(overrideText = null) {
   showTyping();
   setStatus("Aisha is thinking...");
   
+  const sendBtn = document.querySelector(".send-btn");
+  if (input) input.disabled = true;
+  if (sendBtn) sendBtn.disabled = true;
+
   try {
     const reply = await callGemini(text);
     hideTyping();
@@ -583,6 +590,12 @@ async function sendMessage(overrideText = null) {
     renderMessage("ai", errMsg);
     setStatus("Online · Always here for you");
     console.error("Aisha error:", err);
+  } finally {
+    if (input) {
+      input.disabled = false;
+      input.focus();
+    }
+    if (sendBtn) sendBtn.disabled = false;
   }
 }
 

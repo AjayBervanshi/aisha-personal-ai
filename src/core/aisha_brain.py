@@ -320,7 +320,6 @@ Return strictly valid JSON matching this exact schema:
                     import logging
                     logging.getLogger("Aisha.Brain").error(f"Background content creation failed: {e}")
 
-            import threading
             threading.Thread(target=_create, daemon=True).start()
             return "Got it Ajju! Spinning up the Writers' Room... I'll ping you when the script is ready! 💜🎬" 
 
