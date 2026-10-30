@@ -672,7 +672,7 @@ Return strictly valid JSON matching this exact schema:
             # 6. VIDEO PRODUCTION TRIGGER (T-102)
             # Recognize if Ajay wants to start a YouTube production run
             video_triggers = ["render the video", "start production", "video banao", "make video", "generate the video"]
-            if intent == "create_video" or any(t in user_message.lower() for t in video_triggers):
+            if any(t in user_message.lower() for t in video_triggers):
                 from src.core.queue_manager import queue_manager
                 print(f"[Aisha] User requested video production. Enqueueing to Background Worker...")
                 
