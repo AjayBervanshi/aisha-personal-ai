@@ -714,9 +714,9 @@
     </div>
 
     <!-- Settings Panel -->
-    <div class="panel" id="settings-panel">
+    <div class="panel" id="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
       <div class="panel-header">
-        <div class="panel-title">⚙️ Settings</div>
+        <div class="panel-title" id="settings-title">⚙️ Settings</div>
         <button class="panel-close" onclick="toggleSettings()" aria-label="Close settings" title="Close settings">✕</button>
       </div>
       <div class="panel-body">
@@ -1062,7 +1062,27 @@
 
     // ── Utilities ────────────────────────────────────────────────
     function setStatus(text) { document.getElementById("status-text").textContent = text; }
-    function toggleSettings() { document.getElementById("settings-panel").classList.toggle("open"); }
+
+    let lastFocus = null;
+    function toggleSettings() {
+      const panel = document.getElementById("settings-panel");
+      const isOpen = panel.classList.toggle("open");
+      if (isOpen) {
+        lastFocus = document.activeElement;
+        const closeBtn = panel.querySelector('.panel-close');
+        if (closeBtn) closeBtn.focus();
+
+        document.addEventListener('keydown', handleSettingsEscape);
+      } else {
+        if (lastFocus) lastFocus.focus();
+        document.removeEventListener('keydown', handleSettingsEscape);
+      }
+    }
+
+    function handleSettingsEscape(e) {
+      if (e.key === 'Escape') toggleSettings();
+    }
+
     function copyText(text, btn) {
       navigator.clipboard.writeText(text);
       if (btn && btn.textContent !== "✅") {
