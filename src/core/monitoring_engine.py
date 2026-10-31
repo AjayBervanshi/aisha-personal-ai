@@ -71,7 +71,7 @@ def _check_stuck_queue() -> list:
         # ⚡ Bolt Optimization: Use HEAD instead of GET to count rows without payload
         r = requests.head(
             f"{base}/rest/v1/content_jobs"
-            f"?status=eq.queued&created_at=lt.{cutoff}&select=id",
+            f"?status=eq.queued&created_at=lt.{cutoff}&select=id&limit=1", # ⚡ Bolt Optimization: Added limit=1 to avoid O(N) memory fetch
             headers={**headers, "Prefer": "count=exact"},
             timeout=10,
         )
@@ -118,7 +118,7 @@ def _check_supabase_tables() -> list:
         try:
             # ⚡ Bolt Optimization: Use HEAD instead of GET to count rows without payload
             r = requests.head(
-                f"{base}/rest/v1/{table}?select=id",
+                f"{base}/rest/v1/{table}?select=id&limit=1", # ⚡ Bolt Optimization: Added limit=1 to avoid O(N) memory fetch
                 headers={**headers, "Prefer": "count=exact"},
                 timeout=10
             )
@@ -180,7 +180,7 @@ def _get_reliability_stats() -> dict:
     try:
         # ⚡ Bolt Optimization: Use HEAD instead of GET to count rows without payload
         r1 = requests.head(
-            f"{base}/rest/v1/aisha_system_log?level=eq.ERROR&created_at=gte.{since_1h}&select=id",
+            f"{base}/rest/v1/aisha_system_log?level=eq.ERROR&created_at=gte.{since_1h}&select=id&limit=1", # ⚡ Bolt Optimization: Added limit=1 to avoid O(N) memory fetch
             headers={**headers, "Prefer": "count=exact"},
             timeout=5,
         )
@@ -195,7 +195,7 @@ def _get_reliability_stats() -> dict:
     try:
         # ⚡ Bolt Optimization: Use HEAD instead of GET to count rows without payload
         r2 = requests.head(
-            f"{base}/rest/v1/aisha_system_log?level=eq.ERROR&created_at=gte.{since_24h}&select=id",
+            f"{base}/rest/v1/aisha_system_log?level=eq.ERROR&created_at=gte.{since_24h}&select=id&limit=1", # ⚡ Bolt Optimization: Added limit=1 to avoid O(N) memory fetch
             headers={**headers, "Prefer": "count=exact"},
             timeout=5,
         )
@@ -209,7 +209,7 @@ def _get_reliability_stats() -> dict:
     try:
         # ⚡ Bolt Optimization: Use HEAD instead of GET to count rows without payload
         r3 = requests.head(
-            f"{base}/rest/v1/content_jobs?status=eq.queued&select=id",
+            f"{base}/rest/v1/content_jobs?status=eq.queued&select=id&limit=1", # ⚡ Bolt Optimization: Added limit=1 to avoid O(N) memory fetch
             headers={**headers, "Prefer": "count=exact"},
             timeout=5,
         )
