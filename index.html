@@ -805,7 +805,7 @@
 
       if (role === "ai") {
         div.innerHTML = `
-      <div class="msg-avatar">💜</div>
+      <div class="msg-avatar" aria-hidden="true">💜</div>
       <div>
         <div class="msg-bubble">${formattedText}</div>
         <div style="display:flex;align-items:center;gap:6px">
@@ -822,7 +822,7 @@
         <div class="msg-bubble">${formattedText}</div>
         <div class="msg-time" style="text-align:right">${msgTime}</div>
       </div>
-      <div class="msg-avatar" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)">👤</div>`;
+      <div class="msg-avatar" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)" aria-hidden="true">👤</div>`;
       }
 
       chat.appendChild(div);
@@ -835,7 +835,7 @@
       const div = document.createElement("div");
       div.className = "msg ai"; div.id = "typing-indicator";
       div.innerHTML = `
-    <div class="msg-avatar">💜</div>
+    <div class="msg-avatar" aria-hidden="true">💜</div>
     <div class="msg-bubble">
       <div class="typing">
         <div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>
@@ -1019,8 +1019,11 @@
 
       recognition.onstart = () => {
         state.isRecording = true;
-        document.getElementById("mic-btn").classList.add("recording");
-        document.getElementById("mic-btn").textContent = "🔴";
+        const micBtn = document.getElementById("mic-btn");
+        micBtn.classList.add("recording");
+        micBtn.textContent = "🔴";
+        micBtn.setAttribute("aria-label", "Stop voice input");
+        micBtn.title = "Stop voice input";
         setStatus("Listening...");
       };
 
@@ -1032,8 +1035,11 @@
 
       recognition.onend = () => {
         state.isRecording = false;
-        document.getElementById("mic-btn").classList.remove("recording");
-        document.getElementById("mic-btn").textContent = "🎙️";
+        const micBtn = document.getElementById("mic-btn");
+        micBtn.classList.remove("recording");
+        micBtn.textContent = "🎙️";
+        micBtn.setAttribute("aria-label", "Voice input");
+        micBtn.title = "Voice input";
         setStatus("Online · Always here for you");
         // Auto-send if there's content
         if (document.getElementById("user-input").value.trim()) {
@@ -1044,8 +1050,11 @@
       recognition.onerror = (e) => {
         console.error("Speech error:", e.error);
         state.isRecording = false;
-        document.getElementById("mic-btn").classList.remove("recording");
-        document.getElementById("mic-btn").textContent = "🎙️";
+        const micBtn = document.getElementById("mic-btn");
+        micBtn.classList.remove("recording");
+        micBtn.textContent = "🎙️";
+        micBtn.setAttribute("aria-label", "Voice input");
+        micBtn.title = "Voice input";
       };
 
       recognition.start();
