@@ -837,8 +837,8 @@
       div.innerHTML = `
     <div class="msg-avatar" aria-hidden="true">💜</div>
     <div class="msg-bubble">
-      <div class="typing">
-        <div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>
+      <div class="typing" role="status" aria-label="Aisha is typing">
+        <div class="typing-dot" aria-hidden="true"></div><div class="typing-dot" aria-hidden="true"></div><div class="typing-dot" aria-hidden="true"></div>
       </div>
     </div>`;
       chat.appendChild(div);
