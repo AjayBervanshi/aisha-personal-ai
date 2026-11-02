@@ -261,13 +261,18 @@
     }
 
     .msg-actions {
-      display: none;
+      display: flex;
+      opacity: 0;
+      pointer-events: none;
       gap: 4px;
       margin-top: 4px;
+      transition: opacity 0.2s ease;
     }
 
-    .msg:hover .msg-actions {
-      display: flex;
+    .msg:hover .msg-actions,
+    .msg-actions:focus-within {
+      opacity: 1;
+      pointer-events: auto;
     }
 
     .msg-action-btn {
@@ -658,7 +663,7 @@
 
     <!-- Header -->
     <div class="header">
-      <button class="avatar" onclick="toggleSettings()" aria-label="Open settings">💜</button>
+      <button class="avatar" onclick="toggleSettings()" aria-expanded="false" aria-controls="settings-panel" aria-label="Open settings">💜</button>
       <div class="header-info">
         <div class="header-name">Aisha</div>
         <div class="header-status" id="status-text" aria-live="polite" aria-atomic="true">Online · Always here for you</div>
@@ -666,7 +671,7 @@
       <div class="header-actions">
         <button class="icon-btn active" id="voice-toggle-btn" onclick="toggleVoiceOutput()" title="Toggle voice" aria-label="Toggle voice" aria-pressed="true">🔊</button>
         <button class="icon-btn" onclick="clearChat()" title="Clear chat" aria-label="Clear chat">🗑️</button>
-        <button class="icon-btn" onclick="toggleSettings()" title="Settings" aria-label="Settings">⚙️</button>
+        <button class="icon-btn" onclick="toggleSettings()" aria-expanded="false" aria-controls="settings-panel" title="Settings" aria-label="Settings">⚙️</button>
       </div>
     </div>
 
@@ -1087,6 +1092,11 @@
     function toggleSettings() {
       const panel = document.getElementById("settings-panel");
       const isOpen = panel.classList.toggle("open");
+
+      document.querySelectorAll('[aria-controls="settings-panel"]').forEach(el => {
+        el.setAttribute('aria-expanded', isOpen);
+      });
+
       if (isOpen) {
         lastFocus = document.activeElement;
         const closeBtn = panel.querySelector('.panel-close');

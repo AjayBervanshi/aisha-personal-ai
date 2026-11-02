@@ -9,3 +9,6 @@
 ## 2024-10-31 - Screen Reader Noise from Chat Avatars & Dynamic Button States
 **Learning:** Screen readers announce visual-only emojis like "purple heart" repeatedly in chat logs unless explicitly hidden. Also, buttons that toggle persistent states (like recording voice) need dynamic updates to their `aria-label` and `title` to reflect the *next* available action, not just the generic feature name.
 **Action:** Added `aria-hidden="true"` to decorative message avatars and implemented dynamic `aria-label`/`title` updates for the microphone toggle button.
+## 2023-11-02 - Keyboard Inaccessible Hover Actions
+**Learning:** Using `display: none` for hover-only message actions completely removes them from the DOM tab order, making them inaccessible to keyboard/screen-reader users. Additionally, changing to `display: flex` on hover causes layout shifts.
+**Action:** Use `opacity: 0` with `pointer-events: none` by default, and switch to `opacity: 1` and `pointer-events: auto` on `:hover` and `:focus-within` to maintain tab sequence and visual stability.
