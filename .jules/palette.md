@@ -12,3 +12,7 @@
 ## 2023-11-02 - Keyboard Inaccessible Hover Actions
 **Learning:** Using `display: none` for hover-only message actions completely removes them from the DOM tab order, making them inaccessible to keyboard/screen-reader users. Additionally, changing to `display: flex` on hover causes layout shifts.
 **Action:** Use `opacity: 0` with `pointer-events: none` by default, and switch to `opacity: 1` and `pointer-events: auto` on `:hover` and `:focus-within` to maintain tab sequence and visual stability.
+
+## 2024-11-03 - Momentary Visual Feedback vs Screen Reader Silence
+**Learning:** When changing visual content temporarily (like swapping an icon to a checkmark on copy), screen readers will not announce the new change, and visual hover tooltips may show outdated information.
+**Action:** Always temporarily synchronize `title` and `aria-label` attribute updates alongside visual text or icon changes for momentary actions, then restore them all together.
