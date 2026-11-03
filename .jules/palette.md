@@ -12,3 +12,6 @@
 ## 2023-11-02 - Keyboard Inaccessible Hover Actions
 **Learning:** Using `display: none` for hover-only message actions completely removes them from the DOM tab order, making them inaccessible to keyboard/screen-reader users. Additionally, changing to `display: flex` on hover causes layout shifts.
 **Action:** Use `opacity: 0` with `pointer-events: none` by default, and switch to `opacity: 1` and `pointer-events: auto` on `:hover` and `:focus-within` to maintain tab sequence and visual stability.
+## 2024-11-03 - Accessible Transient State Feedback
+**Learning:** When providing transient visual feedback (like changing a button's icon to a checkmark for 2 seconds), the accessibility attributes (`aria-label`, `title`) must also be temporarily updated so screen reader and keyboard users receive the same confirmation feedback as visual users.
+**Action:** Always sync temporary visual state changes with corresponding temporary updates to ARIA labels and tooltips, restoring all to their original values simultaneously.
