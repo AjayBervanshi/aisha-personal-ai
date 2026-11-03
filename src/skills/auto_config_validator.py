@@ -127,7 +127,7 @@ class ConfigValidator:
         """
         if not url:
             return False
-        return url.startswith("http://") or url.startswith("https://")
+        return url.lower().startswith("http://") or url.lower().startswith("https://")
 
     @staticmethod
     def _validate_non_empty_string(value: str) -> bool:
