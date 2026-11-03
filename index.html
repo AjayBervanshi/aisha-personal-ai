@@ -663,7 +663,7 @@
 
     <!-- Header -->
     <div class="header">
-      <button class="avatar" onclick="toggleSettings()" aria-expanded="false" aria-controls="settings-panel" aria-label="Open settings">💜</button>
+      <button class="avatar" onclick="toggleSettings()" aria-expanded="false" aria-controls="settings-panel" aria-label="Open settings" title="Open settings"><span aria-hidden="true">💜</span></button>
       <div class="header-info">
         <div class="header-name">Aisha</div>
         <div class="header-status" id="status-text" aria-live="polite" aria-atomic="true">Online · Always here for you</div>
@@ -703,7 +703,7 @@
     <!-- Input -->
     <div class="input-area">
       <div class="input-row">
-        <select class="lang-select" id="lang-select" aria-label="Select language">
+        <select class="lang-select" id="lang-select" aria-label="Select language" title="Select language">
           <option value="auto">🌐</option>
           <option value="English">EN</option>
           <option value="Hindi">HI</option>
@@ -1117,9 +1117,18 @@
       navigator.clipboard.writeText(text);
       if (btn && btn.textContent !== "✅") {
         const originalIcon = btn.textContent;
+        const originalLabel = btn.getAttribute("aria-label");
+        const originalTitle = btn.title;
         btn.textContent = "✅";
+        btn.setAttribute("aria-label", "Copied!");
+        btn.title = "Copied!";
         setTimeout(() => {
           btn.textContent = originalIcon;
+          if (originalLabel) btn.setAttribute("aria-label", originalLabel);
+          else btn.removeAttribute("aria-label");
+
+          if (originalTitle) btn.title = originalTitle;
+          else btn.removeAttribute("title");
         }, 2000);
       }
     }
