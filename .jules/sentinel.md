@@ -36,3 +36,8 @@
 **Vulnerability:** The workflow engine (`src/core/workflow_engine.py`) allowed users to configure `action.http_request` nodes with any URL (including `file:///` protocols and internal metadata addresses like `169.254.169.254` or `127.0.0.1`), leading to Server-Side Request Forgery and Local File Inclusion.
 **Learning:** Raw use of `urllib.request.urlopen` or `requests.get` on user-supplied URLs must be aggressively validated. Relying solely on `is_private` or `is_loopback` checks leaves link-local IPs exposed, which can be leveraged to access cloud metadata endpoints.
 **Prevention:** Hardened `action.http_request` by enforcing HTTP/HTTPS schemes via URL parsing, and verifying that the resolved hostname IP address is not private, loopback, or link-local.
+
+## 2026-05-15 - Prevent XSS in Web Client
+**Vulnerability:** The web client UI code (`src/web/index.html` and `index.html`) previously took raw user input (`text`) and directly manipulated it into DOM elements (`div.innerHTML = ...`) after executing basic markdown replacements. This allowed simple script injection (Cross-Site Scripting, XSS) via inputs like `<img src=x onerror=alert(1)>`.
+**Learning:** Even when building a simple UI without a framework (React, Vue, etc.) which usually handle escaping natively, you must never trust user input. Directly assigning text to `innerHTML` provides a pathway for code injection and execution.
+**Prevention:** Always sanitize or escape user-provided text by replacing critical HTML characters (`&`, `<`, `>`, `"`, `'`) with their respective HTML entities before injecting it into the DOM, or explicitly construct text nodes (`document.createTextNode()`) instead of using `innerHTML`.
