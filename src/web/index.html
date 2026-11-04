@@ -278,11 +278,43 @@
       to   { opacity: 1; transform: translateY(0); }
     }
     .msg { animation: fadeUp 0.3s ease; }
+
+    /* ── Toast Notifications ────────────────────────────────── */
+    .toast-container {
+      position: fixed;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 200;
+      pointer-events: none;
+    }
+
+    .toast {
+      background: var(--surface2);
+      color: var(--text);
+      padding: 10px 20px;
+      border-radius: 999px;
+      font-size: 13px;
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+      animation: fadeUp 0.3s ease, fadeOut 0.3s ease 2.7s forwards;
+    }
+
+    @keyframes fadeOut {
+      from { opacity: 1; transform: translateY(0); }
+      to { opacity: 0; transform: translateY(12px); }
+    }
   </style>
 </head>
 <body>
 
 <div class="app">
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toast-container"></div>
 
   <!-- Header -->
   <div class="header">
@@ -665,7 +697,7 @@ function toggleVoiceOutput() {
 // ── Voice Input ──────────────────────────────────────────────
 function toggleMic() {
   if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
-    alert("Your browser doesn't support voice input. Try Chrome!");
+    showToast("Your browser doesn't support voice input. Try Chrome!");
     return;
   }
   
@@ -734,9 +766,23 @@ function cycleLang() {
 }
 
 // ── Utilities ────────────────────────────────────────────────
+function showToast(message) {
+  const container = document.getElementById("toast-container");
+  const toast = document.createElement("div");
+  toast.className = "toast";
+  toast.textContent = message;
+  toast.setAttribute("aria-live", "polite");
+
+  container.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+}
+
 function setStatus(text) { document.getElementById("status-text").textContent = text; }
 function toggleSettings() { document.getElementById("settings-panel").classList.toggle("open"); }
-function copyText(text) { navigator.clipboard.writeText(text); }
+function copyText(text) {
+  navigator.clipboard.writeText(text);
+  showToast("Copied to clipboard!");
+}
 
 function clearChat() {
   if (!confirm("Clear this conversation?")) return;
@@ -750,7 +796,7 @@ function clearChat() {
 function clearMemory() {
   if (confirm("Reset Aisha's memory? This cannot be undone.")) {
     localStorage.removeItem("aisha_context");
-    alert("Memory cleared!");
+    showToast("Memory cleared!");
     toggleSettings();
   }
 }
