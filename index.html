@@ -1117,9 +1117,25 @@
       navigator.clipboard.writeText(text);
       if (btn && btn.textContent !== "✅") {
         const originalIcon = btn.textContent;
+        const originalLabel = btn.getAttribute("aria-label");
+        const originalTitle = btn.getAttribute("title");
+
         btn.textContent = "✅";
+        btn.setAttribute("aria-label", "Copied!");
+        btn.setAttribute("title", "Copied!");
+
         setTimeout(() => {
           btn.textContent = originalIcon;
+          if (originalLabel === null) {
+            btn.removeAttribute("aria-label");
+          } else {
+            btn.setAttribute("aria-label", originalLabel);
+          }
+          if (originalTitle === null) {
+            btn.removeAttribute("title");
+          } else {
+            btn.setAttribute("title", originalTitle);
+          }
         }, 2000);
       }
     }
