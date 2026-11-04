@@ -12,3 +12,7 @@
 ## 2023-11-02 - Keyboard Inaccessible Hover Actions
 **Learning:** Using `display: none` for hover-only message actions completely removes them from the DOM tab order, making them inaccessible to keyboard/screen-reader users. Additionally, changing to `display: flex` on hover causes layout shifts.
 **Action:** Use `opacity: 0` with `pointer-events: none` by default, and switch to `opacity: 1` and `pointer-events: auto` on `:hover` and `:focus-within` to maintain tab sequence and visual stability.
+
+## 2024-11-13 - Accessible Toast Notifications
+**Learning:** Native `alert()` dialogs break immersion, block the main thread, and provide a jarring experience. Silent actions, like copying text to the clipboard, leave screen reader users unaware of success.
+**Action:** Implemented a non-intrusive toast notification system (`showToast()`) that injects `aria-live="polite"` elements. Replaced native alerts and added toasts for silent clipboard actions to ensure accessibility and fluid UX.
