@@ -12,3 +12,7 @@
 ## 2023-11-02 - Keyboard Inaccessible Hover Actions
 **Learning:** Using `display: none` for hover-only message actions completely removes them from the DOM tab order, making them inaccessible to keyboard/screen-reader users. Additionally, changing to `display: flex` on hover causes layout shifts.
 **Action:** Use `opacity: 0` with `pointer-events: none` by default, and switch to `opacity: 1` and `pointer-events: auto` on `:hover` and `:focus-within` to maintain tab sequence and visual stability.
+
+## 2024-11-04 - Accessible State Feedback and Null Attribute Restoration
+**Learning:** When briefly modifying DOM attributes like `aria-label` or `title` to provide success feedback (e.g., "Copied!"), reverting them using `.setAttribute()` can cause "null" string bugs if the element originally lacked the attribute.
+**Action:** Always verify if the original attribute was `null` before restoring. If `null`, use `.removeAttribute()` instead of `.setAttribute()` to maintain a clean DOM and prevent stringified "null" bugs.
