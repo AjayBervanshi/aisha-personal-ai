@@ -735,7 +735,53 @@ function cycleLang() {
 
 // ── Utilities ────────────────────────────────────────────────
 function setStatus(text) { document.getElementById("status-text").textContent = text; }
-function toggleSettings() { document.getElementById("settings-panel").classList.toggle("open"); }
+
+let lastFocus = null;
+function toggleSettings() {
+  const panel = document.getElementById("settings-panel");
+  const isOpen = panel.classList.toggle("open");
+
+  document.querySelectorAll('[aria-controls="settings-panel"]').forEach(el => {
+    el.setAttribute('aria-expanded', isOpen);
+  });
+
+  if (isOpen) {
+    lastFocus = document.activeElement;
+    const closeBtn = panel.querySelector('.panel-close');
+    if (closeBtn) closeBtn.focus();
+
+    document.addEventListener('keydown', handleModalKeydown);
+  } else {
+    if (lastFocus) lastFocus.focus();
+    document.removeEventListener('keydown', handleModalKeydown);
+  }
+}
+
+function handleModalKeydown(e) {
+  if (e.key === 'Escape') {
+    toggleSettings();
+    return;
+  }
+  if (e.key === 'Tab') {
+    const panel = document.getElementById("settings-panel");
+    const focusableElements = panel.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+    const firstElement = focusableElements[0];
+    const lastElement = focusableElements[focusableElements.length - 1];
+
+    if (e.shiftKey) {
+      if (document.activeElement === firstElement) {
+        lastElement.focus();
+        e.preventDefault();
+      }
+    } else {
+      if (document.activeElement === lastElement) {
+        firstElement.focus();
+        e.preventDefault();
+      }
+    }
+  }
+}
+
 function copyText(text) { navigator.clipboard.writeText(text); }
 
 function clearChat() {

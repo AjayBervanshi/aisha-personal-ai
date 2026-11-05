@@ -12,3 +12,7 @@
 ## 2023-11-02 - Keyboard Inaccessible Hover Actions
 **Learning:** Using `display: none` for hover-only message actions completely removes them from the DOM tab order, making them inaccessible to keyboard/screen-reader users. Additionally, changing to `display: flex` on hover causes layout shifts.
 **Action:** Use `opacity: 0` with `pointer-events: none` by default, and switch to `opacity: 1` and `pointer-events: auto` on `:hover` and `:focus-within` to maintain tab sequence and visual stability.
+
+## 2024-11-05 - Missing Keyboard Focus Trap in Slide-out Panels
+**Learning:** Custom slide-out panels with `aria-modal="true"` require explicit focus traps. Without them, keyboard users (using Tab) and screen readers can easily navigate out of the modal and interact with the background content, even though it appears visually hidden or disabled.
+**Action:** Implemented a focus trap in `toggleSettings` using a keydown listener that traps the `Tab` key (and handles `Shift+Tab`) strictly within the modal's focusable elements, and ensures the modal closes on `Escape`.
