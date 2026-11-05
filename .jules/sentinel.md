@@ -36,3 +36,8 @@
 **Vulnerability:** The workflow engine (`src/core/workflow_engine.py`) allowed users to configure `action.http_request` nodes with any URL (including `file:///` protocols and internal metadata addresses like `169.254.169.254` or `127.0.0.1`), leading to Server-Side Request Forgery and Local File Inclusion.
 **Learning:** Raw use of `urllib.request.urlopen` or `requests.get` on user-supplied URLs must be aggressively validated. Relying solely on `is_private` or `is_loopback` checks leaves link-local IPs exposed, which can be leveraged to access cloud metadata endpoints.
 **Prevention:** Hardened `action.http_request` by enforcing HTTP/HTTPS schemes via URL parsing, and verifying that the resolved hostname IP address is not private, loopback, or link-local.
+
+## 2026-11-05 - Insecure Deserialization via pickle
+**Vulnerability:** The application used Python's `pickle` module to serialize and deserialize temporary state files for bot jobs, youtube crew, and the lifecycle manager.
+**Learning:** Deserializing untrusted data with `pickle` can lead to arbitrary code execution (RCE). Even if the files are temporary, an attacker with write access to the filesystem can craft malicious `.pkl` payloads. When replacing `pickle` with `json`, integer dictionary keys are natively converted to strings, which can cause subtle logic bugs if not properly cast back after loading.
+**Prevention:** Never use `pickle` for data serialization, especially if the filesystem is shared or untrusted. Always use secure alternatives like `json`. When migrating from `pickle` to `json`, ensure post-load conversion loops are implemented if the original dictionaries relied on integer keys.
