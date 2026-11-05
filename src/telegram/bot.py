@@ -3154,10 +3154,10 @@ def handle_job_approval(call):
         
     action, _, job_id = call.data.partition("_job_")
     
-    import pickle
+    import json
     import os
     assets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "temp_assets")
-    job_file = os.path.join(assets_dir, f"job_{job_id}.pkl")
+    job_file = os.path.join(assets_dir, f"job_{job_id}.json")
     
     if not os.path.exists(job_file):
         bot.edit_message_text("❌ This job has expired or cannot be found.", chat_id=call.message.chat.id, message_id=call.message.message_id)
@@ -3173,8 +3173,9 @@ def handle_job_approval(call):
     
     def background_render():
         try:
-            with open(job_file, "rb") as pf:
-                job_data = pickle.load(pf)
+            with open(job_file, "r") as pf:
+                job_data = json.load(pf)
+            job_data = {int(k) if k.isdigit() else k: v for k, v in job_data.items()}
                 
             from src.agents.youtube_crew import YouTubeCrew
             crew = YouTubeCrew()
