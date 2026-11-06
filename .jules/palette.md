@@ -12,3 +12,7 @@
 ## 2023-11-02 - Keyboard Inaccessible Hover Actions
 **Learning:** Using `display: none` for hover-only message actions completely removes them from the DOM tab order, making them inaccessible to keyboard/screen-reader users. Additionally, changing to `display: flex` on hover causes layout shifts.
 **Action:** Use `opacity: 0` with `pointer-events: none` by default, and switch to `opacity: 1` and `pointer-events: auto` on `:hover` and `:focus-within` to maintain tab sequence and visual stability.
+
+## $(date +%Y-%m-%d) - Transient Copy Feedback
+**Learning:** Transient visual state changes (like swapping a copy icon to a checkmark) must be paired with dynamic updates to `aria-label` and `title` to inform screen readers, along with updating an `aria-live` status text. Additionally, when restoring attributes in vanilla JS, you must check for `null` and use `removeAttribute()` instead of blindly using `setAttribute(..., null)` to prevent "null" string bugs.
+**Action:** When creating temporary visual feedback, always update the corresponding accessible labels and `aria-live` regions, and ensure clean attribute restoration.
