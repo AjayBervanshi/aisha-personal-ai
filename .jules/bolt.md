@@ -11,3 +11,7 @@
 ## 2026-10-26 - [Batch Inserts Order Preservation in Supabase Python Client]
 **Learning:** When performing batch inserts using the Supabase Python client (e.g., `insert(list_of_dicts)`), the returned `.data` list preserves the original input order (via PostgreSQL `RETURNING`). This guarantees that returned IDs can be safely mapped back to the input items by index, allowing dependent child records to be batch-inserted without nested loops or individual queries.
 **Action:** Always batch insert child records by mapping the parent's generated IDs using the index from the parent's `.data` response instead of making individual insert calls.
+
+## 2026-11-07 - [Batch Upserts to Avoid N+1 Problem with Supabase]
+**Learning:** Iterating through external analytics items (like YouTube or Instagram records) and individually calling `.upsert().execute()` inside a loop causes severe N+1 query patterns. This leads to massive network/IO overhead and can block the main execution thread when processing many analytics entries.
+**Action:** Always accumulate dictionary payloads into a list during iteration, and use a single batched `.upsert(list_of_dicts)` call outside the loop to significantly reduce database connection usage and execution time.
