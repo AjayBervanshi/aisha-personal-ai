@@ -12,3 +12,6 @@
 ## 2023-11-02 - Keyboard Inaccessible Hover Actions
 **Learning:** Using `display: none` for hover-only message actions completely removes them from the DOM tab order, making them inaccessible to keyboard/screen-reader users. Additionally, changing to `display: flex` on hover causes layout shifts.
 **Action:** Use `opacity: 0` with `pointer-events: none` by default, and switch to `opacity: 1` and `pointer-events: auto` on `:hover` and `:focus-within` to maintain tab sequence and visual stability.
+## 2026-11-08 - Accessible Copy Feedback & Disabled Buttons
+**Learning:** Screen readers do not announce visual icon changes (like replacing a clipboard icon with a checkmark) unless explicitly provided via updated `aria-label`s. In addition, when disabling send buttons dynamically to prevent empty submissions, it is critical to ensure that automated "Quick Actions" can safely bypass this disabled check to successfully send predefined text.
+**Action:** When implementing temporary visual feedback on buttons, temporarily apply explicit screen reader text (`aria-label`) alongside the visual change, and restore (or remove) the original attributes upon reset. For disabled buttons, allow programmatic text overrides to bypass validation blocks.
