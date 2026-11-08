@@ -703,7 +703,7 @@
     <!-- Input -->
     <div class="input-area">
       <div class="input-row">
-        <select class="lang-select" id="lang-select" aria-label="Select language">
+        <select class="lang-select" id="lang-select" aria-label="Select language" onchange="handleLangSelect(this)">
           <option value="auto">🌐</option>
           <option value="English">EN</option>
           <option value="Hindi">HI</option>
@@ -882,7 +882,7 @@
     // ── Send Message ─────────────────────────────────────────────
     async function sendMessage(overrideText = null) {
       const sendBtn = document.getElementById("send-btn");
-      if (sendBtn && sendBtn.disabled) return;
+      if (sendBtn && sendBtn.disabled && !overrideText) return;
 
       const input = document.getElementById("user-input");
       const text = (overrideText || input.value).trim();
@@ -1085,6 +1085,12 @@
       document.getElementById("lang-select").value = state.currentLang;
     }
 
+    function handleLangSelect(select) {
+      const labels = { auto: "Auto-detect", English: "English", Hindi: "Hindi", Marathi: "Marathi" };
+      state.currentLang = select.value;
+      document.getElementById("lang-val").textContent = labels[state.currentLang];
+    }
+
     // ── Utilities ────────────────────────────────────────────────
     function setStatus(text) { document.getElementById("status-text").textContent = text; }
 
@@ -1117,9 +1123,23 @@
       navigator.clipboard.writeText(text);
       if (btn && btn.textContent !== "✅") {
         const originalIcon = btn.textContent;
+        const originalLabel = btn.getAttribute("aria-label");
+        const originalTitle = btn.getAttribute("title");
         btn.textContent = "✅";
+        btn.setAttribute("aria-label", "Copied to clipboard");
+        btn.setAttribute("title", "Copied!");
         setTimeout(() => {
           btn.textContent = originalIcon;
+          if (originalLabel === null) {
+            btn.removeAttribute("aria-label");
+          } else {
+            btn.setAttribute("aria-label", originalLabel);
+          }
+          if (originalTitle === null) {
+            btn.removeAttribute("title");
+          } else {
+            btn.setAttribute("title", originalTitle);
+          }
         }, 2000);
       }
     }
