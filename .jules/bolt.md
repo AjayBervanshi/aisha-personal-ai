@@ -11,3 +11,7 @@
 ## 2026-10-26 - [Batch Inserts Order Preservation in Supabase Python Client]
 **Learning:** When performing batch inserts using the Supabase Python client (e.g., `insert(list_of_dicts)`), the returned `.data` list preserves the original input order (via PostgreSQL `RETURNING`). This guarantees that returned IDs can be safely mapped back to the input items by index, allowing dependent child records to be batch-inserted without nested loops or individual queries.
 **Action:** Always batch insert child records by mapping the parent's generated IDs using the index from the parent's `.data` response instead of making individual insert calls.
+
+## 2025-01-20 - [Supabase Query Optimization - Existence Checking]
+**Learning:** Checking for the existence of records using `.select("id")` without `.limit(1)` is a performance bottleneck. It retrieves multiple records over the network unnecessarily when only 1 is needed to determine if a record exists.
+**Action:** When querying to check if *any* record matches a condition (existence checking), always append `.limit(1)` to save network bandwidth, serialize time, and memory overhead.

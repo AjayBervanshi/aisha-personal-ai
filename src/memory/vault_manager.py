@@ -28,7 +28,7 @@ class VaultManager:
         try:
             # Check if exists
             name_lower = name.strip().lower()
-            res = self.supabase.table("vault_entities").select("id").eq("name", name_lower).eq("type", entity_type).execute()
+            res = self.supabase.table("vault_entities").select("id").eq("name", name_lower).eq("type", entity_type).limit(1).execute()  # ⚡ Bolt Optimization: Added .limit(1)
             if res.data:
                 return res.data[0]["id"]
 
