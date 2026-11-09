@@ -12,3 +12,6 @@
 ## 2023-11-02 - Keyboard Inaccessible Hover Actions
 **Learning:** Using `display: none` for hover-only message actions completely removes them from the DOM tab order, making them inaccessible to keyboard/screen-reader users. Additionally, changing to `display: flex` on hover causes layout shifts.
 **Action:** Use `opacity: 0` with `pointer-events: none` by default, and switch to `opacity: 1` and `pointer-events: auto` on `:hover` and `:focus-within` to maintain tab sequence and visual stability.
+## 2026-11-09 - Copy Button Accessibility Feedback
+**Learning:** For dynamic temporary actions (like a "Copy" button replacing its icon briefly), only changing textContent to an emoji like ✅ is insufficient for screen readers or users relying on tooltips. It's necessary to also temporarily update `aria-label` and `title` to provide explicit semantic and visual feedback.
+**Action:** Always pair temporary icon updates with corresponding updates to `aria-label` and `title`, taking care to restore their original states (or remove them if they were absent originally) after the timeout.
