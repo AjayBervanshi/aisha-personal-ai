@@ -168,7 +168,7 @@ class WorkflowEngine:
             url = config.get("url", "")
             parsed = urlparse(url)
 
-            if parsed.scheme not in ("http", "https"):
+            if parsed.scheme.lower() not in ("http", "https"):
                 log.warning(f"[Workflow] Denied non-HTTP(S) request: {url}")
                 return None
 
