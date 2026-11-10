@@ -12,3 +12,6 @@
 ## 2023-11-02 - Keyboard Inaccessible Hover Actions
 **Learning:** Using `display: none` for hover-only message actions completely removes them from the DOM tab order, making them inaccessible to keyboard/screen-reader users. Additionally, changing to `display: flex` on hover causes layout shifts.
 **Action:** Use `opacity: 0` with `pointer-events: none` by default, and switch to `opacity: 1` and `pointer-events: auto` on `:hover` and `:focus-within` to maintain tab sequence and visual stability.
+## 2024-11-20 - Expand Hit Area for Toggle Rows
+**Learning:** Having a small `<button>` toggle inside a `div.setting-row` creates a "dead click" zone where users tap the row text but nothing happens.
+**Action:** Convert the entire row to a `<button role="switch">` and make the visual toggle an `aria-hidden` purely presentational `div` inside it. This provides a much larger hit area for mobile and groups the label logically for screen readers.

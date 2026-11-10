@@ -727,18 +727,18 @@
       <div class="panel-body">
         <div class="setting-section">
           <div class="setting-label">Voice</div>
-          <div class="setting-row">
+          <button class="setting-row" onclick="toggleVoiceOutput()" role="switch" aria-checked="true" aria-label="Toggle voice output">
             <span class="setting-name">🔊 Voice Output</span>
-            <button class="toggle on" id="voice-toggle" onclick="toggleVoiceOutput()" aria-label="Toggle voice output" role="switch" aria-checked="true"></button>
-          </div>
+            <div class="toggle on" id="voice-toggle" aria-hidden="true"></div>
+          </button>
           <button class="setting-row" onclick="changeVoice()">
             <span class="setting-name">🎵 Voice Style</span>
             <span class="setting-val" id="voice-style-val">Indian English</span>
           </button>
-          <div class="setting-row">
+          <button class="setting-row" aria-label="Toggle voice input" role="switch" aria-checked="true" onclick="const t = this.querySelector('.toggle'); t.classList.toggle('on'); this.setAttribute('aria-checked', t.classList.contains('on'))">
             <span class="setting-name">🎙️ Voice Input</span>
-            <button class="toggle on" id="mic-toggle" aria-label="Toggle voice input" role="switch" aria-checked="true" onclick="this.classList.toggle('on'); this.setAttribute('aria-checked', this.classList.contains('on'))"></button>
-          </div>
+            <div class="toggle on" id="mic-toggle" aria-hidden="true"></div>
+          </button>
         </div>
         <div class="setting-section">
           <div class="setting-label">Language</div>
@@ -749,10 +749,10 @@
         </div>
         <div class="setting-section">
           <div class="setting-label">Appearance</div>
-          <div class="setting-row">
+          <button class="setting-row" aria-label="Toggle dark mode" role="switch" aria-checked="true" onclick="const t = this.querySelector('.toggle'); t.classList.toggle('on'); this.setAttribute('aria-checked', t.classList.contains('on'))">
             <span class="setting-name">🌙 Dark Mode</span>
-            <button class="toggle on" aria-label="Toggle dark mode" role="switch" aria-checked="true" onclick="this.classList.toggle('on'); this.setAttribute('aria-checked', this.classList.contains('on'))"></button>
-          </div>
+            <div class="toggle on" aria-hidden="true"></div>
+          </button>
         </div>
         <div class="setting-section">
           <div class="setting-label">About Aisha</div>
@@ -996,7 +996,14 @@
       btn.classList.toggle("active", state.voiceEnabled);
       btn.setAttribute("aria-pressed", state.voiceEnabled);
       toggle?.classList.toggle("on", state.voiceEnabled);
-      toggle?.setAttribute("aria-checked", state.voiceEnabled);
+
+      const toggleRow = toggle?.closest('.setting-row');
+      if (toggleRow) {
+        toggleRow.setAttribute("aria-checked", state.voiceEnabled);
+      } else {
+        toggle?.setAttribute("aria-checked", state.voiceEnabled);
+      }
+
       btn.textContent = state.voiceEnabled ? "🔊" : "🔇";
       if (!state.voiceEnabled) speechSynthesis.cancel();
     }
