@@ -240,10 +240,11 @@
     .setting-row {
       display: flex; align-items: center; justify-content: space-between;
       padding: 12px 14px; background: var(--surface); border-radius: 12px;
-      margin-bottom: 8px; cursor: pointer; border: 1px solid transparent;
-      transition: all 0.2s;
+      margin-bottom: 8px;  border: 1px solid transparent;
+      transition: all 0.2s; width: 100%; text-align: left; font-family: inherit; color: inherit;
     }
-    .setting-row:hover { border-color: var(--border); }
+    button.setting-row { cursor: pointer; }
+    button.setting-row:hover { border-color: var(--border); }
     .setting-name { font-size: 14px; }
     .setting-val { font-size: 13px; color: var(--accent2); }
     .toggle {
@@ -351,32 +352,32 @@
     <div class="panel-body">
       <div class="setting-section">
         <div class="setting-label">Voice</div>
-        <div class="setting-row">
+        <button type="button" class="setting-row" onclick="toggleVoiceOutput()" aria-label="Toggle voice output" role="switch" aria-checked="true">
           <span class="setting-name">🔊 Voice Output</span>
-          <button class="toggle on" id="voice-toggle" onclick="toggleVoiceOutput()"></button>
-        </div>
-        <div class="setting-row" onclick="changeVoice()">
+          <div class="toggle on" id="voice-toggle" aria-hidden="true"></div>
+        </button>
+        <button type="button" class="setting-row" onclick="changeVoice()">
           <span class="setting-name">🎵 Voice Style</span>
           <span class="setting-val" id="voice-style-val">Indian English</span>
-        </div>
-        <div class="setting-row">
+        </button>
+        <button type="button" class="setting-row" aria-label="Toggle voice input" role="switch" aria-checked="true" onclick="const t=this.querySelector('.toggle'); t.classList.toggle('on'); this.setAttribute('aria-checked', t.classList.contains('on'))">
           <span class="setting-name">🎙️ Voice Input</span>
-          <button class="toggle on" id="mic-toggle"></button>
-        </div>
+          <div class="toggle on" id="mic-toggle" aria-hidden="true"></div>
+        </button>
       </div>
       <div class="setting-section">
         <div class="setting-label">Language</div>
-        <div class="setting-row" onclick="cycleLang()">
+        <button type="button" class="setting-row" onclick="cycleLang()">
           <span class="setting-name">🌐 Default Language</span>
           <span class="setting-val" id="lang-val">Auto-detect</span>
-        </div>
+        </button>
       </div>
       <div class="setting-section">
         <div class="setting-label">Appearance</div>
-        <div class="setting-row">
+        <button type="button" class="setting-row" aria-label="Toggle dark mode" role="switch" aria-checked="true" onclick="const t=this.querySelector('.toggle'); t.classList.toggle('on'); this.setAttribute('aria-checked', t.classList.contains('on'))">
           <span class="setting-name">🌙 Dark Mode</span>
-          <button class="toggle on"></button>
-        </div>
+          <div class="toggle on" aria-hidden="true"></div>
+        </button>
       </div>
       <div class="setting-section">
         <div class="setting-label">About Aisha</div>
@@ -388,10 +389,10 @@
           <span class="setting-name">🧠 AI Model</span>
           <span class="setting-val">Gemini 1.5 Flash</span>
         </div>
-        <div class="setting-row" onclick="clearMemory()">
+        <button type="button" class="setting-row" onclick="clearMemory()">
           <span class="setting-name">🗑️ Clear Memory</span>
           <span class="setting-val">Tap to reset</span>
-        </div>
+        </button>
       </div>
     </div>
   </div>
@@ -658,6 +659,8 @@ function toggleVoiceOutput() {
   const toggle = document.getElementById("voice-toggle");
   btn.classList.toggle("active", state.voiceEnabled);
   toggle?.classList.toggle("on", state.voiceEnabled);
+  const row = toggle?.closest('.setting-row');
+  if (row) row.setAttribute("aria-checked", state.voiceEnabled);
   btn.textContent = state.voiceEnabled ? "🔊" : "🔇";
   if (!state.voiceEnabled) speechSynthesis.cancel();
 }
