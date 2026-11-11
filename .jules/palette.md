@@ -12,3 +12,7 @@
 ## 2023-11-02 - Keyboard Inaccessible Hover Actions
 **Learning:** Using `display: none` for hover-only message actions completely removes them from the DOM tab order, making them inaccessible to keyboard/screen-reader users. Additionally, changing to `display: flex` on hover causes layout shifts.
 **Action:** Use `opacity: 0` with `pointer-events: none` by default, and switch to `opacity: 1` and `pointer-events: auto` on `:hover` and `:focus-within` to maintain tab sequence and visual stability.
+
+## 2024-03-27 - Reusing aria-live status for transient feedback
+**Learning:** Silent clipboard operations leave screen-reader users guessing if an action succeeded. Creating new toast elements can be visually disruptive and DOM-heavy. Reusing an existing `aria-live` header status text is an efficient, reusable UX pattern in this design system to announce transient successes.
+**Action:** Always await clipboard promises to provide success feedback, and prefer temporarily updating existing `aria-live` status regions over injecting new hidden live regions when appropriate.
