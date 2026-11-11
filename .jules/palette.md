@@ -12,3 +12,7 @@
 ## 2023-11-02 - Keyboard Inaccessible Hover Actions
 **Learning:** Using `display: none` for hover-only message actions completely removes them from the DOM tab order, making them inaccessible to keyboard/screen-reader users. Additionally, changing to `display: flex` on hover causes layout shifts.
 **Action:** Use `opacity: 0` with `pointer-events: none` by default, and switch to `opacity: 1` and `pointer-events: auto` on `:hover` and `:focus-within` to maintain tab sequence and visual stability.
+
+## 2024-11-20 - Touch Inaccessible Hover Actions
+**Learning:** While `opacity: 0` and `pointer-events: none` fixes keyboard accessibility for hover-only actions (via `:focus-within`), it leaves touch device users completely unable to access the actions since there is no hover and they cannot tap the invisible, unclickable elements to focus them.
+**Action:** Always include `@media (hover: none)` overrides to make essential hidden actions persistently visible on touch devices.
