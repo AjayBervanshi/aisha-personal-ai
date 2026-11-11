@@ -703,7 +703,7 @@
     <!-- Input -->
     <div class="input-area">
       <div class="input-row">
-        <select class="lang-select" id="lang-select" aria-label="Select language">
+        <select class="lang-select" id="lang-select" aria-label="Select language" onchange="updateLangFromSelect(this)">
           <option value="auto">🌐</option>
           <option value="English">EN</option>
           <option value="Hindi">HI</option>
@@ -1085,6 +1085,12 @@
       document.getElementById("lang-select").value = state.currentLang;
     }
 
+    function updateLangFromSelect(el) {
+      state.currentLang = el.value;
+      const labels = { auto: "Auto-detect", English: "English", Hindi: "Hindi", Marathi: "Marathi" };
+      document.getElementById("lang-val").textContent = labels[state.currentLang] || state.currentLang;
+    }
+
     // ── Utilities ────────────────────────────────────────────────
     function setStatus(text) { document.getElementById("status-text").textContent = text; }
 
@@ -1114,14 +1120,38 @@
     }
 
     function copyText(text, btn) {
-      navigator.clipboard.writeText(text);
-      if (btn && btn.textContent !== "✅") {
-        const originalIcon = btn.textContent;
-        btn.textContent = "✅";
-        setTimeout(() => {
-          btn.textContent = originalIcon;
-        }, 2000);
-      }
+      navigator.clipboard.writeText(text).then(() => {
+        if (btn && btn.textContent !== "✅") {
+          const originalIcon = btn.textContent;
+          const originalLabel = btn.getAttribute("aria-label");
+          const originalTitle = btn.getAttribute("title");
+
+          btn.textContent = "✅";
+          btn.setAttribute("aria-label", "Copied message");
+          btn.setAttribute("title", "Copied!");
+
+          const statusEl = document.getElementById("status-text");
+          const oldStatus = statusEl.textContent;
+          statusEl.textContent = "Copied to clipboard";
+
+          setTimeout(() => {
+            btn.textContent = originalIcon;
+            if (originalLabel === null) {
+              btn.removeAttribute("aria-label");
+            } else {
+              btn.setAttribute("aria-label", originalLabel);
+            }
+            if (originalTitle === null) {
+              btn.removeAttribute("title");
+            } else {
+              btn.setAttribute("title", originalTitle);
+            }
+            if (statusEl.textContent === "Copied to clipboard") {
+              statusEl.textContent = oldStatus;
+            }
+          }, 2000);
+        }
+      }).catch(e => console.error("Copy failed", e));
     }
 
     function clearChat() {
